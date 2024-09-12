@@ -57,6 +57,7 @@ pub fn router(state: ServiceState) -> Router {
 
 fn public_router(state: ServiceState) -> Router {
     Router::new()
+        .route("/_health". get(health_check))
         .route("/documents", get(list_documents))
         .route("/documents", post(upload_documents))
         .layer(DefaultBodyLimit::max(50_000_000))
@@ -77,6 +78,17 @@ fn public_router(state: ServiceState) -> Router {
         .route("/vectors/collections/:id/embed/:doc_id", post(embed))
         .route("/vectors/search", post(search))
         .with_state(state)
+}
+
+#[utoipa::path(
+    get,
+    path = "/_health",
+    responses(
+        (status = 200, description = "OK")
+    )
+)]
+async fn health_check() -> impl IntoResponse {
+    "OK"
 }
 
 #[utoipa::path(
