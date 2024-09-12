@@ -57,7 +57,7 @@ pub fn router(state: ServiceState) -> Router {
 
 fn public_router(state: ServiceState) -> Router {
     Router::new()
-        .route("/_health". get(health_check))
+        .route("/_health", get(health_check))
         .route("/documents", get(list_documents))
         .route("/documents", post(upload_documents))
         .layer(DefaultBodyLimit::max(50_000_000))
