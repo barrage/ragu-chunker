@@ -1,0 +1,4 @@
+CODEOWNERS @DevOps
+.gitlab-ci.yml @DevOps
+.gitlab/ @DevOps
+Dockerfile @DevOps
