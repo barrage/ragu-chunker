@@ -319,7 +319,7 @@ pub mod dto {
         if s.starts_with('_')
             || s.chars()
                 .next()
-                .is_some_and(|c| c.is_ascii_digit() && c.is_uppercase())
+                .is_some_and(|c| !c.is_ascii_alphabetic() || c.is_lowercase())
         {
             return Err(field_err!(
                 "collection_name",
