@@ -26,6 +26,7 @@ services:
       - qdrant_data:/var/lib/docker/chonkit/qdrant/data
 
   api:
+    profiles: ["api"]
     build:
       context: .
       dockerfile: Dockerfile
