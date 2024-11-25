@@ -36,4 +36,4 @@ RUN apt-get update && apt-get install -y libssl3 && apt clean && rm -rf /var/lib
 
 EXPOSE 42069
 
-ENTRYPOINT ["./chonkit", "-l", "debug"]
+ENTRYPOINT ["./chonkit"]
