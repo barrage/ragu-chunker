@@ -25,8 +25,31 @@ services:
     volumes:
       - qdrant_data:/var/lib/docker/chonkit/qdrant/data
 
-  api:
-    profiles: ["api"]
+  weaviate:
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --scheme
+      - http
+    image: "semitechnologies/weaviate:1.24.12"
+    container_name: weaviate
+    ports:
+      - 8080:8080
+    volumes:
+      - weaviate_data:/var/lib/docker/chonkit/weaviate/data
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "node1"
+
+  feserver:
+    profiles: ["remote"]
     build:
       context: .
       dockerfile: "docker/feserver.Dockerfile"
@@ -44,10 +67,13 @@ services:
     container_name: chonkit
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/chonkit
-      VEC_DATABASE_URL: http://qdrant:6334
+      QDRANT_URL: http://qdrant:6334
+      WEAVIATE_URL: http://weaviate:8080
+      ALLOWED_ORIGINS: http://localhost:3000
     depends_on:
       - postgres
       - qdrant
+      - weaviate
     ports:
       - "42069:42069"
     volumes:

@@ -2,8 +2,8 @@ use super::CONTENT_PROPERTY;
 use crate::app::vector::DOCUMENT_ID_PROPERTY;
 use crate::core::model::collection::VectorCollection;
 use crate::core::vector::VectorDb;
-use crate::error::ChonkitError;
-use crate::DEFAULT_COLLECTION_NAME;
+use crate::error::{ChonkitErr, ChonkitError};
+use crate::{err, map_err, DEFAULT_COLLECTION_NAME};
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::with_payload_selector::SelectorOptions;
 use qdrant_client::qdrant::{
@@ -35,9 +35,7 @@ impl VectorDb for Qdrant {
     }
 
     async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError> {
-        let collection_names = self
-            .list_collections()
-            .await?
+        let collection_names = map_err!(self.list_collections().await)
             .collections
             .into_iter()
             .map(|col| col.name)
@@ -46,7 +44,7 @@ impl VectorDb for Qdrant {
         let mut collections = vec![];
 
         for name in collection_names {
-            let info = self.collection_info(&name).await?;
+            let info = map_err!(self.collection_info(&name).await);
             let size = get_collection_size(&info);
             if let Some(size) = size {
                 collections.push(VectorCollection::new(name, size));
@@ -65,13 +63,14 @@ impl VectorDb for Qdrant {
             })),
         };
 
-        let res = self
-            .create_collection(CreateCollection {
+        let res = map_err!(
+            self.create_collection(CreateCollection {
                 collection_name: name.to_string(),
                 vectors_config: Some(config),
                 ..Default::default()
             })
-            .await?;
+            .await
+        );
 
         debug_assert!(res.result);
 
@@ -79,21 +78,22 @@ impl VectorDb for Qdrant {
     }
 
     async fn get_collection(&self, name: &str) -> Result<VectorCollection, ChonkitError> {
-        let info = self.collection_info(name).await?;
+        let info = map_err!(self.collection_info(name).await);
         let Some(size) = get_collection_size(&info) else {
             #[cfg(debug_assertions)]
             {
                 debug!("{info:?}")
             }
-            return Err(ChonkitError::DoesNotExist(format!(
+            return err!(
+                DoesNotExist,
                 "Size information for vector collection '{name}'"
-            )));
+            );
         };
         Ok(VectorCollection::new(name.to_string(), size))
     }
 
     async fn delete_vector_collection(&self, name: &str) -> Result<(), ChonkitError> {
-        self.delete_collection(name).await?;
+        map_err!(self.delete_collection(name).await);
         Ok(())
     }
 
@@ -104,8 +104,10 @@ impl VectorDb for Qdrant {
 
         match result {
             Ok(_) => {}
-            Err(ChonkitError::Qdrant(QdrantError::ResponseError { status }))
-                if matches!(status.code(), tonic::Code::AlreadyExists) => {}
+            Err(ChonkitError {
+                error: ChonkitErr::Qdrant(QdrantError::ResponseError { status }),
+                ..
+            }) if matches!(status.code(), tonic::Code::AlreadyExists) => {}
             Err(e) => panic!("{e}"),
         }
     }
@@ -128,7 +130,7 @@ impl VectorDb for Qdrant {
             ..Default::default()
         };
 
-        let search_result = self.search_points(search_points).await?;
+        let search_result = map_err!(self.search_points(search_points).await);
 
         let results = search_result
             .result
@@ -179,8 +181,10 @@ impl VectorDb for Qdrant {
             })
             .collect();
 
-        self.upsert_points(UpsertPointsBuilder::new(collection, points).wait(true))
-            .await?;
+        map_err!(
+            self.upsert_points(UpsertPointsBuilder::new(collection, points).wait(true))
+                .await
+        );
 
         Ok(())
     }
@@ -190,15 +194,17 @@ impl VectorDb for Qdrant {
         collection: &str,
         document_id: uuid::Uuid,
     ) -> Result<(), ChonkitError> {
-        self.delete_points(
-            DeletePointsBuilder::new(collection)
-                .points(Filter::must([Condition::matches(
-                    DOCUMENT_ID_PROPERTY,
-                    document_id.to_string(),
-                )]))
-                .wait(true),
-        )
-        .await?;
+        map_err!(
+            self.delete_points(
+                DeletePointsBuilder::new(collection)
+                    .points(Filter::must([Condition::matches(
+                        DOCUMENT_ID_PROPERTY,
+                        document_id.to_string(),
+                    )]))
+                    .wait(true),
+            )
+            .await
+        );
 
         Ok(())
     }
@@ -210,8 +216,8 @@ impl VectorDb for Qdrant {
     ) -> Result<usize, ChonkitError> {
         use qdrant_client::qdrant::{Condition, Filter, ScrollPointsBuilder};
 
-        let scroll = self
-            .scroll(
+        let scroll = map_err!(
+            self.scroll(
                 ScrollPointsBuilder::new(collection)
                     .filter(Filter::must([Condition::matches(
                         DOCUMENT_ID_PROPERTY,
@@ -220,7 +226,8 @@ impl VectorDb for Qdrant {
                     .with_payload(false)
                     .with_vectors(false),
             )
-            .await?;
+            .await
+        );
 
         Ok(scroll.result.len())
     }
