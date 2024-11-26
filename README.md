@@ -21,8 +21,9 @@ Chunk documents.
 Chonkit is an application for chunking documents
 whose chunks can then be used for retrieval augmented generation (RAG).
 
-I suggest you read about [text embeddings](https://stackoverflow.blog/2023/11/09/an-intuitive-introduction-to-text-embeddings/) if you don't know what they are.
-It will clarify the following explanation.
+I suggest you read about [text embeddings]
+(<https://stackoverflow.blog/2023/11/09/an-intuitive-introduction-to-text-embeddings/>)
+if you don't know what they are. It will clarify the following explanation.
 
 RAG is a technique to provide LLMs contextual information about arbitrary data.
 The jist of RAG is the following:
