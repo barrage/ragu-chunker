@@ -354,6 +354,24 @@
     },
     "query": "SELECT COUNT(id) FROM collections"
   },
+  "7e2a4628401f56715bf7ffeccc362b97d9fde9a444dd2f9fd36c5e2d2cc4ffbb": {
+    "describe": {
+      "columns": [
+        {
+          "name": "count",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": []
+      }
+    },
+    "query": "SELECT COUNT(id) FROM documents"
+  },
   "843c76dd68d9231af5b04d8fa1bce79b72ce24f5e2f5fb368d85d4f237f21888": {
     "describe": {
       "columns": [],
