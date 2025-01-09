@@ -5,6 +5,7 @@ Chunk documents.
 ## Contents
 
 - [General information](#general-information)
+- [Providers](#providers)
 - [OpenAPI documentation](#openapi-documentation)
 - [Building](#building)
   - [Prerequisites](#prerequisites)
@@ -70,6 +71,33 @@ for efficient storage of these vectors and their retrieval.
 
 Chonkit provides APIs to manipulate vector collections and store embeddings
 into them.
+
+## Providers
+
+Chonkit uses a modular architecture that allows for easy integration of new
+vector database, embedding, and document storage providers.
+This section lists the available providers and their corresponding feature flags.
+
+### Vector database providers
+
+| Provider | Feature    | Description                                              |
+| -------- | ---------- | -------------------------------------------------------- |
+| Qdrant   | `qdrant`   | Enable qdrant as one of the vector database providers.   |
+| Weaviate | `weaviate` | Enable weaviate as one of the vector database providers. |
+
+### Embedding providers
+
+| Provider  | Feature                  | Description                                                                                                                                                                                                                                                                                                                                   |
+| --------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI    | `openai`                 | Enable OpenAI as one of the embedding providers.                                                                                                                                                                                                                                                                                              |
+| Fastembed | `fe-local` / `fe-remote` | Enable Fastembed as one of the embedding providers. The local implementation uses the current machine to embed, while the remote implementation uses a remote server and needs a URL to connect to. When running locally the `cuda` feature flag will enable CUDA support and will fallback to the CPU if a CUDA capable device is not found. |
+
+### Document storage providers
+
+| Provider | Feature         | Description                                                       | Capabilities |
+| -------- | --------------- | ----------------------------------------------------------------- | ------------ |
+| Local    | Always enabled. | Use the local filesystem as one of the document storage provider. | read/write   |
+| Google   | `gdoc`          | Use Google Docs.                                                  | read         |
 
 ## OpenAPI documentation
 
@@ -204,6 +232,14 @@ file with the necessary exports (see `.env.example`) and run
 source setup.sh -e
 ```
 
+Run
+
+```bash
+source setup.sh -h
+```
+
+to see all the available options for the setup script.
+
 ## Running
 
 Chonkit accepts the following arguments:
@@ -231,7 +267,7 @@ By default, Chonkit does not use any authentication mechanisms. This is
 fine for local deployments, but is problematic when chonkit is exposed to
 the outside world. The following is a list of supported authorization mechanisms.
 
-### Vault JWT Authorization
+### Vault JWT authorization
 
 **Feature**: `auth-vault`
 

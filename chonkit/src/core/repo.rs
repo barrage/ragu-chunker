@@ -1,8 +1,31 @@
-use crate::error::ChonkitError;
+use crate::{error::ChonkitError, map_err};
+use sqlx::Transaction;
 use std::future::Future;
 
 pub mod document;
 pub mod vector;
+
+#[derive(Debug, Clone)]
+pub struct Repository {
+    pub client: sqlx::PgPool,
+}
+
+impl Repository {
+    pub async fn new(url: &str) -> Self {
+        let pool = sqlx::postgres::PgPool::connect(url)
+            .await
+            .expect("error while connecting to db");
+
+        sqlx::migrate!()
+            .run(&pool)
+            .await
+            .expect("error in migrations");
+
+        tracing::info!("Connected to postgres");
+
+        Self { client: pool }
+    }
+}
 
 /// Bound for repositories that support atomic operations.
 pub trait Atomic {
@@ -17,6 +40,25 @@ pub trait Atomic {
 
     /// Abort a database transaction.
     fn abort_tx(&self, tx: Self::Tx) -> impl Future<Output = Result<(), ChonkitError>>;
+}
+
+impl Atomic for Repository {
+    type Tx = Transaction<'static, sqlx::Postgres>;
+
+    async fn start_tx(&self) -> Result<Self::Tx, ChonkitError> {
+        let tx = map_err!(self.client.begin().await);
+        Ok(tx)
+    }
+
+    async fn commit_tx(&self, tx: Self::Tx) -> Result<(), ChonkitError> {
+        map_err!(tx.commit().await);
+        Ok(())
+    }
+
+    async fn abort_tx(&self, tx: Self::Tx) -> Result<(), ChonkitError> {
+        map_err!(tx.rollback().await);
+        Ok(())
+    }
 }
 
 /// Uses `$repo` to start a transaction, passing it to the provided `$op`.

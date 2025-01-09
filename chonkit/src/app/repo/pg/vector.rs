@@ -7,7 +7,7 @@ use crate::{
             document::DocumentShort,
             List, Pagination, PaginationSort,
         },
-        repo::{vector::VectorRepo, Atomic},
+        repo::{vector::VectorRepo, Atomic, Repository},
     },
     err,
     error::ChonkitError,
@@ -18,13 +18,13 @@ use sqlx::{prelude::FromRow, PgPool, Postgres};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-impl VectorRepo for PgPool {
+impl VectorRepo for Repository {
     async fn list_collections(
         &self,
         params: PaginationSort,
     ) -> Result<List<Collection>, ChonkitError> {
         let total = map_err!(sqlx::query!("SELECT COUNT(id) FROM collections")
-            .fetch_one(self)
+            .fetch_one(&self.client)
             .await
             .map(|row| row.count.map(|count| count as usize)));
 
@@ -42,9 +42,10 @@ impl VectorRepo for PgPool {
             .push(" OFFSET ")
             .push_bind(offset);
 
-        let collections: Vec<Collection> = map_err!(query.build_query_as().fetch_all(self).await)
-            .into_iter()
-            .collect();
+        let collections: Vec<Collection> =
+            map_err!(query.build_query_as().fetch_all(&self.client).await)
+                .into_iter()
+                .collect();
 
         Ok(List::new(total, collections))
     }
@@ -57,7 +58,7 @@ impl VectorRepo for PgPool {
         let (sort_by, sort_dir) = p.to_sort();
 
         let total = map_err!(sqlx::query!("SELECT COUNT(id) FROM collections")
-            .fetch_one(self)
+            .fetch_one(&self.client)
             .await
             .map(|row| row.count));
 
@@ -118,7 +119,7 @@ impl VectorRepo for PgPool {
         query.push(format!(" ORDER BY {sort_by} {sort_dir} "));
 
         let collections: Vec<CollectionDocumentJoin> =
-            map_err!(query.build_query_as().fetch_all(self).await);
+            map_err!(query.build_query_as().fetch_all(&self.client).await);
 
         let mut result: HashMap<Uuid, CollectionDisplay> = HashMap::new();
 
@@ -167,7 +168,7 @@ impl VectorRepo for PgPool {
     async fn insert_collection(
         &self,
         insert: CollectionInsert<'_>,
-        tx: Option<&mut <PgPool as Atomic>::Tx>,
+        tx: Option<&mut <Repository as Atomic>::Tx>,
     ) -> Result<Collection, ChonkitError> {
         let CollectionInsert {
             id,
@@ -196,7 +197,7 @@ impl VectorRepo for PgPool {
         let collection = if let Some(tx) = tx {
             query.fetch_one(&mut **tx).await
         } else {
-            query.fetch_one(self).await
+            query.fetch_one(&self.client).await
         };
 
         match collection {
@@ -211,7 +212,7 @@ impl VectorRepo for PgPool {
     async fn delete_collection(&self, id: Uuid) -> Result<u64, ChonkitError> {
         let result = map_err!(
             sqlx::query!("DELETE FROM collections WHERE id = $1", id)
-                .execute(self)
+                .execute(&self.client)
                 .await
         );
         Ok(result.rows_affected())
@@ -223,7 +224,7 @@ impl VectorRepo for PgPool {
             "SELECT id, name, model, embedder, provider, created_at, updated_at FROM collections WHERE id = $1",
             id
         )
-        .fetch_optional(self)
+        .fetch_optional(&self.client)
         .await))
     }
 
@@ -236,7 +237,7 @@ impl VectorRepo for PgPool {
             "SELECT id, name, model, embedder, provider, created_at, updated_at FROM collections WHERE id = $1",
             collection_id
         )
-        .fetch_optional(self)
+        .fetch_optional(&self.client)
         .await);
 
         let Some(collection) = collection else {
@@ -251,7 +252,7 @@ impl VectorRepo for PgPool {
             "#,
             collection_id
         )
-        .fetch_all(self)
+        .fetch_all(&self.client)
         .await);
 
         Ok(Some(CollectionDisplay::new(
@@ -272,7 +273,7 @@ impl VectorRepo for PgPool {
             name,
             provider
         )
-        .fetch_optional(self)
+        .fetch_optional(&self.client)
         .await))
     }
 
@@ -301,7 +302,7 @@ impl VectorRepo for PgPool {
                 document_id,
                 collection_id,
             )
-            .fetch_one(self)
+            .fetch_one(&self.client)
             .await
         ))
     }
@@ -315,7 +316,7 @@ impl VectorRepo for PgPool {
              WHERE document_id = $1",
                 document_id
             )
-            .fetch_all(self)
+            .fetch_all(&self.client)
             .await
         ))
     }
@@ -334,7 +335,7 @@ impl VectorRepo for PgPool {
                 document_id,
                 collection_id
             )
-            .fetch_optional(self)
+            .fetch_optional(&self.client)
             .await
         ))
     }
@@ -348,7 +349,7 @@ impl VectorRepo for PgPool {
             "SELECT COUNT(id) FROM embeddings WHERE $1::UUID IS NULL OR collection_id = $1",
             collection_id
         )
-        .fetch_one(self)
+        .fetch_one(&self.client)
         .await
         .map(|row| row.count.map(|count| count as usize)));
 
@@ -365,7 +366,7 @@ impl VectorRepo for PgPool {
                 limit,
                 offset
             )
-            .fetch_all(self)
+            .fetch_all(&self.client)
             .await
         )
         .into_iter()
@@ -389,7 +390,7 @@ impl VectorRepo for PgPool {
             collection_name,
             provider
         )
-        .fetch_optional(self)
+        .fetch_optional(&self.client)
         .await))
     }
 
@@ -404,7 +405,7 @@ impl VectorRepo for PgPool {
                 document_id,
                 collection_id
             )
-            .execute(self)
+            .execute(&self.client)
             .await
         )
         .rows_affected())
@@ -416,7 +417,7 @@ impl VectorRepo for PgPool {
                 "DELETE FROM embeddings WHERE collection_id = $1",
                 collection_id
             )
-            .execute(self)
+            .execute(&self.client)
             .await
         )
         .rows_affected())

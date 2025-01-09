@@ -71,8 +71,10 @@ anyhow = { version = "1.0.93", features = ["backtrace"] }
 vaultrs = { version = "0.7.3", optional = true }
 base64 = "0.22.1"
 
+reqwest = { version = "0.12.7", features = ["json"], optional = true }
+
 [features]
-default = ["weaviate", "qdrant", "fe-local", "openai", "auth-vault"]
+default = ["weaviate", "qdrant", "fe-local", "openai", "auth-vault", "gdoc"]
 fe-local = ["chonkit-embedders", "chonkit-embedders?/fe-local"]
 fe-remote = ["chonkit-embedders", "chonkit-embedders?/fe-remote"]
 cuda = ["chonkit-embedders?/cuda"]
@@ -80,3 +82,4 @@ openai = ["chonkit-embedders", "chonkit-embedders?/openai"]
 weaviate = ["weaviate-community"]
 qdrant = ["qdrant-client"]
 auth-vault = ["vaultrs"]
+gdoc = ["reqwest"]

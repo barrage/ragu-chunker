@@ -83,6 +83,10 @@ pub struct StartArgs {
     #[cfg(feature = "auth-vault")]
     #[arg(long)]
     vault_key_name: Option<String>,
+
+    #[cfg(feature = "gdoc")]
+    #[arg(long)]
+    gdrive_download_path: Option<String>,
 }
 
 /// Implement a getter method on [StartArgs], using the `$var` environment variable as a fallback
@@ -181,3 +185,6 @@ arg!(vault_role_id,   "VAULT_ROLE_ID",     panic "Vault role id not found; Pass 
 arg!(vault_secret_id, "VAULT_SECRET_ID", panic "Vault secret id not found; Pass --vault-secret-id or set VAULT_SECRET_ID");
 #[cfg(feature = "auth-vault")]
 arg!(vault_key_name, "VAULT_KEY_NAME", panic "Vault key name not found; Pass --vault-key-name or set VAULT_KEY_NAME");
+
+#[cfg(feature = "gdoc")]
+arg!(gdrive_download_path, "GDRIVE_DOWNLOAD_PATH", panic "Google download directory not found; Pass --gdrive-download-path or set GDRIVE_DOWNLOAD_PATH");
