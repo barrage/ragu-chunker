@@ -1,7 +1,5 @@
-use std::time::Instant;
-
 use crate::{
-    config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME},
+    config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
     core::{
         chunk::{
             ChunkConfig, ChunkedDocument, SemanticEmbedder, SemanticWindowConfig,
@@ -13,35 +11,32 @@ use crate::{
         },
         model::{
             document::{
-                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentType,
-                TextDocumentType,
+                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentParameterUpdate,
+                DocumentType, TextDocumentType,
             },
-            List, Pagination, PaginationSort,
+            List, PaginationSort,
         },
         provider::ProviderState,
-        repo::{document::DocumentRepo, Atomic},
+        repo::{document::DocumentRepo, Atomic, Repository},
     },
     err,
     error::ChonkitError,
     map_err, transaction,
 };
-use dto::{ChunkPreviewPayload, DocumentUpload};
-use tracing::info;
+use dto::DocumentUpload;
+use std::time::Instant;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
 /// High level operations for document management.
 #[derive(Clone)]
-pub struct DocumentService<R> {
-    pub repo: R,
+pub struct DocumentService {
+    pub repo: Repository,
     providers: ProviderState,
 }
 
-impl<R> DocumentService<R>
-where
-    R: DocumentRepo + Atomic + Send + Sync,
-{
-    pub fn new(repo: R, providers: ProviderState) -> Self {
+impl DocumentService {
+    pub fn new(repo: Repository, providers: ProviderState) -> Self {
         Self { repo, providers }
     }
 
@@ -57,7 +52,7 @@ where
         ready: Option<bool>,
     ) -> Result<List<Document>, ChonkitError> {
         map_err!(p.validate());
-        self.repo.list(p, src, ready).await
+        self.repo.list_documents(p, src, ready).await
     }
 
     /// Get a paginated list of documents from the repository with additional info for each.
@@ -70,14 +65,16 @@ where
         document_id: Option<Uuid>,
     ) -> Result<List<DocumentDisplay>, ChonkitError> {
         map_err!(p.validate());
-        self.repo.list_with_collections(p, src, document_id).await
+        self.repo
+            .list_documents_with_collections(p, src, document_id)
+            .await
     }
 
     /// Get a document from the repository.
     ///
     /// * `id`: Document ID.
     pub async fn get_document(&self, id: Uuid) -> Result<Document, ChonkitError> {
-        match self.repo.get_by_id(id).await? {
+        match self.repo.get_document_by_id(id).await? {
             Some(doc) => Ok(doc),
             None => err!(DoesNotExist, "Document with ID {id}"),
         }
@@ -87,7 +84,7 @@ where
     ///
     /// * `id`: Document ID.
     pub async fn get_config(&self, id: Uuid) -> Result<DocumentConfig, ChonkitError> {
-        let file = self.repo.get_config_by_id(id).await?;
+        let file = self.repo.get_document_config_by_id(id).await?;
 
         let Some(file) = file else {
             return err!(DoesNotExist, "Document with ID {id}");
@@ -101,16 +98,16 @@ where
     ///
     /// * `id`: Document ID.
     pub async fn get_content(&self, id: Uuid) -> Result<String, ChonkitError> {
-        let Some(document) = self.repo.get_by_id(id).await? else {
+        let Some(document) = self.repo.get_document_by_id(id).await? else {
             return err!(DoesNotExist, "Document with ID {id}");
         };
 
-        let store = self.providers.document.get_provider(&document.src)?;
+        let store = self.providers.storage.get_provider(&document.src)?;
 
         let ext = document.ext.as_str().try_into()?;
         let parser = self.get_parser(id, ext).await?;
 
-        store.read(&document, &parser).await
+        store.read(&document.path, &parser).await
     }
 
     /// Get document chunks using its parsing and chunking configuration,
@@ -125,7 +122,7 @@ where
     ) -> Result<ChunkedDocument<'content>, ChonkitError> {
         let Some(config) = self
             .repo
-            .get_chunk_config(document.id)
+            .get_document_chunk_config(document.id)
             .await?
             .map(|config| config.config)
         else {
@@ -144,41 +141,67 @@ where
     ///
     /// * `store`: The storage implementation.
     /// * `params`: Upload params.
+    /// * `force`: If `true`, overwrite the document if it already exists. Hash
+    ///            collisions always return errors.
     pub async fn upload(
         &self,
-        storage_provider: &str,
         mut params: DocumentUpload<'_>,
-    ) -> Result<DocumentConfig, ChonkitError> {
+        force: bool,
+    ) -> Result<Document, ChonkitError> {
         map_err!(params.validify());
 
-        let DocumentUpload { ref name, ty, file } = params;
-        let hash = sha256(file);
-        let store = self.providers.document.get_provider(storage_provider)?;
+        let store = self.providers.storage.get_provider(FS_STORE_ID)?;
 
-        let existing = self.repo.get_by_hash(&hash).await?;
+        let DocumentUpload { ref name, ty, file } = params;
+        let path = store.absolute_path(name, ty);
+        let hash = sha256(file);
 
         // The default parser parses the whole input so we use it
         // to check whether the document has any content. Reject if empty.
         Parser::new(ty).parse(file)?;
 
-        if let Some(Document { name: existing, .. }) = existing {
+        // Always return errors if there is a hash collision
+        if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
             return err!(
                 AlreadyExists,
-                "New document ({name}) has same hash as existing ({existing})"
+                "New document '{name}' has same hash as existing '{}' ({})",
+                existing.name,
+                existing.id
             );
         };
 
-        transaction!(self.repo, |tx| async move {
-            let path = store.write(name, file).await?;
+        if let Some(existing) = self.repo.get_document_by_path(&path, store.id()).await? {
+            if !force {
+                return err!(
+                    AlreadyExists,
+                    "New document '{name}' has same path as existing '{}' ({})",
+                    existing.name,
+                    existing.id
+                );
+            }
 
+            store.write(&path, file, true).await?;
+            let update = DocumentParameterUpdate::new(&path, &hash);
+            return self
+                .repo
+                .update_document_parameters(existing.id, update)
+                .await;
+        };
+
+        transaction!(self.repo, |tx| async move {
             let insert = DocumentInsert::new(name, &path, ty, &hash, store.id());
-            let parse_config = ParseConfig::default();
-            let chunk_config = ChunkConfig::snapping_default();
 
             let document = self
                 .repo
-                .insert_with_configs(insert, parse_config, chunk_config, tx)
+                .insert_document_with_configs(
+                    insert,
+                    ParseConfig::default(),
+                    ChunkConfig::snapping_default(),
+                    tx,
+                )
                 .await?;
+
+            store.write(&path, file, false).await?;
 
             Ok(document)
         })
@@ -188,72 +211,41 @@ where
     ///
     /// * `id`: Document ID.
     pub async fn delete(&self, id: Uuid) -> Result<(), ChonkitError> {
-        let Some(document) = self.repo.get_by_id(id).await? else {
+        let Some(document) = self.repo.get_document_by_id(id).await? else {
             return err!(DoesNotExist, "Document with ID {id}");
         };
-        let collections = self.repo.get_assigned_collection_names(document.id).await?;
+        let collections = self
+            .repo
+            .get_document_assigned_collection_names(document.id)
+            .await?;
+        let store = self.providers.storage.get_provider(&document.src)?;
         transaction! {self.repo, |tx| async move {
-                self.repo.remove_by_id(document.id, Some(tx)).await?;
+                self.repo.remove_document_by_id(document.id, Some(tx)).await?;
                 for (collection, provider) in collections {
                     let vector_db = self.providers.vector.get_provider(&provider)?;
                     vector_db
                         .delete_embeddings(&collection, document.id)
                         .await?;
                 }
-                let store = self.providers.document.get_provider(&document.src)?;
                 store.delete(&document.path).await
             }
         }
     }
 
     /// Sync storage contents with the repo.
-    pub async fn sync(&self, storage_provider: &str) -> Result<(), ChonkitError> {
+    pub async fn sync(&self, provider: &str) -> Result<(), ChonkitError> {
         let __start = Instant::now();
-        let store = self.providers.document.get_provider(storage_provider)?;
-        info!("Syncing documents with {}", store.id());
 
-        // Prune
-        let documents = self
-            .repo
-            .list(
-                PaginationSort::new_default_sort(Pagination::new(10_000, 1)),
-                Some(store.id()),
-                None,
-            )
-            .await?;
+        let store = self.providers.storage.get_provider(provider)?;
 
-        let non_existing = store.filter_non_existing(&documents.items).await?;
+        tracing::info!("Syncing documents with {}", store.id());
 
-        for document_id in non_existing {
-            self.repo.remove_by_id(document_id, None).await?;
-        }
+        store.sync(&self.repo).await?;
 
-        // Store
-        let files = store.list_files().await?;
-
-        for file in files {
-            let content = store.get_bytes(&file.path).await?;
-            let hash = sha256(&content);
-
-            let doc = self.repo.get_by_path(&file.path, store.id()).await?;
-
-            if let Some(Document { id, name, .. }) = doc {
-                info!("Document '{name}' already exists ({id})");
-                continue;
-            }
-
-            let insert = DocumentInsert::new(&file.name, &file.path, file.ext, &hash, store.id());
-
-            match self.repo.insert(insert).await {
-                Ok(Document { id, name, .. }) => info!("Successfully inserted '{name}' ({id})"),
-                Err(e) => tracing::error!("{e}"),
-            }
-        }
-
-        info!(
+        tracing::info!(
             "Syncing finished for storage '{}', took {}ms",
             store.id(),
-            Instant::now().duration_since(__start).as_millis()
+            __start.elapsed().as_millis()
         );
 
         Ok(())
@@ -266,7 +258,7 @@ where
     pub async fn chunk_preview(
         &self,
         document_id: Uuid,
-        config: ChunkPreviewPayload,
+        config: dto::ChunkPreviewPayload,
     ) -> Result<Vec<String>, ChonkitError> {
         map_err!(config.validate());
 
@@ -280,7 +272,7 @@ where
             }
         };
 
-        let content = self.parse_preview(document_id, parser).await?;
+        let content = self.parse_document(document_id, parser).await?;
 
         let chunks = match self.chunk(config.chunker, &content).await? {
             ChunkedDocument::Ref(chunked) => chunked.iter().map(|s| s.to_string()).collect(),
@@ -366,32 +358,32 @@ where
         Ok(chunks)
     }
 
-    /// Preview how the document gets parsed to text.
+    /// Parse the document and return its content.
     ///
     /// * `id`: Document ID.
     /// * `config`: If given, uses the parsing config, otherwise use the default parser for the
     ///             file type.
-    pub async fn parse_preview(
+    pub async fn parse_document(
         &self,
         id: Uuid,
         config: ParseConfig,
     ) -> Result<String, ChonkitError> {
         map_err!(config.validate());
 
-        let document = self.repo.get_by_id(id).await?;
+        let document = self.repo.get_document_by_id(id).await?;
 
         let Some(document) = document else {
             return err!(DoesNotExist, "Document with ID {id}");
         };
 
-        let store = self.providers.document.get_provider(&document.src)?;
+        let store = self.providers.storage.get_provider(&document.src)?;
 
         let ext = document.ext.as_str().try_into()?;
         let parser = Parser::new_from(ext, config);
 
-        info!("Using parser ({ext}) for '{id}'");
+        tracing::info!("Using parser ({ext}) for '{id}'");
 
-        store.read(&document, &parser).await
+        store.read(&document.path, &parser).await
     }
 
     /// Update a document's parsing configuration.
@@ -401,13 +393,13 @@ where
     pub async fn update_parser(&self, id: Uuid, config: ParseConfig) -> Result<(), ChonkitError> {
         map_err!(config.validate());
 
-        let document = self.repo.get_by_id(id).await?;
+        let document = self.repo.get_document_by_id(id).await?;
 
         if document.is_none() {
             return err!(DoesNotExist, "Document with ID {id}");
         }
 
-        self.repo.upsert_parse_config(id, config).await?;
+        self.repo.upsert_document_parse_config(id, config).await?;
 
         Ok(())
     }
@@ -417,13 +409,13 @@ where
     /// * `id`: Document ID.
     /// * `config`: Chunking configuration.
     pub async fn update_chunker(&self, id: Uuid, config: ChunkConfig) -> Result<(), ChonkitError> {
-        let document = self.repo.get_by_id(id).await?;
+        let document = self.repo.get_document_by_id(id).await?;
 
         if document.is_none() {
             return err!(DoesNotExist, "Document with ID {id}");
         }
 
-        self.repo.upsert_chunk_config(id, config).await?;
+        self.repo.upsert_document_chunk_config(id, config).await?;
 
         Ok(())
     }
@@ -439,12 +431,12 @@ where
 
         match self
             .upload(
-                "fs",
                 DocumentUpload::new(
                     String::from(DEFAULT_DOCUMENT_NAME),
                     DocumentType::Text(TextDocumentType::Txt),
                     DEFAULT_DOCUMENT_CONTENT.as_bytes(),
                 ),
+                false,
             )
             .await
         {
@@ -462,7 +454,7 @@ where
     /// * `id`: Document ID.
     /// * `ext`: Document extension.
     async fn get_parser(&self, id: Uuid, ext: DocumentType) -> Result<Parser, ChonkitError> {
-        let config = self.repo.get_parse_config(id).await?;
+        let config = self.repo.get_document_parse_config(id).await?;
         match config {
             Some(cfg) => Ok(Parser::new_from(ext, cfg.config)),
             None => Ok(Parser::new(ext)),
@@ -478,7 +470,7 @@ pub mod dto {
     use serde::Deserialize;
     use validify::{Validate, Validify};
 
-    #[derive(Debug, Validify)]
+    #[derive(Debug, Clone, Validify)]
     pub struct DocumentUpload<'a> {
         /// Document name.
         #[modify(trim)]

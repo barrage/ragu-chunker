@@ -21,8 +21,11 @@ pub mod vector;
 /// HTTP server implementation.
 pub mod server;
 
+/// Authentication implementations.
+pub mod auth;
+
+/// External API implementations.
+pub mod external;
+
 #[cfg(test)]
 pub mod test;
-
-#[cfg(feature = "auth-vault")]
-pub mod auth;

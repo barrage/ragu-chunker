@@ -1,5 +1,19 @@
 use clap::Parser;
 
+// Adapter identifiers.
+
+pub const FS_STORE_ID: &str = "fs";
+#[cfg(feature = "qdrant")]
+pub const QDRANT_ID: &str = "qdrant";
+#[cfg(feature = "weaviate")]
+pub const WEAVIATE_ID: &str = "weaviate";
+#[cfg(feature = "gdrive")]
+pub const GOOGLE_STORE_ID: &str = "google";
+#[cfg(any(feature = "fe-remote", feature = "fe-local"))]
+pub const FEMBED_EMBEDDER_ID: &str = "fembed";
+#[cfg(feature = "openai")]
+pub const OPENAI_EMBEDDER_ID: &str = "openai";
+
 /// The ID for the default collection created on application startup.
 pub const DEFAULT_COLLECTION_ID: uuid::Uuid = uuid::Uuid::nil();
 /// The name for the default collection created on application startup.
@@ -13,9 +27,12 @@ pub const DEFAULT_COLLECTION_EMBEDDING_MODEL: &str = "Xenova/bge-base-en-v1.5";
 pub const DEFAULT_DOCUMENT_NAME: &str = "RaguruLabamba.txt";
 pub const DEFAULT_DOCUMENT_CONTENT: &str = r#"Raguru Labamba, the pride of planet Gura, is celebrated as the finest ragu chef in the galaxy. With an innate mastery of Guran spices and interstellar ingredients, his ragus blend cosmic flavors into harmonies never tasted before. From his floating kitchen orbiting Gura’s twin moons, Raguru crafts dishes that draw food pilgrims from across the universe, cementing his legacy as the culinary star of his world."#;
 /// The default upload path for the `fs` document storage provider.
-const DEFAULT_UPLOAD_PATH: &str = "upload";
+const DEFAULT_UPLOAD_PATH: &str = "data/upload";
 /// The default address to listen on.
 const DEFAULT_ADDRESS: &str = "0.0.0.0:42069";
+
+#[cfg(feature = "gdrive")]
+const DEFAULT_GOOGLE_DRIVE_DOWNLOAD_PATH: &str = "data/gdrive";
 
 #[derive(Debug, Parser)]
 #[command(name = "chonkit", author = "biblius", version = "0.1", about = "Chunk documents", long_about = None)]
@@ -43,6 +60,10 @@ pub struct StartArgs {
     /// CORS allowed headers.
     #[arg(long)]
     cors_allowed_headers: Option<String>,
+
+    /// Cookie domain used for setting chonkit-specific cookies.
+    #[arg(long)]
+    cookie_domain: Option<String>,
 
     /// Qdrant URL.
     #[cfg(feature = "qdrant")]
@@ -84,9 +105,17 @@ pub struct StartArgs {
     #[arg(long)]
     vault_key_name: Option<String>,
 
-    #[cfg(feature = "gdoc")]
+    #[cfg(feature = "gdrive")]
     #[arg(long)]
-    gdrive_download_path: Option<String>,
+    google_drive_download_path: Option<String>,
+
+    #[cfg(feature = "gdrive")]
+    #[arg(long)]
+    google_oauth_client_id: Option<String>,
+
+    #[cfg(feature = "gdrive")]
+    #[arg(long)]
+    google_oauth_client_secret: Option<String>,
 }
 
 /// Implement a getter method on [StartArgs], using the `$var` environment variable as a fallback
@@ -167,6 +196,7 @@ arg!(db_url,          "DATABASE_URL",    panic   "Database url not found; Pass -
 arg!(log,             "RUST_LOG",        default "info".to_string());
 arg!(upload_path,     "UPLOAD_PATH",     default DEFAULT_UPLOAD_PATH.to_string());
 arg!(address,         "ADDRESS",         default DEFAULT_ADDRESS.to_string());
+arg!(cookie_domain,   "COOKIE_DOMAIN",   panic   "Cookie domain not found; Pass --cookie-domain or set COOKIE_DOMAIN");
 
 #[cfg(feature = "qdrant")]
 arg!(qdrant_url,      "QDRANT_URL",      panic   "Qdrant url not found; Pass --qdrant-url or set QDRANT_URL");
@@ -186,5 +216,9 @@ arg!(vault_secret_id, "VAULT_SECRET_ID", panic "Vault secret id not found; Pass 
 #[cfg(feature = "auth-vault")]
 arg!(vault_key_name, "VAULT_KEY_NAME", panic "Vault key name not found; Pass --vault-key-name or set VAULT_KEY_NAME");
 
-#[cfg(feature = "gdoc")]
-arg!(gdrive_download_path, "GDRIVE_DOWNLOAD_PATH", panic "Google download directory not found; Pass --gdrive-download-path or set GDRIVE_DOWNLOAD_PATH");
+#[cfg(feature = "gdrive")]
+arg!(google_drive_download_path, "GOOGLE_DRIVE_DOWNLOAD_PATH", default DEFAULT_GOOGLE_DRIVE_DOWNLOAD_PATH.to_string());
+#[cfg(feature = "gdrive")]
+arg!(google_oauth_client_id, "GOOGLE_OAUTH_CLIENT_ID", panic "Google OAuth client ID not found; Pass --google-oauth-client-id or set GOOGLE_OAUTH_CLIENT_ID");
+#[cfg(feature = "gdrive")]
+arg!(google_oauth_client_secret, "GOOGLE_OAUTH_CLIENT_SECRET", panic "Google OAuth client secret not found; Pass --google-oauth-client-secret or set GOOGLE_OAUTH_CLIENT_SECRET");

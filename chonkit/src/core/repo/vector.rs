@@ -87,12 +87,12 @@ pub trait VectorRepo {
     /// * `id`: Document ID.
     fn get_all_embeddings(
         &self,
-        id: Uuid,
+        document_id: Uuid,
     ) -> impl Future<Output = Result<Vec<Embedding>, ChonkitError>> + Send;
 
     /// Get a document's embedding information for the given collection.
     ///
-    /// * `id`: Document ID.
+    /// * `id`: Collection ID.
     fn get_embeddings(
         &self,
         id: Uuid,
@@ -101,12 +101,21 @@ pub trait VectorRepo {
 
     /// Get a document's embedding information for the given collection.
     ///
-    /// * `id`: Document ID.
+    /// * `id`: Collection ID.
     fn list_embeddings(
         &self,
         pagination: Pagination,
         collection_id: Option<Uuid>,
     ) -> impl Future<Output = Result<List<Embedding>, ChonkitError>> + Send;
+
+    /// Given a collection, list all embeddings whose `created_at` fields
+    /// are less than their respective document's `updated_at` field.
+    ///
+    /// * `id`: Collection ID.
+    fn list_outdated_embeddings(
+        &self,
+        collection_id: Uuid,
+    ) -> impl Future<Output = Result<Vec<Embedding>, ChonkitError>> + Send;
 
     /// Get a document's embeddings via the collection name and provider
     /// unique combination.
@@ -123,9 +132,6 @@ pub trait VectorRepo {
 
     /// Delete embedding info for a document in the given collection.
     /// Return the amount of entries deleted.
-    ///
-    /// * `id`: Document ID.
-    /// * `collection`: Collection name.
     fn delete_embeddings(
         &self,
         id: Uuid,
@@ -133,8 +139,6 @@ pub trait VectorRepo {
     ) -> impl Future<Output = Result<u64, ChonkitError>> + Send;
 
     /// Delete all embedding entries for the given collection.
-    ///
-    /// * `collection`: Collection name.
     fn delete_all_embeddings(
         &self,
         collection_id: Uuid,

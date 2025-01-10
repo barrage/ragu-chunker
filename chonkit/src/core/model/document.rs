@@ -115,6 +115,8 @@ pub enum DocumentType {
 
     /// PDF document.
     Pdf,
+
+    Excel,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -147,6 +149,7 @@ impl std::fmt::Display for DocumentType {
             },
             DocumentType::Docx => write!(f, "docx"),
             DocumentType::Pdf => write!(f, "pdf"),
+            DocumentType::Excel => write!(f, "xlsx"),
         }
     }
 }
@@ -156,14 +159,19 @@ impl TryFrom<&str> for DocumentType {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
+            "xlsx" | "application/vnd.google-apps.spreadsheet" => Ok(Self::Excel),
             "md" => Ok(Self::Text(TextDocumentType::Md)),
             "xml" => Ok(Self::Text(TextDocumentType::Xml)),
-            "json" => Ok(Self::Text(TextDocumentType::Json)),
+            "json" | "application/json" => Ok(Self::Text(TextDocumentType::Json)),
             "csv" => Ok(Self::Text(TextDocumentType::Csv)),
-            "txt" => Ok(Self::Text(TextDocumentType::Txt)),
-            "pdf" => Ok(Self::Pdf),
-            "docx" => Ok(Self::Docx),
-            _ => err!(UnsupportedFileType, "{}" value.to_owned()),
+            "txt" | "text/plain" => Ok(Self::Text(TextDocumentType::Txt)),
+            "pdf" | "application/pdf" => Ok(Self::Pdf),
+            "docx"
+            | "application/vnd.google-apps.document"
+            | "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+                Ok(Self::Docx)
+            }
+            _ => err!(UnsupportedFileType, "{value}"),
         }
     }
 }
@@ -220,10 +228,22 @@ impl<'a> DocumentInsert<'a> {
     }
 }
 
-/// DTO for updating.
+/// DTO for updating intended for user APIs.
 #[derive(Debug)]
-pub struct DocumentUpdate<'a> {
+pub struct DocumentMetadataUpdate<'a> {
     pub name: Option<&'a str>,
     pub label: Option<&'a str>,
     pub tags: Option<Vec<String>>,
+}
+
+#[derive(Debug)]
+pub struct DocumentParameterUpdate<'a> {
+    pub path: &'a str,
+    pub hash: &'a str,
+}
+
+impl<'a> DocumentParameterUpdate<'a> {
+    pub fn new(path: &'a str, hash: &'a str) -> Self {
+        Self { path, hash }
+    }
 }

@@ -13,7 +13,7 @@ impl ChonkitError {
             E::Validation(_)
             | E::Regex(_)
             | E::Chunker(_)
-            | E::InvalidFileName(_)
+            | E::InvalidFile(_)
             | E::UnsupportedFileType(_)
             | E::InvalidProvider(_)
             | E::InvalidEmbeddingModel(_) => SC::UNPROCESSABLE_ENTITY,
@@ -26,6 +26,8 @@ impl ChonkitError {
             | E::Embedding(_)
             | E::Utf8(_)
             | E::Batch
+            | E::Calamine(_)
+            | E::Xlsx(_)
             | E::SerdeJson(_) => SC::INTERNAL_SERVER_ERROR,
             E::Axum(_) => SC::INTERNAL_SERVER_ERROR,
 
@@ -39,6 +41,12 @@ impl ChonkitError {
             E::ParseConfig(_) => SC::UNPROCESSABLE_ENTITY,
             E::Unauthorized => SC::UNAUTHORIZED,
             E::Encoding(_) => SC::UNPROCESSABLE_ENTITY,
+            E::Reqwest(ref e) => e.status().unwrap_or(SC::INTERNAL_SERVER_ERROR),
+            E::InvalidParameter(_) => SC::BAD_REQUEST,
+            #[cfg(feature = "gdrive")]
+            E::GoogleApi(_) => SC::INTERNAL_SERVER_ERROR,
+            E::OperationUnsupported(_) => SC::BAD_REQUEST,
+            E::InvalidHeader(_) => SC::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -112,10 +120,11 @@ impl IntoResponse for ChonkitError {
             | CE::ParseInt(_)
             | CE::Utf8(_)
             | CE::Sqlx(_)
-            | CE::InvalidFileName(_)
+            | CE::InvalidFile(_)
+            | CE::InvalidHeader(_)
             | CE::Http(_) => (status, "Internal".to_string()).into_response(),
-            CE::ParsePdf(_) => todo!(),
-            CE::DocxRead(_) => todo!(),
+            CE::ParsePdf(e) => (status, e.to_string()).into_response(),
+            CE::DocxRead(e) => (status, e.to_string()).into_response(),
             CE::AlreadyExists(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
 
             #[cfg(feature = "weaviate")]
@@ -138,6 +147,13 @@ impl IntoResponse for ChonkitError {
             CE::ParseConfig(e) => (status, e.to_string()).into_response(),
             CE::Unauthorized => (status, "Unauthorized".to_string()).into_response(),
             CE::Encoding(e) => (status, e.to_string()).into_response(),
+            CE::Reqwest(e) => (status, e.to_string()).into_response(),
+            CE::InvalidParameter(e) => (status, e).into_response(),
+            #[cfg(feature = "gdrive")]
+            CE::GoogleApi(e) => (status, e.to_string()).into_response(),
+            CE::OperationUnsupported(e) => (status, e).into_response(),
+            CE::Calamine(e) => (status, e.to_string()).into_response(),
+            CE::Xlsx(e) => (status, e.to_string()).into_response(),
         }
     }
 }

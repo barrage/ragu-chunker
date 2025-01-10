@@ -1,3 +1,4 @@
+use crate::core::model::document::DocumentParameterUpdate;
 use crate::core::repo::Repository;
 use crate::error::ChonkitError;
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
             collection::CollectionShort,
             document::{
                 config::{DocumentChunkConfig, DocumentParseConfig},
-                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentUpdate,
+                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentMetadataUpdate,
             },
             List, PaginationSort,
         },
@@ -103,8 +104,8 @@ impl DocumentRepo for Repository {
             sqlx::query_as!(
                 Document,
                 "SELECT id, name, path, ext, hash, src, label, tags, created_at, updated_at 
-             FROM documents 
-             WHERE hash = $1",
+                 FROM documents 
+                 WHERE hash = $1",
                 hash
             )
             .fetch_optional(&self.client)
@@ -235,6 +236,40 @@ impl DocumentRepo for Repository {
         .into_iter()
         .map(|el| (el.id, el.path))
         .collect())
+    }
+
+    async fn list_all_document_update_times(
+        &self,
+        src: &str,
+    ) -> Result<Vec<(Uuid, String, DateTime<Utc>)>, ChonkitError> {
+        Ok(map_err!(
+            sqlx::query!(
+                "SELECT id, path, updated_at FROM documents WHERE src = $1",
+                src
+            )
+            .fetch_all(&self.client)
+            .await
+        )
+        .into_iter()
+        .map(|el| (el.id, el.path, el.updated_at))
+        .collect())
+    }
+
+    async fn update_document_updated_at(
+        &self,
+        id: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> Result<(), ChonkitError> {
+        map_err!(
+            sqlx::query!(
+                "UPDATE documents SET updated_at = $2 WHERE id = $1",
+                id,
+                updated_at
+            )
+            .execute(&self.client)
+            .await
+        );
+        Ok(())
     }
 
     async fn list_documents_with_collections(
@@ -377,32 +412,49 @@ impl DocumentRepo for Repository {
         ))
     }
 
-    async fn update_document(
+    async fn update_document_metadata(
         &self,
         id: uuid::Uuid,
-        update: DocumentUpdate<'_>,
-    ) -> Result<u64, ChonkitError> {
-        let DocumentUpdate { name, label, tags } = update;
+        update: DocumentMetadataUpdate<'_>,
+    ) -> Result<Document, ChonkitError> {
+        let DocumentMetadataUpdate { name, label, tags } = update;
 
-        let result = map_err!(
-            sqlx::query!(
+        Ok(map_err!(
+            sqlx::query_as!(
+                Document,
                 r#"
-            UPDATE documents SET 
-            name = $1,
-            label = $2,
-            tags = $3
-            WHERE id = $4 
-        "#,
+                UPDATE documents SET name = $1, label = $2, tags = $3 WHERE id = $4 
+                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at"#,
                 name.as_ref(),
                 label.as_ref(),
                 tags.as_deref(),
                 id
             )
-            .execute(&self.client)
+            .fetch_one(&self.client)
             .await
-        );
+        ))
+    }
 
-        Ok(result.rows_affected())
+    async fn update_document_parameters(
+        &self,
+        id: uuid::Uuid,
+        update: DocumentParameterUpdate<'_>,
+    ) -> Result<Document, ChonkitError> {
+        let DocumentParameterUpdate { path, hash } = update;
+
+        Ok(map_err!(
+            sqlx::query_as!(
+                Document,
+                r#"
+                UPDATE documents SET path = $1, hash = $2 WHERE id = $3
+                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at"#,
+                path,
+                hash,
+                id
+            )
+            .fetch_one(&self.client)
+            .await
+        ))
     }
 
     async fn remove_document_by_id(
@@ -548,7 +600,7 @@ impl DocumentRepo for Repository {
         parse_config: ParseConfig,
         chunk_config: ChunkConfig,
         tx: &mut <Self as Atomic>::Tx,
-    ) -> Result<DocumentConfig, ChonkitError>
+    ) -> Result<Document, ChonkitError>
     where
         Self: Atomic,
     {
@@ -566,9 +618,11 @@ impl DocumentRepo for Repository {
         let document = map_err!(
             sqlx::query_as!(
                 Document,
-                "INSERT INTO documents(id, name, path, ext, hash, src, label, tags)
-             VALUES($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at",
+                r#"
+                INSERT INTO documents(id, name, path, ext, hash, src, label, tags)
+                VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at
+                "#,
                 id,
                 name,
                 path,
@@ -583,51 +637,38 @@ impl DocumentRepo for Repository {
         );
 
         let parse_insert = InsertConfig::new(document.id, parse_config);
-
-        let parse_config = map_err!(
-            sqlx::query_as!(
-                SelectConfig::<ParseConfig>,
-                r#"INSERT INTO parsers
-                (id, document_id, config)
-             VALUES
-                ($1, $2, $3)
-             ON CONFLICT(document_id) DO UPDATE SET config = $3
-             RETURNING
-                id, document_id, config AS "config: _", created_at, updated_at"#,
+        map_err!(
+            sqlx::query!(
+                r#"
+                INSERT INTO parsers (id, document_id, config)
+                VALUES ($1, $2, $3)
+                ON CONFLICT(document_id) DO UPDATE SET config = $3
+                "#,
                 parse_insert.id,
                 parse_insert.document_id,
                 parse_insert.config as Json<ParseConfig>,
             )
-            .fetch_one(&mut *tx)
+            .execute(&mut *tx)
             .await
         );
 
         let chunk_insert = InsertConfig::new(document.id, chunk_config);
-
-        let chunk_config = map_err!(
-            sqlx::query_as!(
-                SelectConfig::<ChunkConfig>,
-                r#"INSERT INTO chunkers
-                (id, document_id, config)
-             VALUES
-                ($1, $2, $3)
-             ON CONFLICT(document_id) DO UPDATE SET config = $3
-             RETURNING
-                id, document_id, config AS "config: _", created_at, updated_at
-            "#,
+        map_err!(
+            sqlx::query!(
+                r#"
+                INSERT INTO chunkers (id, document_id, config)
+                VALUES ($1, $2, $3)
+                ON CONFLICT(document_id) DO UPDATE SET config = $3
+                "#,
                 chunk_insert.id,
                 chunk_insert.document_id,
                 chunk_insert.config as Json<ChunkConfig>,
             )
-            .fetch_one(tx)
+            .execute(tx)
             .await
         );
 
-        Ok(DocumentConfig::new(
-            document,
-            chunk_config.config.0,
-            parse_config.config.0,
-        ))
+        Ok(document)
     }
 
     async fn get_document_assigned_collection_names(

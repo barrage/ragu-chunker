@@ -5,6 +5,7 @@ use std::future::Future;
 pub mod document;
 pub mod vector;
 
+/// Thin wrapper around a database connection pool that implements all core repository traits.
 #[derive(Debug, Clone)]
 pub struct Repository {
     pub client: sqlx::PgPool,

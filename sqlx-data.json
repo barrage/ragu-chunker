@@ -178,6 +178,106 @@
     },
     "query": "\n            SELECT collections.name, collections.provider FROM collections\n                WHERE collections.id IN (\n                        SELECT collection_id FROM embeddings\n                        WHERE embeddings.document_id = $1 \n                )\n            "
   },
+  "21f563dc869c4d59130c32ae53dde94fa59b0e60eb78d4a3d99782d09e83f6b6": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "path",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "ext",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "hash",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "src",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "tags",
+          "ordinal": 7,
+          "type_info": "TextArray"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 9,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT id, name, path, ext, hash, src, label, tags, created_at, updated_at \n                 FROM documents \n                 WHERE hash = $1"
+  },
+  "37a084ccebb9830bf2de7f20a8a2426dedeec733496b5dce917525fc80855354": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "path",
+          "ordinal": 1,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT id, path FROM documents WHERE src = $1"
+  },
   "3a4d13874245944429bafa08d719b9dcaf920ca8a356049ccc276fa628da796f": {
     "describe": {
       "columns": [],
@@ -250,6 +350,50 @@
     },
     "query": "INSERT INTO collections\n                (id, name, model, embedder, provider)\n             VALUES\n                ($1, $2, $3, $4, $5)\n             RETURNING \n                id, name, model, embedder, provider, created_at, updated_at\n             "
   },
+  "445148af5bb748a27d9762742727fea2e7f260d2a5f90fa750c6797fa3f71e18": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "document_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "collection_id",
+          "ordinal": 2,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 3,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      }
+    },
+    "query": "\n                    SELECT e.id, e.document_id, e.collection_id, e.created_at, e.updated_at \n                    FROM embeddings e\n                    LEFT JOIN documents\n                    ON e.document_id = documents.id\n                    WHERE collection_id = $1 AND e.created_at < documents.updated_at\n                "
+  },
   "4df7b4bf529a159c95ccb072479f5d8bd82d6f5dff6a8d2c658856cca8ceabb6": {
     "describe": {
       "columns": [
@@ -294,6 +438,19 @@
     },
     "query": "SELECT id, document_id, collection_id, created_at, updated_at \n             FROM embeddings\n             WHERE document_id = $1"
   },
+  "551c8bb46d8516b774c57caae4317d844936c3befbf20e3ebeef81aace62d7f7": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Timestamptz"
+        ]
+      }
+    },
+    "query": "UPDATE documents SET updated_at = $2 WHERE id = $1"
+  },
   "57bd676f6f34681c4187c914e65bc707f8870f98141fa477977862c83bc64bba": {
     "describe": {
       "columns": [
@@ -337,6 +494,38 @@
       }
     },
     "query": "SELECT \n                id,\n                document_id,\n                config AS \"config: _\",\n                created_at,\n                updated_at \n             FROM chunkers \n             WHERE document_id = $1"
+  },
+  "601781f11a0e11659fbbc36db32b49b7d545ec4ce5abb642c0a3f48a490258fc": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "path",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 2,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT id, path, updated_at FROM documents WHERE src = $1"
   },
   "6880e316e7056a286e2140ce4be5c496e87917b1b94b64860c89259b9d7b0236": {
     "describe": {
@@ -386,20 +575,19 @@
     },
     "query": "SELECT COUNT(id) FROM documents"
   },
-  "843c76dd68d9231af5b04d8fa1bce79b72ce24f5e2f5fb368d85d4f237f21888": {
+  "80a445643845731bb01cd3704596016707c92ac409ff283a46e954ec69fb4253": {
     "describe": {
       "columns": [],
       "nullable": [],
       "parameters": {
         "Left": [
-          "Text",
-          "Text",
-          "TextArray",
-          "Uuid"
+          "Uuid",
+          "Uuid",
+          "Jsonb"
         ]
       }
     },
-    "query": "\n            UPDATE documents SET \n            name = $1,\n            label = $2,\n            tags = $3\n            WHERE id = $4 \n        "
+    "query": "\n                INSERT INTO parsers (id, document_id, config)\n                VALUES ($1, $2, $3)\n                ON CONFLICT(document_id) DO UPDATE SET config = $3\n                "
   },
   "864b9b637365b3061e61eeffd8d6033714785dfd9f4c4f2d2f20ead6b910b6cf": {
     "describe": {
@@ -445,6 +633,83 @@
       }
     },
     "query": "SELECT id, document_id, collection_id, created_at, updated_at \n             FROM embeddings\n             WHERE document_id = $1 AND collection_id = $2"
+  },
+  "869ba10ed3b137dbb10b576ecaaa989cd6a0099eab6af6b8f636130d8df19ae1": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "path",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "ext",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "hash",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "src",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "tags",
+          "ordinal": 7,
+          "type_info": "TextArray"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 9,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text",
+          "TextArray",
+          "Uuid"
+        ]
+      }
+    },
+    "query": "\n                UPDATE documents SET name = $1, label = $2, tags = $3 WHERE id = $4 \n                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at"
   },
   "90382cb5610355f44397da5cb1c2d584efb0251ae5c153e20ceb27d38e88972e": {
     "describe": {
@@ -599,6 +864,20 @@
     },
     "query": "SELECT path FROM documents WHERE id = $1"
   },
+  "aa6292865e7a0997bda6c9e9806cc9e9f4cf2c500574b9f88d96becb4aa55c18": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Uuid",
+          "Jsonb"
+        ]
+      }
+    },
+    "query": "\n                INSERT INTO chunkers (id, document_id, config)\n                VALUES ($1, $2, $3)\n                ON CONFLICT(document_id) DO UPDATE SET config = $3\n                "
+  },
   "abf809e232ed05e8862161714d7a3e3a1138e20143b801dff6f921cbe40c8289": {
     "describe": {
       "columns": [],
@@ -680,27 +959,7 @@
     },
     "query": "SELECT id, name, model, embedder, provider, created_at, updated_at FROM collections WHERE id = $1"
   },
-  "c9ac68231870b5a43916eaeafbb2556bce9ae50fc3174c40a6d487a8e93c8eff": {
-    "describe": {
-      "columns": [
-        {
-          "name": "count",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        null
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid"
-        ]
-      }
-    },
-    "query": "SELECT COUNT(id) FROM embeddings WHERE $1::UUID IS NULL OR collection_id = $1"
-  },
-  "cc4b62f0f945007b688abc41830f0e387fd07458fac073d9da5231b2c8eb2a1e": {
+  "b9b7cef8d605d0fba13b2cde9ec4bb5f78664a8078a76ee0922ad277afbee5fe": {
     "describe": {
       "columns": [
         {
@@ -768,11 +1027,33 @@
       ],
       "parameters": {
         "Left": [
-          "Text"
+          "Text",
+          "Text",
+          "Uuid"
         ]
       }
     },
-    "query": "SELECT id, name, path, ext, hash, src, label, tags, created_at, updated_at \n             FROM documents \n             WHERE hash = $1"
+    "query": "\n                UPDATE documents SET path = $1, hash = $2 WHERE id = $3\n                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at"
+  },
+  "c9ac68231870b5a43916eaeafbb2556bce9ae50fc3174c40a6d487a8e93c8eff": {
+    "describe": {
+      "columns": [
+        {
+          "name": "count",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(id) FROM embeddings WHERE $1::UUID IS NULL OR collection_id = $1"
   },
   "d550dab50260a5be9e84f6fa336bcb9936096d98845eb8159160cfe982353d6a": {
     "describe": {
@@ -902,6 +1183,87 @@
       }
     },
     "query": "\n                WITH embeddings AS (SELECT document_id FROM embeddings WHERE collection_id = $1) \n                SELECT documents.id, documents.name FROM documents RIGHT JOIN embeddings ON documents.id = embeddings.document_id\n            "
+  },
+  "dd1c7b221a945bead6f739a402dff21062a7bb16082597cb3a45d3a70b766579": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "name",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "path",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "ext",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "hash",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "src",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "tags",
+          "ordinal": 7,
+          "type_info": "TextArray"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "updated_at",
+          "ordinal": 9,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Text",
+          "Text",
+          "Text",
+          "Text",
+          "Text",
+          "TextArray"
+        ]
+      }
+    },
+    "query": "\n                INSERT INTO documents(id, name, path, ext, hash, src, label, tags)\n                VALUES($1, $2, $3, $4, $5, $6, $7, $8)\n                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at\n                "
   },
   "e3379a354c06bea7d9c2c8842255f01b02dae9655b0e733c615d11cba412c886": {
     "describe": {

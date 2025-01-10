@@ -1,3 +1,5 @@
+use crate::config::QDRANT_ID;
+use crate::core::provider::Identity;
 use crate::core::vector::{
     CreateVectorCollection, VectorCollection, VectorDb, COLLECTION_EMBEDDING_MODEL_PROPERTY,
     COLLECTION_EMBEDDING_PROVIDER_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
@@ -26,7 +28,7 @@ use uuid::Uuid;
 /// Every collection has a "null" vector, i.e. a vector that is the same size as the embeddings,
 /// but with all values set to 0.0. The null vector is used to get the properties of the collection.
 ///
-/// It is jank, but there is no other way to do it.
+/// It is jank, but I haven't found another way to do it.
 pub type QdrantDb = Arc<Qdrant>;
 
 pub fn init(url: &str) -> QdrantDb {
@@ -38,12 +40,14 @@ pub fn init(url: &str) -> QdrantDb {
     )
 }
 
+impl Identity for Qdrant {
+    fn id(&self) -> &'static str {
+        QDRANT_ID
+    }
+}
+
 #[async_trait::async_trait]
 impl VectorDb for Qdrant {
-    fn id(&self) -> &'static str {
-        "qdrant"
-    }
-
     async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError> {
         let collection_names = map_err!(self.list_collections().await)
             .collections

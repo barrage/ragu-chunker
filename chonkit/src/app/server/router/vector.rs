@@ -26,7 +26,7 @@ use uuid::Uuid;
     )
 )]
 pub(super) async fn list_collections(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     payload: Option<Query<PaginationSort>>,
 ) -> Result<Json<List<Collection>>, ChonkitError> {
     let Query(pagination) = payload.unwrap_or_default();
@@ -47,7 +47,7 @@ pub(super) async fn list_collections(
     ),
 )]
 pub(super) async fn list_collections_display(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     payload: Option<Query<PaginationSort>>,
 ) -> Result<Json<List<CollectionDisplay>>, ChonkitError> {
     let Query(pagination) = payload.unwrap_or_default();
@@ -68,7 +68,7 @@ pub(super) async fn list_collections_display(
     ) 
 )]
 pub(super) async fn collection_display(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CollectionDisplay>, ChonkitError> {
     let collection = services.vector.get_collection_display(id).await?;
@@ -86,7 +86,7 @@ pub(super) async fn collection_display(
     request_body = CreateCollectionPayload
 )]
 pub(super) async fn create_collection(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Json(payload): Json<CreateCollectionPayload>,
 ) -> Result<(StatusCode, Json<Collection>), ChonkitError> {
     let collection = services.vector
@@ -154,7 +154,7 @@ pub(super) async fn delete_collection(
     ),
 )]
 pub(super) async fn list_embedding_models(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Path(provider): Path<String>,
 ) -> Result<Json<HashMap<String, usize>>, ChonkitError> {
     let models = services.vector
@@ -176,7 +176,7 @@ pub(super) async fn list_embedding_models(
     request_body = EmbeddingSinglePayload
 )]
 pub(super) async fn embed(
-    services: axum::extract::State<ServiceState>,
+    State(services): axum::extract::State<ServiceState>,
     Json(payload): Json<EmbeddingSinglePayload>,
 ) -> Result<(StatusCode, Json<Embedding>), ChonkitError> {
     let EmbeddingSinglePayload {
@@ -280,7 +280,7 @@ pub(super) async fn batch_embed(
     ),
 )]
 pub(super) async fn list_embedded_documents(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Query(payload): Query<ListEmbeddingsPayload>,
 ) -> Result<Json<List<Embedding>>, ChonkitError> {
     let ListEmbeddingsPayload {
@@ -289,6 +289,22 @@ pub(super) async fn list_embedded_documents(
     } = payload;
 
     let embeddings = services.vector.list_embeddings(pagination.unwrap_or_default(), collection_id).await?;
+    Ok(Json(embeddings))
+}
+
+#[utoipa::path(
+    get,
+    path = "/collections/{collection_id}/outdated", 
+    responses(
+        (status = 200, description = "List of all embeddings whose `created_at` field is less than their respective document's `updated_at` field", body = inline(Vec<Embedding>)),
+        (status = 500, description = "Internal server error")
+    ),
+)]
+pub(super) async fn list_outdated_embeddings(
+    State(services): State<ServiceState>,
+    Path(collection_id): Path<Uuid>,
+) -> Result<Json<Vec<Embedding>>, ChonkitError> {
+    let embeddings = services.vector.list_outdated_embeddings(collection_id).await?;
     Ok(Json(embeddings))
 }
 
@@ -302,7 +318,7 @@ pub(super) async fn list_embedded_documents(
     request_body = SearchPayload
 )]
 pub(super) async fn search(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Json(search): Json<SearchPayload>,
 ) -> Result<Json<Vec<String>>, ChonkitError> {
     let chunks = services.vector.search(search).await?;
@@ -322,7 +338,7 @@ pub(super) async fn search(
     ),
 )]
 pub(super) async fn count_embeddings(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Path((collection_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<usize>, ChonkitError> {
     let amount = services.vector
@@ -344,7 +360,7 @@ pub(super) async fn count_embeddings(
     ),
 )]
 pub(super) async fn delete_embeddings(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Path((collection_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ChonkitError> {
     services.vector

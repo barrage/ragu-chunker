@@ -45,8 +45,10 @@ impl SlidingWindow {
             return Ok(vec![]);
         }
 
+        let input_size = input.chars().fold(0, |acc, el| acc + el.len_utf8());
+
         // Return whole input if it fits
-        if input.len() <= size + overlap {
+        if input_size <= size + overlap * 2 {
             return Ok(vec![input]);
         }
 
@@ -54,7 +56,6 @@ impl SlidingWindow {
 
         let mut start = 0;
         let mut end = *size;
-        let input_size = input.len();
 
         loop {
             let mut chunk_start = if start == 0 { 0 } else { start - overlap };
@@ -66,7 +67,7 @@ impl SlidingWindow {
             }
 
             // Snap to last char boundary
-            while !input.is_char_boundary(chunk_end) && chunk_end < input.len() - 1 {
+            while !input.is_char_boundary(chunk_end) && chunk_end < input_size {
                 chunk_end += 1;
             }
 
@@ -97,8 +98,8 @@ impl SlidingWindow {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn sliding_window_works() {
+    #[test]
+    fn sliding_window_works() {
         let input = "Sticks and stones may break my bones, but words will never leverage agile frameworks to provide a robust synopsis for high level overviews.";
         let window = SlidingWindow::new(30, 20).unwrap();
         let chunks = window.chunk(input).unwrap();
@@ -109,8 +110,8 @@ mod tests {
         assert_eq!(&input[70..], chunks[3]);
     }
 
-    #[tokio::test]
-    async fn sliding_window_empty() {
+    #[test]
+    fn sliding_window_empty() {
         let input = "";
         let window = SlidingWindow::new(1, 0).unwrap();
         let chunks = window.chunk(input).unwrap();
@@ -118,12 +119,21 @@ mod tests {
         assert!(chunks.is_empty());
     }
 
-    #[tokio::test]
-    async fn sliding_window_small_input() {
+    #[test]
+    fn sliding_window_small_input() {
         let input = "Foobar";
         let window = SlidingWindow::new(30, 20).unwrap();
         let chunks = window.chunk(input).unwrap();
 
         assert_eq!(input, chunks[0]);
+    }
+
+    #[test]
+    fn sliding_window_unicode() {
+        let input = "Dobrodošli u budućnost, počeo je kraj\nVrata pakla se otvaraju zapalila su raj\nNe, ovo nije bajka, ovo nije san,\nOvo je rase čovječanske sudnji dan";
+        let window = SlidingWindow::new(40, 0).unwrap();
+        let chunks = window.chunk(input).unwrap();
+
+        assert_eq!(4, chunks.len());
     }
 }

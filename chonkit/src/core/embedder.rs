@@ -1,11 +1,9 @@
+use super::provider::Identity;
 use crate::error::ChonkitError;
 
 /// Operations related to embeddings and their models.
 #[async_trait::async_trait]
-pub trait Embedder {
-    /// Return the embedder's identifier.
-    fn id(&self) -> &'static str;
-
+pub trait Embedder: Identity {
     /// Used for creating the initial collection.
     fn default_model(&self) -> (String, usize);
 

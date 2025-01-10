@@ -38,6 +38,7 @@ docx-rs = "0.4.17"
 regex = "1.10.6"
 suitest = "0.1.4"
 pdfium-render = { version = "0.8.23" }
+calamine = "0.26.1"
 testcontainers = "0.22.0"
 testcontainers-modules = { version = "0.10.0", features = ["postgres"] }
 
@@ -71,10 +72,10 @@ anyhow = { version = "1.0.93", features = ["backtrace"] }
 vaultrs = { version = "0.7.3", optional = true }
 base64 = "0.22.1"
 
-reqwest = { version = "0.12.7", features = ["json"], optional = true }
+reqwest = { version = "0.12.7", features = ["json"] }
 
 [features]
-default = ["weaviate", "qdrant", "fe-local", "openai", "auth-vault", "gdoc"]
+default = ["weaviate", "qdrant", "fe-local", "openai", "auth-vault", "gdrive"]
 fe-local = ["chonkit-embedders", "chonkit-embedders?/fe-local"]
 fe-remote = ["chonkit-embedders", "chonkit-embedders?/fe-remote"]
 cuda = ["chonkit-embedders?/cuda"]
@@ -82,4 +83,4 @@ openai = ["chonkit-embedders", "chonkit-embedders?/openai"]
 weaviate = ["weaviate-community"]
 qdrant = ["qdrant-client"]
 auth-vault = ["vaultrs"]
-gdoc = ["reqwest"]
+gdrive = []

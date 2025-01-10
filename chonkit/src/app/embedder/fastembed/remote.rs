@@ -1,14 +1,21 @@
-use crate::config::{DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE};
-use crate::{core::embedder::Embedder, error::ChonkitError, map_err};
-
+use crate::config::{
+    DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE, FEMBED_EMBEDDER_ID,
+};
+use crate::{
+    core::{embedder::Embedder, provider::Identity},
+    error::ChonkitError,
+    map_err,
+};
 pub use chonkit_embedders::fastembed::remote::RemoteFastEmbedder;
+
+impl Identity for RemoteFastEmbedder {
+    fn id(&self) -> &'static str {
+        FEMBED_EMBEDDER_ID
+    }
+}
 
 #[async_trait::async_trait]
 impl Embedder for RemoteFastEmbedder {
-    fn id(&self) -> &'static str {
-        "fembed"
-    }
-
     fn default_model(&self) -> (String, usize) {
         (
             String::from(DEFAULT_COLLECTION_EMBEDDING_MODEL),

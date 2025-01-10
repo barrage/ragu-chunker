@@ -1,14 +1,19 @@
-use crate::config::{DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE};
+use crate::config::{
+    DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE, FEMBED_EMBEDDER_ID,
+};
+use crate::core::provider::Identity;
 use crate::{core::embedder::Embedder, error::ChonkitError, map_err};
 
 pub use chonkit_embedders::fastembed::local::LocalFastEmbedder;
 
+impl Identity for LocalFastEmbedder {
+    fn id(&self) -> &'static str {
+        FEMBED_EMBEDDER_ID
+    }
+}
+
 #[async_trait::async_trait]
 impl Embedder for LocalFastEmbedder {
-    fn id(&self) -> &'static str {
-        "fembed"
-    }
-
     fn default_model(&self) -> (String, usize) {
         (
             String::from(DEFAULT_COLLECTION_EMBEDDING_MODEL),

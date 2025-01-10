@@ -6,6 +6,6 @@ chonkit/test/docs/*
 !chonkit/test/docs/test.docx
 .fastembed_cache
 /**/.fastembed_cache
-/upload
-/**/upload
+/data
+/data/**
 .env

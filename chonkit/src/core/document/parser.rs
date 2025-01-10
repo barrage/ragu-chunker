@@ -1,5 +1,6 @@
 use crate::{core::model::document::DocumentType, error::ChonkitError, map_err};
 use docx::DocxParser;
+use excel::ExcelParser;
 use pdf::PdfParser;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -7,6 +8,7 @@ use text::TextParser;
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 
 pub mod docx;
+pub mod excel;
 pub mod pdf;
 pub mod text;
 
@@ -80,6 +82,7 @@ pub enum Parser {
     Text(TextParser),
     Pdf(PdfParser),
     Docx(DocxParser),
+    Excel(ExcelParser),
 }
 
 impl Parser {
@@ -90,6 +93,7 @@ impl Parser {
             DocumentType::Text(_) => Self::Text(TextParser::default()),
             DocumentType::Docx => Self::Docx(DocxParser::default()),
             DocumentType::Pdf => Self::Pdf(PdfParser::default()),
+            DocumentType::Excel => Self::Excel(ExcelParser::default()),
         }
     }
 
@@ -100,6 +104,7 @@ impl Parser {
             DocumentType::Text(_) => Self::Text(TextParser::new(config)),
             DocumentType::Docx => Self::Docx(DocxParser::new(config)),
             DocumentType::Pdf => Self::Pdf(PdfParser::new(config)),
+            DocumentType::Excel => Self::Excel(ExcelParser::new(config)),
         }
     }
 
@@ -108,6 +113,7 @@ impl Parser {
             Self::Text(p) => p.parse(input),
             Self::Pdf(p) => p.parse(input),
             Self::Docx(p) => p.parse(input),
+            Self::Excel(p) => p.parse(input),
         }
     }
 }

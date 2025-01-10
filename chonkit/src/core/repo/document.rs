@@ -6,13 +6,15 @@ use crate::{
         model::{
             document::{
                 config::{DocumentChunkConfig, DocumentParseConfig},
-                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentUpdate,
+                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentMetadataUpdate,
+                DocumentParameterUpdate,
             },
             List, PaginationSort,
         },
     },
     error::ChonkitError,
 };
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 /// Keep tracks of documents and their chunking/parsing configurations.
@@ -69,6 +71,23 @@ pub trait DocumentRepo {
     async fn list_all_document_paths(&self, src: &str)
         -> Result<Vec<(Uuid, String)>, ChonkitError>;
 
+    /// List all document updated_at timestamps from the repository based on the source.
+    /// Returns a list of tuples of document ID, their path, and their updated_at.
+    async fn list_all_document_update_times(
+        &self,
+        src: &str,
+    ) -> Result<Vec<(Uuid, String, DateTime<Utc>)>, ChonkitError>;
+
+    /// Updates a document's `updated_at` field.
+    ///
+    /// * `id`: Document ID.
+    /// * `updated_at`: New updated_at value.
+    async fn update_document_updated_at(
+        &self,
+        id: Uuid,
+        updated_at: DateTime<Utc>,
+    ) -> Result<(), ChonkitError>;
+
     /// List documents with limit and offset with additional relations for embeddings.
     ///
     /// * `p`: Pagination params.
@@ -90,12 +109,22 @@ pub trait DocumentRepo {
     /// Update document metadata.
     ///
     /// * `id`: Document ID.
-    /// * `document`: Update payload.
-    async fn update_document(
+    /// * `document`: Metadata update payload.
+    async fn update_document_metadata(
         &self,
         id: uuid::Uuid,
-        document: DocumentUpdate<'_>,
-    ) -> Result<u64, ChonkitError>;
+        document: DocumentMetadataUpdate<'_>,
+    ) -> Result<Document, ChonkitError>;
+
+    /// Update a document's parameters.
+    ///
+    /// * `id`: Document ID.
+    /// * `document`: Parameter update payload.
+    async fn update_document_parameters(
+        &self,
+        id: uuid::Uuid,
+        document: DocumentParameterUpdate<'_>,
+    ) -> Result<Document, ChonkitError>;
 
     /// Remove document metadata by id.
     ///
@@ -162,7 +191,7 @@ pub trait DocumentRepo {
         parse_config: ParseConfig,
         chunk_config: ChunkConfig,
         tx: &mut <Self as Atomic>::Tx,
-    ) -> Result<DocumentConfig, ChonkitError>
+    ) -> Result<Document, ChonkitError>
     where
         Self: Atomic;
 

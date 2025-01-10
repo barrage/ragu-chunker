@@ -10,6 +10,7 @@ pub mod core;
 /// Error types.
 pub mod error;
 
+use app::server::router::HttpConfiguration;
 use clap::Parser;
 use tracing::info;
 
@@ -19,14 +20,22 @@ async fn main() {
     let app = crate::app::state::AppState::new(&args).await;
 
     let addr = args.address();
-    let origins = args.allowed_origins();
-    let headers = args.allowed_headers();
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("error while starting TCP listener");
 
-    let router = crate::app::server::router::router(app, origins, headers);
+    let cors_origins = args.allowed_origins();
+    let cors_headers = args.allowed_headers();
+    let cookie_domain = args.cookie_domain();
+
+    let config = HttpConfiguration {
+        cors_origins: std::sync::Arc::from(&*cors_origins.leak()),
+        cors_headers: std::sync::Arc::from(&*cors_headers.leak()),
+        cookie_domain: cookie_domain.into(),
+    };
+
+    let router = crate::app::server::router::router(app, config);
 
     info!("Listening on {addr}");
 

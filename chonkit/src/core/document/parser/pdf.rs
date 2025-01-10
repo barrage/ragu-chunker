@@ -20,9 +20,7 @@ impl PdfParser {
     pub fn new(config: ParseConfig) -> Self {
         Self { config }
     }
-}
 
-impl PdfParser {
     pub fn parse(&self, input: &[u8]) -> Result<String, ChonkitError> {
         let _start = Instant::now();
 

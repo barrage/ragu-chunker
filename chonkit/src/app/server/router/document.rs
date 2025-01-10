@@ -1,7 +1,7 @@
 use crate::{
     app::{
         server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
-        state::{AppState, ServiceState},
+        state::ServiceState,
     },
     core::{
         document::parser::ParseConfig,
@@ -21,6 +21,8 @@ use axum::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use super::Force;
+
 #[utoipa::path(
     get,
     path = "/documents",
@@ -34,7 +36,7 @@ use uuid::Uuid;
     ),
 )]
 pub(super) async fn list_documents(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     params: Option<Query<ListDocumentsPayload>>,
 ) -> Result<Json<List<Document>>, ChonkitError> {
     let Query(params) = params.unwrap_or_default();
@@ -60,7 +62,7 @@ pub(super) async fn list_documents(
     ),
 )]
 pub(super) async fn list_documents_display(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     payload: Option<Query<ListDocumentsPayload>>,
 ) -> Result<Json<List<DocumentDisplay>>, ChonkitError> {
     let Query(payload) = payload.unwrap_or_default();
@@ -90,7 +92,7 @@ pub(super) async fn list_documents_display(
     )
 )]
 pub(super) async fn get_document(
-    services: axum::extract::State<ServiceState>,
+    State(services): axum::extract::State<ServiceState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DocumentConfig>, ChonkitError> {
     let document = services.document.get_config(id).await?;
@@ -110,7 +112,7 @@ pub(super) async fn get_document(
     )
 )]
 pub(super) async fn delete_document(
-    services: axum::extract::State<ServiceState>,
+    State(services): axum::extract::State<ServiceState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ChonkitError> {
     services.document.delete(id).await?;
@@ -128,10 +130,12 @@ pub(super) async fn delete_document(
     ),
 )]
 pub(super) async fn upload_documents(
-    services: axum::extract::State<ServiceState>,
+    State(services): axum::extract::State<ServiceState>,
+    force: Option<Query<Force>>,
     mut form: axum::extract::Multipart,
 ) -> Result<Json<UploadResult>, ChonkitError> {
     let mut documents = vec![];
+    let force = force.map(|f| f.force).unwrap_or_default();
     let mut errors = HashMap::<String, Vec<String>>::new();
 
     while let Ok(Some(field)) = form.next_field().await {
@@ -167,8 +171,7 @@ pub(super) async fn upload_documents(
 
         let upload = DocumentUpload::new(name.to_string(), typ, &file);
 
-        // Only store provider that supports upload currently
-        let document = match services.document.upload("fs", upload).await {
+        let document = match services.document.upload(upload, force).await {
             Ok(doc) => doc,
             Err(e) => {
                 tracing::error!("{e}");
@@ -200,7 +203,7 @@ pub(super) async fn upload_documents(
     request_body = ConfigUpdatePayload
 )]
 pub(super) async fn update_document_config(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Path(document_id): Path<Uuid>,
     Json(config): Json<ConfigUpdatePayload>,
 ) -> Result<StatusCode, ChonkitError> {
@@ -234,11 +237,12 @@ pub(super) async fn update_document_config(
     request_body = ChunkPreviewPayload
 )]
 pub(super) async fn chunk_preview(
-    services: State<ServiceState>,
+    State(services): State<ServiceState>,
     Path(id): Path<Uuid>,
     Json(config): Json<ChunkPreviewPayload>,
 ) -> Result<Json<Vec<String>>, ChonkitError> {
     let chunks = services.document.chunk_preview(id, config).await?;
+
     Ok(Json(chunks))
 }
 
@@ -256,11 +260,12 @@ pub(super) async fn chunk_preview(
     request_body(content = ParseConfig, description = "Optional parse configuration for preview")
 )]
 pub(super) async fn parse_preview(
-    services: State<ServiceState>,
+    // google_access_token: Option<axum::extract::Extension<GoogleAccessToken>>,
+    State(services): State<ServiceState>,
     Path(id): Path<Uuid>,
-    Json(parser): Json<ParseConfig>,
+    Json(config): Json<ParseConfig>,
 ) -> Result<Json<String>, ChonkitError> {
-    let parsed = services.document.parse_preview(id, parser).await?;
+    let parsed = services.document.parse_document(id, config).await?;
     Ok(Json(parsed))
 }
 
@@ -276,9 +281,9 @@ pub(super) async fn parse_preview(
     ),
 )]
 pub(super) async fn sync(
-    state: axum::extract::State<AppState>,
+    services: axum::extract::State<ServiceState>,
     Path(provider): Path<String>,
 ) -> Result<StatusCode, ChonkitError> {
-    state.services.document.sync(&provider).await?;
+    services.document.sync(&provider).await?;
     Ok(StatusCode::NO_CONTENT)
 }

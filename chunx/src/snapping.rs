@@ -19,8 +19,8 @@ const SNAPPING_WINDOW_DEFAULT_OVERLAP: usize = 5;
 ///
 /// The default delimiter is `'.'`.
 /// The default `size` and `overlap` are 1000 and 10.
-/// The default forward skips are [SnappingWindow::DEFAULT_SKIP_F].
-/// The default backward skips are [SnappingWindow::DEFAULT_SKIP_B].
+/// The default forward skips are [DEFAULT_SKIP_F].
+/// The default backward skips are [DEFAULT_SKIP_B].
 ///
 /// Keep in mind the configuration for this chunker is different; The `size` will
 /// represent the amount of bytes in the chunk and the `overlap` will represent
@@ -30,10 +30,10 @@ const SNAPPING_WINDOW_DEFAULT_OVERLAP: usize = 5;
 /// recommended.
 #[derive(Debug, Clone)]
 pub struct SnappingWindow {
-    /// Here `size` represents the amount of bytes in the base chunk
-    /// while `overlap` will represent the amount of leading/trailing sentences.
+    /// The amount of bytes in the base chunk.
     pub size: usize,
 
+    /// The amount of leading/trailing sentences.
     pub overlap: usize,
 
     /// The delimiter to use to split sentences. At time of writing the most common one is ".".

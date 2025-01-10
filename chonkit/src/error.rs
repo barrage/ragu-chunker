@@ -19,8 +19,8 @@ pub enum ChonkitErr {
     #[error("Does not exist; {0}")]
     DoesNotExist(String),
 
-    #[error("Invalid file name; {0}")]
-    InvalidFileName(String),
+    #[error("Invalid file; {0}")]
+    InvalidFile(String),
 
     #[error("Entity already exists; {0}")]
     AlreadyExists(String),
@@ -30,6 +30,12 @@ pub enum ChonkitErr {
 
     #[error("Invalid embedding model; {0}")]
     InvalidEmbeddingModel(String),
+
+    #[error("Invalid parameter; {0}")]
+    InvalidParameter(String),
+
+    #[error("Operation not supported; {0}")]
+    OperationUnsupported(String),
 
     #[error("chunks: {0}")]
     Chunks(String),
@@ -95,6 +101,22 @@ pub enum ChonkitErr {
 
     #[error("encoding: {0}")]
     Encoding(#[from] base64::DecodeError),
+
+    #[error("reqwest: {0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("invalid header: {0}")]
+    InvalidHeader(#[from] reqwest::header::InvalidHeaderValue),
+
+    #[cfg(feature = "gdrive")]
+    #[error("google: {0}")]
+    GoogleApi(crate::app::external::google::GoogleError),
+
+    #[error("calamine: {0}")]
+    Calamine(#[from] calamine::Error),
+
+    #[error("excel: {0}")]
+    Xlsx(#[from] calamine::XlsxError),
 }
 
 #[derive(Debug, Error)]
@@ -145,6 +167,15 @@ macro_rules! err {
             line!(),
             column!(),
             $crate::error::ChonkitErr::$ty $( (format!($l, $( $args, )*)) )?,
+        ))
+    };
+
+    ($expr:expr) => {
+        Err(ChonkitError::new(
+            file!(),
+            line!(),
+            column!(),
+            $expr,
         ))
     };
 }

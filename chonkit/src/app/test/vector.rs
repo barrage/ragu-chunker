@@ -7,10 +7,9 @@
 mod vector_service_integration_tests {
     use crate::{
         app::test::{TestState, TestStateConfig},
-        config::DEFAULT_COLLECTION_NAME,
+        config::{DEFAULT_COLLECTION_NAME, FEMBED_EMBEDDER_ID},
         core::{
             model::document::{DocumentInsert, DocumentType, TextDocumentType},
-            provider::ProviderFactory,
             repo::{document::DocumentRepo, vector::VectorRepo},
             service::vector::dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload},
         },
@@ -19,14 +18,19 @@ mod vector_service_integration_tests {
     use suitest::{after_all, before_all, cleanup};
 
     const TEST_UPLOAD_PATH: &str = "__vector_service_test_upload__";
+    const TEST_GDRIVE_PATH: &str = "__vector_service_test_gdrive_download__";
 
     #[before_all]
     async fn setup() -> TestState {
         let _ = tokio::fs::remove_dir_all(TEST_UPLOAD_PATH).await;
+        let _ = tokio::fs::remove_dir_all(TEST_GDRIVE_PATH).await;
+
         tokio::fs::create_dir(TEST_UPLOAD_PATH).await.unwrap();
+        tokio::fs::create_dir(TEST_GDRIVE_PATH).await.unwrap();
 
         let test_state = TestState::init(TestStateConfig {
             fs_store_path: TEST_UPLOAD_PATH.to_string(),
+            gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
         })
         .await;
 
@@ -41,7 +45,7 @@ mod vector_service_integration_tests {
                         .app
                         .providers
                         .embedding
-                        .get_provider("fembed")
+                        .get_provider(FEMBED_EMBEDDER_ID)
                         .unwrap()
                         .id(),
                 )
@@ -54,11 +58,13 @@ mod vector_service_integration_tests {
     #[cleanup]
     async fn cleanup() {
         let _ = tokio::fs::remove_dir_all(TEST_UPLOAD_PATH).await;
+        let _ = tokio::fs::remove_dir_all(TEST_GDRIVE_PATH).await;
     }
 
     #[after_all]
     async fn teardown() {
         let _ = tokio::fs::remove_dir_all(TEST_UPLOAD_PATH).await;
+        let _ = tokio::fs::remove_dir_all(TEST_GDRIVE_PATH).await;
     }
 
     #[test]
@@ -68,7 +74,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -110,7 +116,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -155,7 +161,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -184,7 +190,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -214,7 +220,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -236,7 +242,7 @@ mod vector_service_integration_tests {
                 "fs",
             );
 
-            let document = postgres.insert(create).await.unwrap();
+            let document = postgres.insert_document(create).await.unwrap();
 
             let content = r#"Hello World!"#;
 
@@ -281,7 +287,10 @@ mod vector_service_integration_tests {
             assert_eq!(collection.name, collection_name);
             assert_eq!(document.id, embeddings.document_id);
 
-            let amount = postgres.remove_by_id(document.id, None).await.unwrap();
+            let amount = postgres
+                .remove_document_by_id(document.id, None)
+                .await
+                .unwrap();
             assert_eq!(1, amount);
         }
     }
@@ -294,7 +303,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -320,7 +329,7 @@ mod vector_service_integration_tests {
                 "fs",
             );
 
-            let document = postgres.insert(create).await.unwrap();
+            let document = postgres.insert_document(create).await.unwrap();
 
             let content = r#"Hello World!"#;
 
@@ -341,7 +350,10 @@ mod vector_service_integration_tests {
 
             assert!(embeddings.is_none());
 
-            let amount = postgres.remove_by_id(document.id, None).await.unwrap();
+            let amount = postgres
+                .remove_document_by_id(document.id, None)
+                .await
+                .unwrap();
             assert_eq!(1, amount);
         }
     }
@@ -354,7 +366,7 @@ mod vector_service_integration_tests {
             .app
             .providers
             .embedding
-            .get_provider("fembed")
+            .get_provider(FEMBED_EMBEDDER_ID)
             .unwrap()
             .clone();
 
@@ -376,7 +388,7 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let document = postgres.insert(create).await.unwrap();
+            let document = postgres.insert_document(create).await.unwrap();
 
             let content = r#"Hello World!"#;
             let create = CreateEmbeddings {
@@ -392,7 +404,10 @@ mod vector_service_integration_tests {
 
             assert!(matches!(error, ChonkitErr::AlreadyExists(_)));
 
-            let amount = postgres.remove_by_id(document.id, None).await.unwrap();
+            let amount = postgres
+                .remove_document_by_id(document.id, None)
+                .await
+                .unwrap();
             assert_eq!(1, amount);
         }
     }

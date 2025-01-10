@@ -3,7 +3,7 @@
 use crate::core::{
     chunk::ChunkConfig,
     document::parser::ParseConfig,
-    model::{document::DocumentConfig, Pagination, PaginationSort},
+    model::{document::Document, Pagination, PaginationSort},
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct UploadResult {
-    pub documents: Vec<DocumentConfig>,
+    pub documents: Vec<Document>,
 
     /// Map form keys to errors
     pub errors: HashMap<String, Vec<String>>,

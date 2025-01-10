@@ -4,8 +4,9 @@ use crate::core::model::collection::{
 };
 use crate::core::model::{List, Pagination, PaginationSort};
 use crate::core::provider::ProviderState;
+use crate::core::repo::document::DocumentRepo;
 use crate::core::repo::vector::VectorRepo;
-use crate::core::repo::Atomic;
+use crate::core::repo::{Atomic, Repository};
 use crate::core::vector::CreateVectorCollection;
 use crate::error::{ChonkitErr, ChonkitError};
 use crate::{err, map_err, transaction};
@@ -16,22 +17,18 @@ use validify::{Validate, Validify};
 
 /// High level operations related to embeddings (vectors) and their storage.
 #[derive(Clone)]
-pub struct VectorService<Repo> {
-    repo: Repo,
+pub struct VectorService {
+    repo: Repository,
     providers: ProviderState,
 }
 
-impl<R> VectorService<R> {
-    pub fn new(repo: R, providers: ProviderState) -> Self {
+impl VectorService {
+    pub fn new(repo: Repository, providers: ProviderState) -> Self {
         Self { repo, providers }
     }
 }
 
-impl<Repo> VectorService<Repo>
-where
-    Repo: VectorRepo + Atomic + Send + Sync,
-    Repo::Tx: Send + Sync,
-{
+impl VectorService {
     /// List vector collections.
     ///
     /// * `p`: Pagination params.
@@ -315,7 +312,6 @@ where
 
         let mut embeddings = embedder.embed(&[&search.query], &collection.model).await?;
 
-        debug_assert!(!embeddings.is_empty());
         debug_assert_eq!(1, embeddings.len());
 
         vector_db
@@ -344,6 +340,13 @@ where
         self.repo.list_embeddings(pagination, collection_id).await
     }
 
+    pub async fn list_outdated_embeddings(
+        &self,
+        collection_id: Uuid,
+    ) -> Result<Vec<Embedding>, ChonkitError> {
+        self.repo.list_outdated_embeddings(collection_id).await
+    }
+
     pub async fn delete_embeddings(
         &self,
         collection_id: Uuid,
@@ -364,7 +367,35 @@ where
             .delete_embeddings(document_id, collection_id)
             .await?;
 
+        tracing::info!(
+            "Deleted {amount_deleted} embeddings in collection '{}'",
+            collection.name
+        );
+
         Ok(amount_deleted)
+    }
+
+    pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<usize, ChonkitError> {
+        let mut total_deleted = 0;
+
+        let collections = self
+            .repo
+            .get_document_assigned_collection_names(document_id)
+            .await?;
+
+        for (collection, provider) in collections.iter() {
+            let vector_db = self.providers.vector.get_provider(provider)?;
+            let amount = vector_db.count_vectors(collection, document_id).await?;
+            vector_db.delete_embeddings(collection, document_id).await?;
+            total_deleted += amount;
+        }
+
+        tracing::info!(
+            "Deleted {total_deleted} embeddings from {} collections",
+            collections.len()
+        );
+
+        Ok(total_deleted)
     }
 
     pub async fn count_embeddings(

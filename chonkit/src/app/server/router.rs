@@ -7,7 +7,8 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
-use std::{str::FromStr, time::Duration};
+use serde::Deserialize;
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tower_http::{
     classify::ServerErrorsFailureClass,
     cors::{AllowCredentials, CorsLayer},
@@ -20,20 +21,32 @@ use utoipa_swagger_ui::SwaggerUi;
 pub(super) mod document;
 pub(super) mod vector;
 
-pub fn router(state: AppState, cors_origins: Vec<String>, cors_headers: Vec<String>) -> Router {
-    let origins = cors_origins
-        .into_iter()
+#[cfg(feature = "gdrive")]
+pub(super) mod google;
+
+#[derive(Debug, Clone)]
+pub struct HttpConfiguration {
+    pub cors_origins: Arc<[String]>,
+    pub cors_headers: Arc<[String]>,
+    pub cookie_domain: Arc<str>,
+}
+
+pub fn router(state: AppState, config: HttpConfiguration) -> Router {
+    let origins = config
+        .cors_origins
+        .iter()
         .map(|origin| {
             tracing::info!("CORS - Adding {origin} to allowed origins");
-            HeaderValue::from_str(&origin)
+            HeaderValue::from_str(origin)
         })
         .map(Result::unwrap);
 
-    let headers = cors_headers
-        .into_iter()
+    let headers = config
+        .cors_headers
+        .iter()
         .map(|header| {
             tracing::info!("CORS - Adding {header} to allowed headers");
-            HeaderName::from_str(&header)
+            HeaderName::from_str(header)
         })
         .map(Result::unwrap);
 
@@ -49,54 +62,94 @@ pub fn router(state: AppState, cors_origins: Vec<String>, cors_headers: Vec<Stri
             Method::PATCH,
         ]);
 
-    use document::*;
-    use vector::*;
-
-    let sync = Router::new()
-        .route("/documents/sync/:provider", get(document::sync))
+    let info_router = Router::new()
         .route("/info", get(app_config))
         .with_state(state.clone());
 
     let batch_router = Router::new()
-        .route("/embeddings/batch", post(batch_embed))
+        .route("/embeddings/batch", post(vector::batch_embed))
         .with_state(state.batch_embedder.clone());
 
     let router = Router::new()
-        .route("/documents", get(list_documents))
-        .route("/documents", post(upload_documents))
+        .route("/documents", get(document::list_documents))
+        .route("/documents", post(document::upload_documents))
         .route_layer(DefaultBodyLimit::max(100_000_000))
-        .route("/documents/:id", get(get_document))
-        .route("/documents/:id", delete(delete_document))
-        .route("/documents/:id/config", put(update_document_config))
-        .route("/documents/:id/chunk/preview", post(chunk_preview))
-        .route("/documents/:id/parse/preview", post(parse_preview))
-        .route("/collections", get(list_collections))
-        .route("/collections", post(create_collection))
-        .route("/collections/:id", get(get_collection))
-        .route("/collections/:id", delete(delete_collection))
+        .route("/documents/:id", get(document::get_document))
+        .route("/documents/:id", delete(document::delete_document))
+        .route(
+            "/documents/:id/config",
+            put(document::update_document_config),
+        )
+        .route(
+            "/documents/:id/chunk/preview",
+            post(document::chunk_preview),
+        )
+        .route(
+            "/documents/:id/parse/preview",
+            post(document::parse_preview),
+        )
+        .route("/documents/sync/:provider", get(document::sync))
+        .route("/collections", get(vector::list_collections))
+        .route("/collections", post(vector::create_collection))
+        .route("/collections/:id", get(vector::get_collection))
+        .route("/collections/:id", delete(vector::delete_collection))
         .route(
             "/collections/:collection_id/documents/:document_id",
-            delete(delete_embeddings),
+            delete(vector::delete_embeddings),
         )
         .route(
             "/collections/:collection_id/documents/:document_id/count",
-            get(count_embeddings),
+            get(vector::count_embeddings),
         )
-        .route("/embeddings", get(list_embedded_documents))
-        .route("/embeddings", post(embed))
-        .route("/embeddings/:provider/models", get(list_embedding_models))
-        .route("/search", post(search))
-        .route("/display/documents", get(list_documents_display))
-        .route("/display/collections", get(list_collections_display))
-        .route("/display/collections/:id", get(collection_display))
+        .route("/embeddings", get(vector::list_embedded_documents))
+        .route(
+            "/embeddings/:collection_id/outdated",
+            get(vector::list_outdated_embeddings),
+        )
+        .route("/embeddings", post(vector::embed))
+        .route(
+            "/embeddings/:provider/models",
+            get(vector::list_embedding_models),
+        )
+        .route("/search", post(vector::search))
+        .route("/display/documents", get(document::list_documents_display))
+        .route(
+            "/display/collections",
+            get(vector::list_collections_display),
+        )
+        .route("/display/collections/:id", get(vector::collection_display))
         .with_state(state.services.clone())
         .merge(batch_router)
-        .merge(sync);
+        .merge(info_router);
+
+    #[cfg(feature = "gdrive")]
+    let router = {
+        let gdrive_router = Router::new()
+            .route("/google/documents/import", post(google::import_files))
+            .route(
+                "/google/documents/import/:file_id",
+                post(google::import_file),
+            )
+            .route(
+                "/google/documents/outdated",
+                get(google::list_outdated_documents),
+            )
+            .layer(axum::middleware::from_fn(
+                crate::app::server::middleware::extract_google_access_token,
+            ))
+            .with_state(state.services.clone());
+
+        let gdrive_auth_router = Router::new()
+            .route("/google/auth", post(google::authorize))
+            .with_state((state.services.clone(), config.clone()));
+
+        router.merge(Router::new().nest("/external", gdrive_router.merge(gdrive_auth_router)))
+    };
 
     #[cfg(feature = "auth-vault")]
     let router = router.layer(axum::middleware::from_fn_with_state(
         state.vault.clone(),
-        crate::app::auth::auth_check,
+        crate::app::server::middleware::vault_verify_token,
     ));
 
     router
@@ -134,13 +187,28 @@ pub fn router(state: AppState, cors_origins: Vec<String>, cors_headers: Vec<Stri
         )
         .layer(cors)
         // Unprotected at all times
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(
+            SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", {
+                #[allow(unused_mut)]
+                let mut api = ApiDoc::openapi();
+
+                #[cfg(feature = "gdrive")]
+                api.merge(google::GDriveApiDoc::openapi());
+
+                api
+            }),
+        )
         // Has to go last to exclude all the tracing/cors layers
         .route("/_health", get(health_check))
 }
 
 async fn health_check() -> impl IntoResponse {
     "OK"
+}
+
+#[derive(Deserialize, utoipa::ToSchema)]
+struct Force {
+    force: bool,
 }
 
 #[utoipa::path(

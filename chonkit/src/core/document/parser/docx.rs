@@ -17,9 +17,7 @@ impl DocxParser {
     pub fn new(config: ParseConfig) -> Self {
         Self { config }
     }
-}
 
-impl DocxParser {
     pub fn parse(&self, input: &[u8]) -> Result<String, ChonkitError> {
         let start = Instant::now();
 

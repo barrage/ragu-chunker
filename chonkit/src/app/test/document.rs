@@ -7,7 +7,6 @@ mod document_service_integration_tests {
         core::{
             document::parser::{docx::DocxParser, pdf::PdfParser, text::TextParser, ParseConfig},
             model::document::{DocumentType, TextDocumentType},
-            provider::ProviderFactory,
             service::{
                 document::dto::DocumentUpload,
                 vector::dto::{CreateCollectionPayload, CreateEmbeddings},
@@ -16,6 +15,7 @@ mod document_service_integration_tests {
     };
 
     const TEST_UPLOAD_PATH: &str = "__document_service_test_upload__";
+    const TEST_GDRIVE_PATH: &str = "__document_service_test_gdrive_download__";
     const TEST_DOCS_PATH: &str = "test/docs";
     use suitest::{after_all, before_all, cleanup};
 
@@ -26,6 +26,7 @@ mod document_service_integration_tests {
 
         let test_state = TestState::init(TestStateConfig {
             fs_store_path: TEST_UPLOAD_PATH.to_string(),
+            gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
         })
         .await;
 
@@ -53,7 +54,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload("fs", upload).await.unwrap();
+        let document = service.upload(upload, false).await.unwrap();
 
         let text_from_bytes = TextParser::default().parse(content).unwrap();
         let text_from_store = service.get_content(document.id).await.unwrap();
@@ -78,7 +79,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload("fs", upload).await.unwrap();
+        let document = service.upload(upload, false).await.unwrap();
 
         let text_from_bytes = PdfParser::default().parse(content).unwrap();
         let text_from_store = service.get_content(document.id).await.unwrap();
@@ -103,7 +104,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload("fs", upload).await.unwrap();
+        let document = service.upload(upload, false).await.unwrap();
 
         let text_from_bytes = DocxParser::default().parse(content).unwrap();
         let text_from_store = service.get_content(document.id).await.unwrap();
@@ -116,7 +117,39 @@ mod document_service_integration_tests {
     }
 
     #[test]
+    async fn upload_overwrite_works(state: TestState) {
+        let service = state.app.services.document.clone();
+
+        let content = &tokio::fs::read(format!("{TEST_DOCS_PATH}/test.md"))
+            .await
+            .unwrap();
+        let upload = DocumentUpload {
+            name: "UPLOAD_OVERWRITE_TEST".to_string(),
+            ty: DocumentType::Text(TextDocumentType::Md),
+            file: content,
+        };
+
+        let regular = service.upload(upload.clone(), false).await.unwrap();
+
+        let upload = DocumentUpload {
+            name: "UPLOAD_OVERWRITE_TEST".to_string(),
+            ty: DocumentType::Text(TextDocumentType::Md),
+            file: b"foo".as_slice(),
+        };
+
+        let forced = service.upload(upload, true).await.unwrap();
+
+        assert_eq!(regular.id, forced.id);
+        assert_eq!(regular.path, forced.path);
+
+        let content = service.get_content(forced.id).await.unwrap();
+
+        assert_eq!("foo", content);
+    }
+
+    #[test]
     async fn update_parser(state: TestState) {
+        let file_service = state.app.services.document.clone();
         let service = state.app.services.document.clone();
 
         let content = &tokio::fs::read(format!("{TEST_DOCS_PATH}/test.pdf"))
@@ -129,7 +162,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload("fs", upload).await.unwrap();
+        let document = file_service.upload(upload, false).await.unwrap();
 
         let config = ParseConfig::new(10, 20)
             .use_range()
@@ -152,7 +185,7 @@ mod document_service_integration_tests {
         );
         assert_eq!(config.range, parse_config.range);
 
-        service.delete(document.id).await.unwrap();
+        file_service.delete(document.id).await.unwrap();
 
         assert!(tokio::fs::metadata(document.path).await.is_err());
     }
@@ -175,7 +208,7 @@ mod document_service_integration_tests {
                     .app
                     .services
                     .document
-                    .upload("fs", upload)
+                    .upload(upload, false)
                     .await
                     .unwrap();
 

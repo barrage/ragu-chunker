@@ -2,6 +2,8 @@ use crate::error::ChonkitError;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::provider::Identity;
+
 // Collection properties.
 
 pub const COLLECTION_ID_PROPERTY: &str = "collection_id";
@@ -109,9 +111,7 @@ impl<'a> CreateVectorCollection<'a> {
 
 /// Vector database operations.
 #[async_trait::async_trait]
-pub trait VectorDb {
-    fn id(&self) -> &'static str;
-
+pub trait VectorDb: Identity {
     /// List available vector collections.
     async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError>;
 

@@ -6,3 +6,6 @@ mod dto;
 
 /// HTTP API.
 pub mod router;
+
+/// HTTP API middleware.
+pub mod middleware;

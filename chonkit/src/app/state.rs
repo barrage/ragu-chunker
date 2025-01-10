@@ -1,8 +1,7 @@
-use super::{
-    batch::{BatchEmbedder, BatchEmbedderHandle},
-    document::store::FsDocumentStore,
-};
+use super::batch::{BatchEmbedder, BatchEmbedderHandle};
 use crate::{
+    app::document::store::FsDocumentStore,
+    config::FS_STORE_ID,
     core::{
         chunk::ChunkConfig,
         document::store::DocumentStore,
@@ -12,11 +11,9 @@ use crate::{
         service::{document::DocumentService, vector::VectorService},
         vector::VectorDb,
     },
-    err,
     error::ChonkitError,
 };
 use serde::Serialize;
-use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
 use tracing_subscriber::EnvFilter;
 
@@ -33,7 +30,7 @@ pub struct AppState {
     pub providers: AppProviderState,
 
     #[cfg(feature = "auth-vault")]
-    pub vault: crate::app::auth::VaultAuthenticator,
+    pub vault: crate::app::auth::vault::VaultAuthenticator,
 }
 
 impl AppState {
@@ -46,32 +43,56 @@ impl AppState {
             .with_env_filter(EnvFilter::from(args.log()))
             .init();
 
-        let postgres = crate::app::repo::pg::init(&args.db_url()).await;
+        let repository = crate::core::repo::Repository::new(&args.db_url()).await;
 
         let vector_provider = Self::init_vector_providers(args);
         let embedding_provider = Self::init_embedding_providers(args);
-        let document_provider = Self::init_document_providers(args);
+
+        let storage = Self::init_storage(args);
 
         let providers = AppProviderState {
-            database: postgres.clone(),
+            database: repository.clone(),
             vector: vector_provider,
             embedding: embedding_provider,
-            document: document_provider,
+            storage,
         };
 
-        let document = DocumentService::new(postgres.clone(), providers.clone().into());
-        let vector = VectorService::new(postgres, providers.clone().into());
+        let document = DocumentService::new(repository.clone(), providers.clone().into());
+
+        for provider in providers.storage.list_provider_ids() {
+            match document.sync(provider).await {
+                Ok(_) => tracing::info!("Synced document provider {provider}"),
+                Err(e) => e.print(),
+            }
+        }
+
+        let vector = VectorService::new(repository.clone(), providers.clone().into());
+
+        let external = ExternalServiceFactory::new(
+            repository,
+            providers.clone().into(),
+            #[cfg(feature = "gdrive")]
+            crate::app::external::google::auth::GoogleOAuthConfig::new(
+                &args.google_oauth_client_id(),
+                &args.google_oauth_client_secret(),
+            ),
+        );
 
         document.create_default_document().await;
+
         for provider in providers.vector.list_provider_ids() {
             for e_provider in providers.embedding.list_provider_ids() {
                 vector.create_default_collection(provider, e_provider).await;
             }
         }
 
-        let service_state = ServiceState { document, vector };
+        let service_state = ServiceState {
+            document,
+            vector,
+            external,
+        };
 
-        let batch_embedder = Self::spawn_batch_embedder(service_state.clone());
+        let batch_embedder = Self::init_batch_embedder(service_state.clone());
 
         #[cfg(feature = "auth-vault")]
         let vault = Self::init_vault(args).await;
@@ -86,8 +107,10 @@ impl AppState {
     }
 
     #[cfg(feature = "auth-vault")]
-    async fn init_vault(args: &crate::config::StartArgs) -> crate::app::auth::VaultAuthenticator {
-        crate::app::auth::VaultAuthenticator::new(
+    async fn init_vault(
+        args: &crate::config::StartArgs,
+    ) -> crate::app::auth::vault::VaultAuthenticator {
+        crate::app::auth::vault::VaultAuthenticator::new(
             args.vault_url(),
             args.vault_role_id(),
             args.vault_secret_id(),
@@ -96,25 +119,27 @@ impl AppState {
         .await
     }
 
-    fn init_vector_providers(args: &crate::config::StartArgs) -> Arc<VectorDbProvider> {
+    fn init_vector_providers(args: &crate::config::StartArgs) -> VectorDbProvider {
         let mut provider = VectorDbProvider::default();
 
         #[cfg(feature = "qdrant")]
         {
             let qdrant = crate::app::vector::qdrant::init(&args.qdrant_url());
-            provider.register(qdrant.id(), qdrant);
+            provider.register(qdrant);
+            tracing::info!("Registered Qdrant vector provider");
         }
 
         #[cfg(feature = "weaviate")]
         {
             let weaviate = crate::app::vector::weaviate::init(&args.weaviate_url());
-            provider.register(weaviate.id(), weaviate);
+            provider.register(weaviate);
+            tracing::info!("Registered Weaviate vector provider");
         }
 
-        Arc::new(provider)
+        provider
     }
 
-    fn init_embedding_providers(_args: &crate::config::StartArgs) -> Arc<EmbeddingProvider> {
+    fn init_embedding_providers(_args: &crate::config::StartArgs) -> EmbeddingProvider {
         #[cfg(not(any(feature = "fe-local", feature = "fe-remote", feature = "openai")))]
         compile_error!("one of `fe-local`, `fe-remote` or `openai` features must be enabled");
 
@@ -124,7 +149,8 @@ impl AppState {
         {
             let fastembed =
                 Arc::new(crate::app::embedder::fastembed::local::LocalFastEmbedder::new());
-            provider.register(fastembed.id(), fastembed);
+            provider.register(fastembed);
+            tracing::info!("Registered local Fastembed embedding provider");
         }
 
         // Remote implementations take precedence. This will override the local implementation
@@ -136,7 +162,8 @@ impl AppState {
                     _args.fembed_url(),
                 ),
             );
-            provider.register(fastembed.id(), fastembed);
+            provider.register(fastembed);
+            tracing::info!("Registered remote Fastembed embedding provider");
         }
 
         #[cfg(feature = "openai")]
@@ -144,22 +171,37 @@ impl AppState {
             let openai = Arc::new(crate::app::embedder::openai::OpenAiEmbeddings::new(
                 &_args.open_ai_key(),
             ));
-            provider.register(openai.id(), openai);
+            provider.register(openai);
+            tracing::info!("Registered OpenAI embedding provider");
         }
 
-        Arc::new(provider)
+        provider
     }
 
-    fn init_document_providers(args: &crate::config::StartArgs) -> Arc<DocumentStoreProvider> {
-        let mut provider = DocumentStoreProvider::default();
+    fn init_storage(args: &crate::config::StartArgs) -> DocumentStorageProvider {
+        let mut storage = DocumentStorageProvider::default();
 
-        let fs_store = Arc::new(FsDocumentStore::new(&args.upload_path()));
-        provider.register(fs_store.id(), fs_store);
+        let fs = Arc::new(FsDocumentStore::new(&args.upload_path()));
+        storage.register(fs);
+        tracing::info!("Registered local FS storage provider");
 
-        Arc::new(provider)
+        #[cfg(feature = "gdrive")]
+        {
+            let drive = Arc::new(crate::app::external::google::store::GoogleDriveStore::new(
+                &args.google_drive_download_path(),
+            ));
+            storage.register(drive);
+            tracing::info!("Registered Google Drive storage provider");
+        };
+
+        storage
     }
 
-    fn spawn_batch_embedder(state: ServiceState) -> BatchEmbedderHandle {
+    // fn init_external_apis(_args: &crate::config::StartArgs) -> ExternalApiProvider {
+    //
+    // }
+
+    fn init_batch_embedder(state: ServiceState) -> BatchEmbedderHandle {
         let (tx, rx) = tokio::sync::mpsc::channel(128);
         BatchEmbedder::new(rx, state).start();
         tx
@@ -191,13 +233,11 @@ impl AppState {
             embedding_providers.insert(provider.to_string(), models);
         }
 
-        let document_providers = self
-            .providers
-            .document
-            .list_provider_ids()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let document_providers = vec![
+            FS_STORE_ID.to_string(),
+            #[cfg(feature = "gdrive")]
+            crate::config::GOOGLE_STORE_ID.to_string(),
+        ];
 
         Ok(AppConfig {
             vector_providers: self
@@ -226,12 +266,12 @@ impl AppState {
     pub fn new_test(
         services: ServiceState,
         providers: AppProviderState,
-        #[cfg(feature = "auth-vault")] vault: super::auth::VaultAuthenticator,
+        #[cfg(feature = "auth-vault")] vault: super::auth::vault::VaultAuthenticator,
     ) -> Self {
         Self {
             services: services.clone(),
             providers,
-            batch_embedder: Self::spawn_batch_embedder(services),
+            batch_embedder: Self::init_batch_embedder(services),
             #[cfg(feature = "auth-vault")]
             vault,
         }
@@ -241,10 +281,10 @@ impl AppState {
 /// Concrete version of [ProviderState].
 #[derive(Clone)]
 pub struct AppProviderState {
-    pub database: PgPool,
-    pub vector: Arc<VectorDbProvider>,
-    pub embedding: Arc<EmbeddingProvider>,
-    pub document: Arc<DocumentStoreProvider>,
+    pub database: Repository,
+    pub vector: VectorDbProvider,
+    pub embedding: EmbeddingProvider,
+    pub storage: DocumentStorageProvider,
 }
 
 impl From<AppProviderState> for ProviderState {
@@ -252,15 +292,18 @@ impl From<AppProviderState> for ProviderState {
         ProviderState {
             vector: value.vector,
             embedding: value.embedding,
-            document: value.document,
+            storage: value.storage,
         }
     }
 }
 
 #[derive(Clone)]
 pub struct ServiceState {
-    pub document: DocumentService<PgPool>,
-    pub vector: VectorService<PgPool>,
+    pub document: DocumentService,
+
+    pub vector: VectorService,
+
+    pub external: ExternalServiceFactory,
 }
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
@@ -279,61 +322,4 @@ pub struct AppConfig {
     pub default_chunkers: Vec<ChunkConfig>,
 
     pub supported_document_types: Vec<String>,
-}
-
-/// Creates and implements functions for `$target` to easily get an instance of whatever
-/// the provider is for, i.e. `$provider_out`.
-///
-/// Additionally, creates a constant with the given feature literals so we can easily list them
-/// to the client.
-macro_rules! provider {
-    (
-        $( $target:ident -> $provider_out:ident ),+
-    ) => {
-        $(
-            #[derive(Clone, Default)]
-            pub struct $target {
-                providers: HashMap<&'static str, Arc<dyn $provider_out + Send + Sync>>,
-            }
-
-            impl ProviderFactory<Arc<dyn $provider_out + Send + Sync>> for $target {
-                /// AUTO-GENERATED BY THE `provider!` MACRO.
-                /// SEE [crate::app::state] FOR MORE DETAILS.
-                /// Obtain the provider for the given enum variant from the application state.
-                fn get_provider(
-                    &self,
-                    input: &str,
-                ) -> Result<Arc<dyn $provider_out + Send + Sync>, ChonkitError> {
-                    match self.providers.get(input).cloned() {
-                        Some(e) => Ok(e),
-                        None => err!(InvalidProvider, "{input}"),
-                    }
-                }
-
-                /// AUTO-GENERATED BY THE `provider!` MACRO.
-                /// SEE [crate::app::state] FOR MORE DETAILS.
-                /// A list of available providers for a given functionality.
-                fn list_provider_ids(&self) -> Vec<&'static str> {
-                    self.providers.keys().cloned().collect()
-                }
-
-                /// AUTO-GENERATED BY THE `provider!` MACRO.
-                /// SEE [crate::app::state] FOR MORE DETAILS.
-                /// Register a new provider in this factory.
-                fn register(
-                    &mut self,
-                    id: &'static str,
-                    provider: Arc<dyn $provider_out + Send + Sync>,
-                ) {
-                    self.providers.insert(id, provider);
-                }
-            }
-        )+
-    };
-}
-
-provider! {
-    VectorDbProvider -> VectorDb,
-    DocumentStoreProvider -> DocumentStore,
-    EmbeddingProvider -> Embedder
 }

@@ -14,7 +14,7 @@ use crate::{
     map_err,
 };
 use chrono::{DateTime, Utc};
-use sqlx::{prelude::FromRow, PgPool, Postgres};
+use sqlx::{prelude::FromRow, Postgres};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -421,6 +421,27 @@ impl VectorRepo for Repository {
             .await
         )
         .rows_affected())
+    }
+
+    async fn list_outdated_embeddings(
+        &self,
+        collection_id: Uuid,
+    ) -> Result<Vec<Embedding>, ChonkitError> {
+        Ok(map_err!(
+            sqlx::query_as!(
+                Embedding,
+                r#"
+                    SELECT e.id, e.document_id, e.collection_id, e.created_at, e.updated_at 
+                    FROM embeddings e
+                    LEFT JOIN documents
+                    ON e.document_id = documents.id
+                    WHERE collection_id = $1 AND e.created_at < documents.updated_at
+                "#,
+                collection_id
+            )
+            .fetch_all(&self.client)
+            .await
+        ))
     }
 }
 

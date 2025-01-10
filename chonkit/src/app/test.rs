@@ -5,19 +5,14 @@ mod vector;
 
 use super::{
     document::store::FsDocumentStore,
-    state::{
-        AppProviderState, AppState, DocumentStoreProvider, EmbeddingProvider, ServiceState,
-        VectorDbProvider,
-    },
+    state::{AppProviderState, AppState, ServiceState},
 };
-use crate::core::service::{document::DocumentService, vector::VectorService};
-use crate::{
-    config::DEFAULT_COLLECTION_EMBEDDING_MODEL,
-    core::{
-        document::store::DocumentStore, embedder::Embedder, provider::ProviderFactory,
-        vector::VectorDb,
-    },
+use crate::core::{
+    provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
+    repo::Repository,
+    service::{document::DocumentService, external::ExternalServiceFactory, vector::VectorService},
 };
+use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ContainerAsync, GenericImage};
 use testcontainers_modules::postgres::Postgres;
@@ -29,7 +24,7 @@ struct TestState {
     /// Holds test containers so they don't get dropped.
     pub _containers: TestContainers,
 
-    /// Holds the downstream service providers necessary for chonkit services.
+    /// Holds the application state.
     pub app: AppState,
 
     /// Holds the list of active vector storage providers. Depends on feature flags.
@@ -43,7 +38,7 @@ impl TestState {
     pub async fn init(config: TestStateConfig) -> Self {
         // Set up test containers
 
-        let (postgres, postgres_img) = init_postgres().await;
+        let (postgres, postgres_img) = init_repository().await;
 
         #[cfg(feature = "qdrant")]
         let (qdrant, qdrant_img) = init_qdrant().await;
@@ -53,10 +48,18 @@ impl TestState {
 
         // Set up document storage
 
-        let mut store = DocumentStoreProvider::default();
+        let mut storage = DocumentStorageProvider::default();
 
         let fs_store = Arc::new(FsDocumentStore::new(&config.fs_store_path));
-        store.register(fs_store.id(), fs_store);
+        storage.register(fs_store);
+
+        #[cfg(feature = "gdrive")]
+        {
+            let drive = Arc::new(crate::app::external::google::store::GoogleDriveStore::new(
+                &config.gdrive_download_path,
+            ));
+            storage.register(drive);
+        }
 
         // Set up vector storage
 
@@ -66,13 +69,13 @@ impl TestState {
         #[cfg(feature = "qdrant")]
         {
             active_vector_providers.push(qdrant.id());
-            vector.register(qdrant.id(), qdrant);
+            vector.register(qdrant);
         }
 
         #[cfg(feature = "weaviate")]
         {
             active_vector_providers.push(weaviate.id());
-            vector.register(weaviate.id(), weaviate);
+            vector.register(weaviate);
         }
 
         // Set up embedders
@@ -88,7 +91,7 @@ impl TestState {
                 ),
             );
             active_embedding_providers.push(fastembed.id());
-            embedding.register(fastembed.id(), fastembed);
+            embedding.register(fastembed);
         }
 
         // If active, overrides the fe-local implementation since we keep it on the same ID.
@@ -102,14 +105,14 @@ impl TestState {
             if !active_embedding_providers.contains(&fastembed.id()) {
                 active_embedding_providers.push(fastembed.id());
             }
-            embedding.register(fastembed.id(), fastembed);
+            embedding.register(fastembed);
         }
 
         let providers = AppProviderState {
             database: postgres.clone(),
-            vector: Arc::new(vector.clone()),
-            embedding: Arc::new(embedding),
-            document: Arc::new(store.clone()),
+            vector: vector.clone(),
+            embedding,
+            storage,
         };
 
         let _containers = TestContainers {
@@ -122,7 +125,13 @@ impl TestState {
 
         let services = ServiceState {
             vector: VectorService::new(postgres.clone(), providers.clone().into()),
-            document: DocumentService::new(postgres, providers.clone().into()),
+            document: DocumentService::new(postgres.clone(), providers.clone().into()),
+            external: ExternalServiceFactory::new(
+                postgres,
+                providers.clone().into(),
+                #[cfg(feature = "gdrive")]
+                crate::app::external::google::auth::GoogleOAuthConfig::new("", ""),
+            ),
         };
 
         let app = AppState::new_test(
@@ -143,6 +152,8 @@ impl TestState {
 
 struct TestStateConfig {
     pub fs_store_path: String,
+    // We do not feature gate this to make our lives easier.
+    pub gdrive_download_path: String,
 }
 
 /// Holds test container images so they don't get dropped during execution of test suites.
@@ -160,7 +171,7 @@ struct TestContainers {
 /// Runs the migrations in the container.
 /// When using suitest's [before_all][suitest::before_all], make sure you return this, othwerise the
 /// container will get dropped and cleaned up.
-pub async fn init_postgres() -> (sqlx::PgPool, PostgresContainer) {
+pub async fn init_repository() -> (Repository, PostgresContainer) {
     let pg_image = Postgres::default()
         .start()
         .await
@@ -169,7 +180,7 @@ pub async fn init_postgres() -> (sqlx::PgPool, PostgresContainer) {
     let pg_host = pg_image.get_host().await.unwrap();
     let pg_port = pg_image.get_host_port_ipv4(5432).await.unwrap();
     let pg_url = format!("postgresql://postgres:postgres@{pg_host}:{pg_port}/postgres");
-    (crate::app::repo::pg::init(&pg_url).await, pg_image)
+    (crate::core::repo::Repository::new(&pg_url).await, pg_image)
 }
 
 /// Setup a qdrant test container and connect to it using QdrantDb.

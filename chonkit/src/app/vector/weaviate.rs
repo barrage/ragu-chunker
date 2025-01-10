@@ -1,3 +1,5 @@
+use crate::config::WEAVIATE_ID;
+use crate::core::provider::Identity;
 use crate::core::vector::{
     CreateVectorCollection, VectorCollection, VectorDb, COLLECTION_EMBEDDING_MODEL_PROPERTY,
     COLLECTION_EMBEDDING_PROVIDER_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
@@ -28,12 +30,14 @@ pub fn init(url: &str) -> WeaviateDb {
     Arc::new(WeaviateClient::new(url, None, None).expect("error initialising weaviate"))
 }
 
+impl Identity for WeaviateClient {
+    fn id(&self) -> &'static str {
+        WEAVIATE_ID
+    }
+}
+
 #[async_trait::async_trait]
 impl VectorDb for WeaviateClient {
-    fn id(&self) -> &'static str {
-        "weaviate"
-    }
-
     async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError> {
         let classes = match self.schema.get().await {
             Ok(classes) => classes,

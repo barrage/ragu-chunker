@@ -60,7 +60,7 @@ impl BatchEmbedder {
                         tracing::info!("Starting job '{job_id}' | Adding {} | Removing {}", add.len(), remove.len());
 
                         tokio::spawn(
-                            Self::execute_job(job_id, state, add,remove, collection, result_tx)
+                            Self::execute_job(job_id, state, add, remove, collection, result_tx)
                         );
                     }
 
@@ -170,8 +170,7 @@ impl BatchEmbedder {
             let report = EmbeddingAddReportBuilder::new(document.id, collection.id);
 
             // Get the content and chunk it
-
-            let content = ok_or_continue!(services.document.get_content(document_id).await);
+            let content = ok_or_continue!(services.document.get_content(document.id).await);
             let chunks = ok_or_continue!(services.document.get_chunks(&document, &content).await);
             let chunks = match chunks {
                 crate::core::chunk::ChunkedDocument::Ref(r) => r,
@@ -228,6 +227,8 @@ impl BatchEmbedder {
     }
 }
 
+pub type JobResult = Result<JobReport, ChonkitError>;
+
 /// Used for batch embedding jobs.
 #[derive(Debug)]
 pub struct BatchJob {
@@ -278,14 +279,7 @@ struct JobEvent {
     job_id: Uuid,
 
     /// Result of the embedding process.
-    result: JobResult,
-}
-
-/// Result of embedding a single document.
-#[derive(Debug)]
-pub enum JobResult {
-    Ok(JobReport),
-    Err(ChonkitError),
+    result: Result<JobReport, ChonkitError>,
 }
 
 #[derive(Debug, Serialize)]

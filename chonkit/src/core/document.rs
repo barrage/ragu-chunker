@@ -1,6 +1,9 @@
 use sha2::{Digest, Sha256};
 
+/// Parsing implementations for various file types.
 pub mod parser;
+
+/// File system storage implementations.
 pub mod store;
 
 /// Return a SHA256 hash of the input.

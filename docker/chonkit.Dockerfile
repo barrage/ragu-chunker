@@ -3,7 +3,7 @@ ARG ONX_VERSION=1.20.1
 FROM rust:latest AS builder
 
 ARG ONX_VERSION
-ARG FEATURES="weaviate openai"
+ARG FEATURES="weaviate openai gdrive"
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN mkdir onnxruntime && curl -sL https://github.com/microsoft/onnxruntime/relea
 
 WORKDIR /app/chonkit
 
-RUN echo "FEATURES: ${FEATURES}"
+RUN echo "Building with: ${FEATURES}"
 RUN cargo build --no-default-features -F "${FEATURES}" --release --target-dir ./target
 
 FROM debian:latest
@@ -26,8 +26,8 @@ ARG ONX_VERSION
 
 WORKDIR /app
 
-# Create upload directory
-RUN mkdir -p data/upload
+# Create upload directories
+RUN mkdir -p data/upload data/gdrive
 
 COPY --from=builder /app/chonkit/target/release/chonkit ./chonkit
 COPY --from=builder /app/chonkit/migrations ./migrations
