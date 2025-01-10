@@ -34,7 +34,7 @@ impl ChonkitError {
 
             #[cfg(feature = "weaviate")]
             E::Weaviate(_) => SC::INTERNAL_SERVER_ERROR,
-            E::Uuid(_) => SC::INTERNAL_SERVER_ERROR,
+            E::Uuid(_) => SC::BAD_REQUEST,
             E::Chunks(_) => SC::UNPROCESSABLE_ENTITY,
             E::ParseConfig(_) => SC::UNPROCESSABLE_ENTITY,
             E::Unauthorized => SC::UNAUTHORIZED,
@@ -132,7 +132,7 @@ impl IntoResponse for ChonkitError {
             CE::Qdrant(_) => (status, "qdrant".to_string()).into_response(),
 
             CE::Axum(_) => (status, "axum".to_string()).into_response(),
-            CE::Uuid(e) => (status, e.to_string()).into_response(),
+            CE::Uuid(_) => (status, "Invalid UUID format").into_response(),
             CE::Chunks(e) => (status, e.to_string()).into_response(),
             CE::Chunker(e) => (status, e.to_string()).into_response(),
             CE::ParseConfig(e) => (status, e.to_string()).into_response(),

@@ -467,6 +467,7 @@ pub mod dto {
         pub provider: Option<String>,
 
         /// Amount of results to return.
+        #[validate(range(min = 1.))]
         pub limit: Option<u32>,
     }
 

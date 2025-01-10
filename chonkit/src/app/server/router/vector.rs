@@ -79,7 +79,8 @@ pub(super) async fn collection_display(
     post,
     path = "/collections", 
     responses(
-        (status = 200, description = "Collection created successfully", body = Collection),
+        (status = 201, description = "Collection created successfully", body = Collection),
+        (status = 409, description = "Collection already exists"),
         (status = 500, description = "Internal server error")
     ),
     request_body = CreateCollectionPayload
@@ -87,11 +88,11 @@ pub(super) async fn collection_display(
 pub(super) async fn create_collection(
     services: State<ServiceState>,
     Json(payload): Json<CreateCollectionPayload>,
-) -> Result<Json<Collection>, ChonkitError> {
+) -> Result<(StatusCode, Json<Collection>), ChonkitError> {
     let collection = services.vector
         .create_collection( payload)
         .await?;
-    Ok(Json(collection))
+    Ok((StatusCode::CREATED, Json(collection)))
 }
 
 #[utoipa::path(
@@ -99,6 +100,7 @@ pub(super) async fn create_collection(
     path = "/collections/{id}", 
     responses(
         (status = 200, description = "Collection retrieved successfully", body = Collection),
+        (status = 400, description = "Invalid collection ID format"),
         (status = 404, description = "Collection not found"),
         (status = 500, description = "Internal server error")
     ),
@@ -108,8 +110,10 @@ pub(super) async fn create_collection(
 )]
 pub(super) async fn get_collection(
     services: State<ServiceState>,
-    Path(collection_id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Result<Json<Collection>, ChonkitError> {
+    let collection_id = map_err!(Uuid::parse_str(&id_str));
+
     let collection = services.vector.get_collection(collection_id).await?;
     Ok(Json(collection))
 }
@@ -119,7 +123,7 @@ pub(super) async fn get_collection(
     path = "/collections/{id}", 
     responses(
         (status = 204, description = "Collection deleted successfully"),
-        (status = 404, description = "Collection not found"),
+        (status = 400, description = "Invalid collection ID format"),
         (status = 500, description = "Internal server error")
     ),
     params(
@@ -128,8 +132,10 @@ pub(super) async fn get_collection(
 )]
 pub(super) async fn delete_collection(
     services: State<ServiceState>,
-    Path(collection_id): Path<Uuid>,
+    Path(id_str): Path<String>,
 ) -> Result<StatusCode, ChonkitError> {
+    let collection_id = map_err!(Uuid::parse_str(&id_str));
+
     services.vector
         .delete_collection(collection_id)
         .await?;
