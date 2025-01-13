@@ -178,12 +178,11 @@ pub(super) async fn list_embedding_models(
 pub(super) async fn embed(
     services: axum::extract::State<ServiceState>,
     Json(payload): Json<EmbeddingSinglePayload>,
-) -> Result<StatusCode, ChonkitError> {
+) -> Result<(StatusCode, Json<Embedding>), ChonkitError> {
     let EmbeddingSinglePayload {
         document: document_id,
         collection,
     } = payload;
-
 
     let document = services.document.get_document(document_id).await?;
     let collection = services.vector.get_collection(collection).await?;
@@ -206,11 +205,11 @@ pub(super) async fn embed(
         chunks: &chunks,
     };
 
-    services.vector
+    let embedding = services.vector
         .create_embeddings(create)
         .await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok((StatusCode::CREATED, Json(embedding)))
 }
 
 #[utoipa::path(
@@ -289,7 +288,7 @@ pub(super) async fn list_embedded_documents(
         pagination,
     } = payload;
 
-    let embeddings = services.vector.list_embeddings(pagination, collection_id).await?;
+    let embeddings = services.vector.list_embeddings(pagination.unwrap_or_default(), collection_id).await?;
     Ok(Json(embeddings))
 }
 

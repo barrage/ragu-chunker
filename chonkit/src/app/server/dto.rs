@@ -75,7 +75,7 @@ pub(super) struct ListEmbeddingsPayload {
     #[validate]
     #[serde(flatten)]
     #[param(inline)]
-    pub pagination: Pagination,
+    pub pagination: Option<Pagination>,
 
     /// Filter by collection.
     pub collection: Option<Uuid>,
