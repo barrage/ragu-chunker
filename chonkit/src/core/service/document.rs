@@ -157,6 +157,10 @@ where
 
         let existing = self.repo.get_by_hash(&hash).await?;
 
+        // The default parser parses the whole input so we use it
+        // to check whether the document has any content. Reject if empty.
+        Parser::new(ty).parse(file)?;
+
         if let Some(Document { name: existing, .. }) = existing {
             return err!(
                 AlreadyExists,
