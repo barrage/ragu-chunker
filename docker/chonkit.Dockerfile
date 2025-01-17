@@ -27,7 +27,7 @@ ARG ONX_VERSION
 WORKDIR /app
 
 # Create upload directory
-RUN mkdir upload
+RUN mkdir -p data/upload
 
 COPY --from=builder /app/chonkit/target/release/chonkit ./chonkit
 COPY --from=builder /app/chonkit/migrations ./migrations
