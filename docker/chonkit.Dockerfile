@@ -3,7 +3,7 @@ ARG ONX_VERSION=1.20.1
 FROM rust:latest AS builder
 
 ARG ONX_VERSION
-ARG FEATURES="qdrant weaviate openai"
+ARG FEATURES="weaviate openai"
 
 WORKDIR /app
 
