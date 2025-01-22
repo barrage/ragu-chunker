@@ -26,16 +26,7 @@ impl SlidingWindow {
         }
         Ok(Self { size, overlap })
     }
-}
 
-impl Default for SlidingWindow {
-    fn default() -> Self {
-        Self::new(SLIDING_WINDOW_DEFAULT_SIZE, SLIDING_WINDOW_DEFAULT_OVERLAP)
-            .expect("overlap is greater than size")
-    }
-}
-
-impl SlidingWindow {
     pub fn chunk<'a>(&self, input: &'a str) -> Result<Vec<&'a str>, ChunkerError> {
         let SlidingWindow { size, overlap } = self;
 
@@ -91,6 +82,13 @@ impl SlidingWindow {
         );
 
         Ok(chunks)
+    }
+}
+
+impl Default for SlidingWindow {
+    fn default() -> Self {
+        Self::new(SLIDING_WINDOW_DEFAULT_SIZE, SLIDING_WINDOW_DEFAULT_OVERLAP)
+            .expect("overlap is greater than size")
     }
 }
 

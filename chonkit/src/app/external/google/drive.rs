@@ -6,7 +6,7 @@ use crate::{
     config::GOOGLE_STORE_ID,
     core::{
         document::store::{external::ExternalDocumentStorage, DocumentFile, ExternalPath},
-        model::document::DocumentType,
+        document::DocumentType,
         provider::Identity,
     },
     err,

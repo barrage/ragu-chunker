@@ -1,15 +1,14 @@
-use chrono::{DateTime, Utc};
-
-use super::{parser::Parser, sha256};
+use super::{sha256, DocumentType};
 use crate::{
     core::{
-        model::document::{Document, DocumentInsert, DocumentType},
+        model::document::{Document, DocumentInsert},
         provider::Identity,
         repo::{document::DocumentRepo, Repository},
     },
     error::ChonkitError,
     map_err,
 };
+use chrono::{DateTime, Utc};
 
 pub mod external;
 
@@ -73,8 +72,7 @@ pub trait DocumentStorage: Identity {
     /// Get the content of a document located on `path` and parse it.
     ///
     /// * `path`: The unique path of the document. Implementation specific.
-    /// * `parser`: Parser to use for obtaining the text content.
-    async fn read(&self, path: &str, parser: &Parser) -> Result<String, ChonkitError>;
+    async fn read(&self, path: &str) -> Result<Vec<u8>, ChonkitError>;
 
     /// List all files in the storage.
     async fn list_files(&self) -> Result<Vec<DocumentFile<LocalPath>>, ChonkitError>;

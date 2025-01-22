@@ -22,7 +22,6 @@ uuid = { version = "1.6.1", features = ["v4", "serde"] }
 hex = "0.4.3"
 rayon = "1.10.0"
 futures-util = "0.3.30"
-serde_regex = "1.1.0"
 sqlx = { version = "0.6.3", features = [
 	"postgres",
 	"chrono",

@@ -2,10 +2,9 @@ use crate::{
     config::FS_STORE_ID,
     core::{
         document::{
-            parser::Parser,
             store::{DocumentFile, DocumentStorage, LocalPath},
+            DocumentType,
         },
-        model::document::DocumentType,
         provider::Identity,
     },
     err,
@@ -42,8 +41,8 @@ impl DocumentStorage for FsDocumentStore {
         self.dir.absolute_path(path, ext)
     }
 
-    async fn read(&self, path: &str, parser: &Parser) -> Result<String, ChonkitError> {
-        self.dir.read(path, parser).await
+    async fn read(&self, path: &str) -> Result<Vec<u8>, ChonkitError> {
+        self.dir.read(path).await
     }
 
     async fn list_files(&self) -> Result<Vec<DocumentFile<LocalPath>>, ChonkitError> {
@@ -56,52 +55,6 @@ impl DocumentStorage for FsDocumentStore {
 
     async fn delete(&self, path: &str) -> Result<(), ChonkitError> {
         self.dir.delete(path).await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::FsDocumentStore;
-    use crate::core::{
-        document::{
-            parser::{text::TextParser, Parser},
-            store::DocumentStorage,
-        },
-        model::document::{Document, DocumentType},
-    };
-
-    const DIR: &str = "__fs_doc_store_tests";
-    const CONTENT: &str = "Hello world.";
-
-    #[tokio::test]
-    async fn works() {
-        let _ = tokio::fs::remove_dir_all(DIR).await;
-        tokio::fs::create_dir(DIR).await.unwrap();
-
-        let store = FsDocumentStore::new(DIR);
-
-        let d = Document {
-            name: "foo".to_string(),
-            path: format!("{DIR}/foo"),
-            ext: "txt".to_string(),
-            ..Default::default()
-        };
-
-        let path = store.absolute_path(&d.name, DocumentType::try_from(d.ext).unwrap());
-        store.write(&path, CONTENT.as_bytes(), false).await.unwrap();
-
-        let file = tokio::fs::read_to_string(&path).await.unwrap();
-        assert_eq!(CONTENT, file);
-
-        let read = store
-            .read(&path, &Parser::Text(TextParser::default()))
-            .await
-            .unwrap();
-        assert_eq!(CONTENT, read);
-
-        store.delete(&path).await.unwrap();
-
-        tokio::fs::remove_dir(DIR).await.unwrap();
     }
 }
 
@@ -128,10 +81,9 @@ impl TokioDirectory {
         Self { base }
     }
 
-    pub async fn read(&self, path: &str, parser: &Parser) -> Result<String, ChonkitError> {
+    pub async fn read(&self, path: &str) -> Result<Vec<u8>, ChonkitError> {
         debug!("Reading {path}");
-        let file = map_err!(tokio::fs::read(&path).await);
-        parser.parse(&file)
+        Ok(map_err!(tokio::fs::read(&path).await))
     }
 
     /// Returns all files from the base directory this struct is instantiated with.
@@ -228,5 +180,49 @@ impl TokioDirectory {
             return format!("{}/{path}", self.base.display());
         }
         format!("{}/{path}.{ext}", self.base.display())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FsDocumentStore;
+    use crate::core::{
+        document::{parser::Parser, store::DocumentStorage, DocumentType},
+        model::document::Document,
+    };
+
+    const DIR: &str = "__fs_doc_store_tests";
+    const CONTENT: &str = "Hello world.";
+
+    #[tokio::test]
+    async fn works() {
+        let _ = tokio::fs::remove_dir_all(DIR).await;
+        tokio::fs::create_dir(DIR).await.unwrap();
+
+        let store = FsDocumentStore::new(DIR);
+
+        let d = Document {
+            name: "foo".to_string(),
+            path: format!("{DIR}/foo"),
+            ext: "txt".to_string(),
+            ..Default::default()
+        };
+
+        let ext = DocumentType::try_from(d.ext).unwrap();
+        let path = store.absolute_path(&d.name, ext);
+        store.write(&path, CONTENT.as_bytes(), false).await.unwrap();
+
+        let file = tokio::fs::read_to_string(&path).await.unwrap();
+        assert_eq!(CONTENT, file);
+
+        let parser = Parser::default();
+        let read = store.read(&path).await.unwrap();
+        let content = crate::parse!(&parser, ext, &read).unwrap();
+
+        assert_eq!(CONTENT, content);
+
+        store.delete(&path).await.unwrap();
+
+        tokio::fs::remove_dir(DIR).await.unwrap();
     }
 }

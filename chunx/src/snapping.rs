@@ -3,12 +3,12 @@ use super::{
     ChunkerError,
 };
 
-const SNAPPING_WINDOW_DEFAULT_SIZE: usize = 1000;
-const SNAPPING_WINDOW_DEFAULT_OVERLAP: usize = 5;
+const DEFAULT_SIZE: usize = 1000;
+const DEFAULT_OVERLAP: usize = 5;
 
 /// Heuristic chunker for texts intended for humans, e.g. documentation, books, blogs, etc.
 ///
-/// A sliding window that is aware of sentence stops,
+/// Essentially a sliding window that is aware of sentence stops,
 ///
 /// It will attempt to chunk the content according to `size`. Keep in mind it cannot
 /// be exact and the chunks will probably be larger, because of the way it searches
@@ -18,7 +18,7 @@ const SNAPPING_WINDOW_DEFAULT_OVERLAP: usize = 5;
 /// such as abbreviations (e.g., i.e., etc.) and urls.
 ///
 /// The default delimiter is `'.'`.
-/// The default `size` and `overlap` are 1000 and 10.
+/// The default `size` and `overlap` are 1000 and 5.
 /// The default forward skips are [DEFAULT_SKIP_F].
 /// The default backward skips are [DEFAULT_SKIP_B].
 ///
@@ -29,7 +29,7 @@ const SNAPPING_WINDOW_DEFAULT_OVERLAP: usize = 5;
 /// If the input has a lot of unicode with characters more than 1 byte, a larger `size` is
 /// recommended.
 #[derive(Debug, Clone)]
-pub struct SnappingWindow {
+pub struct Snapping {
     /// The amount of bytes in the base chunk.
     pub size: usize,
 
@@ -52,11 +52,11 @@ pub struct SnappingWindow {
     pub skip_back: Vec<String>,
 }
 
-impl Default for SnappingWindow {
+impl Default for Snapping {
     fn default() -> Self {
         Self::new(
-            SNAPPING_WINDOW_DEFAULT_SIZE,
-            SNAPPING_WINDOW_DEFAULT_OVERLAP,
+            DEFAULT_SIZE,
+            DEFAULT_OVERLAP,
             '.',
             DEFAULT_SKIP_F.iter().map(|e| e.to_string()).collect(),
             DEFAULT_SKIP_B.iter().map(|e| e.to_string()).collect(),
@@ -65,7 +65,7 @@ impl Default for SnappingWindow {
     }
 }
 
-impl SnappingWindow {
+impl Snapping {
     pub fn new(
         size: usize,
         overlap: usize,
@@ -105,9 +105,7 @@ impl SnappingWindow {
         self.skip_forward.extend(skip_forward);
         self.skip_back.extend(skip_back);
     }
-}
 
-impl SnappingWindow {
     pub fn chunk(&self, input: &str) -> Result<Vec<String>, ChunkerError> {
         if input.trim().is_empty() {
             return Ok(vec![]);
@@ -290,7 +288,7 @@ mod tests {
     fn snapping_works() {
         let input =
             "I have a sentence. It is not very long. Here is another. Long schlong ding dong.";
-        let chunker = SnappingWindow::default_with_size(1, 1).unwrap();
+        let chunker = Snapping::default_with_size(1, 1).unwrap();
         let expected = [
             "I have a sentence. It is not very long.",
             " It is not very long. Here is another. Long schlong ding dong.",
@@ -309,7 +307,7 @@ mod tests {
         let input =
             "I have a sentence. It contains letters, words, etc. and it contains more. The most important of which is foobar., because it must be skipped.";
 
-        let mut chunker = SnappingWindow::default_with_size(1, 1).unwrap();
+        let mut chunker = Snapping::default_with_size(1, 1).unwrap();
         chunker.extend_skips(vec![], vec!["etc".to_string(), "foobar".to_string()]);
 
         let expected = [
@@ -330,7 +328,7 @@ mod tests {
         let input =
             "Go to sentences.org for more words. 50% off on words with >4 syllables. Leverage agile frameworks to provide robust high level overview at agile.com.";
 
-        let mut chunker = SnappingWindow::default_with_size(1, 1).unwrap();
+        let mut chunker = Snapping::default_with_size(1, 1).unwrap();
         chunker.extend_skips(vec!["com".to_string(), "org".to_string()], vec![]);
 
         let expected = [
@@ -351,7 +349,7 @@ mod tests {
         let input =
             "Words are hard. There are many words in existence, e.g. this, that, etc..., quite a few, as you can see. My opinion, available at nobodycares.com, is that words should convey meaning. Not everyone agrees however, which is why they leverage agile frameworks to provide robust synopses for high level overviews. The lucidity of meaning is, in fact, obscured and ambiguous, therefore the interpretation, i.e. the conveying of units of meaning is less than optimal. Jebem ti boga.";
 
-        let chunker = SnappingWindow::default_with_size(1, 1).unwrap();
+        let chunker = Snapping::default_with_size(1, 1).unwrap();
 
         let expected = [
             "Words are hard. There are many words in existence, e.g. this, that, etc..., quite a few, as you can see.",
@@ -372,7 +370,7 @@ mod tests {
         let input =
             "Table of contents:\n1 Super cool stuff\n1.1 Some chonkers in rust\n1.2 Some data for your LLM\n1.3 ??? \n1.4 Profit \n1.4.1 Lambo\nHope you liked the table of contents. See more at content.co.com.";
 
-        let mut chunker = SnappingWindow::default_with_size(1, 1).unwrap();
+        let mut chunker = Snapping::default_with_size(1, 1).unwrap();
 
         chunker.extend_skips(
             vec!["co".to_string(), "com".to_string()],
@@ -391,14 +389,14 @@ mod tests {
 
     #[test]
     fn snapping_window_empty() {
-        let chunker = SnappingWindow::default_with_size(1, 1).unwrap();
+        let chunker = Snapping::default_with_size(1, 1).unwrap();
         let chunks = chunker.chunk("").unwrap();
         assert!(chunks.is_empty());
     }
 
     #[test]
     fn snapping_small_input() {
-        let chunker = SnappingWindow::default_with_size(1000, 5).unwrap();
+        let chunker = Snapping::default_with_size(1000, 5).unwrap();
         let input = "This whole text must be chunked fully. 0 chunks produced means the chunking implementation does not work. Please ensure this test works as intended, thank you!";
         let chunks = chunker.chunk(input).unwrap();
         assert_eq!(vec![input.to_string()], chunks);

@@ -3,10 +3,9 @@ use crate::{
     config::GOOGLE_STORE_ID,
     core::{
         document::{
-            parser::Parser,
             store::{DocumentFile, DocumentStorage, LocalPath},
+            DocumentType,
         },
-        model::document::DocumentType,
         provider::Identity,
     },
     error::ChonkitError,
@@ -58,8 +57,8 @@ impl DocumentStorage for GoogleDriveStore {
         self.dir.absolute_path(path, ext)
     }
 
-    async fn read(&self, path: &str, parser: &Parser) -> Result<String, ChonkitError> {
-        self.dir.read(path, parser).await
+    async fn read(&self, path: &str) -> Result<Vec<u8>, ChonkitError> {
+        self.dir.read(path).await
     }
 
     async fn list_files(&self) -> Result<Vec<DocumentFile<LocalPath>>, ChonkitError> {
@@ -79,11 +78,8 @@ impl DocumentStorage for GoogleDriveStore {
 mod tests {
     use super::GoogleDriveStore;
     use crate::core::{
-        document::{
-            parser::{text::TextParser, Parser},
-            store::DocumentStorage,
-        },
-        model::document::{Document, DocumentType},
+        document::{parser::Parser, store::DocumentStorage, DocumentType},
+        model::document::Document,
     };
 
     const DIR: &str = "__gdrive_doc_store_tests";
@@ -101,17 +97,18 @@ mod tests {
             ..Default::default()
         };
 
-        let path = store.absolute_path(&d.name, DocumentType::try_from(d.ext).unwrap());
+        let ext = DocumentType::try_from(d.ext.clone()).unwrap();
+        let path = store.absolute_path(&d.name, ext);
         store.write(&path, CONTENT.as_bytes(), false).await.unwrap();
 
         let file = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(CONTENT, file);
+        let parser = Parser::default();
+        let read = store.read(&path).await.unwrap();
 
-        let read = store
-            .read(&path, &Parser::Text(TextParser::default()))
-            .await
-            .unwrap();
-        assert_eq!(CONTENT, read);
+        let content = crate::parse!(&parser, ext, read.as_slice()).unwrap();
+
+        assert_eq!(CONTENT, content);
 
         store.delete(&path).await.unwrap();
 

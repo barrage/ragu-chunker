@@ -4,9 +4,9 @@ use crate::{
         state::ServiceState,
     },
     core::{
-        document::parser::ParseConfig,
+        document::{parser::ParseConfig, DocumentType},
         model::{
-            document::{Document, DocumentConfig, DocumentDisplay, DocumentType},
+            document::{Document, DocumentConfig, DocumentDisplay},
             List,
         },
         service::document::dto::{ChunkPreviewPayload, DocumentUpload},

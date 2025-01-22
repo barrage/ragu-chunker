@@ -3,56 +3,43 @@ use crate::error::ChonkitError;
 use crate::map_err;
 use docx_rs::read_docx;
 use docx_rs::{Paragraph, ParagraphChild, RunChild, Table};
-use serde::{Deserialize, Serialize};
 use std::{fmt::Write, time::Instant};
 use tracing::debug;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct DocxParser {
-    // TODO: Implement
-    config: ParseConfig,
-}
+pub fn parse(input: &[u8], _config: &ParseConfig) -> Result<String, ChonkitError> {
+    let start = Instant::now();
 
-impl DocxParser {
-    pub fn new(config: ParseConfig) -> Self {
-        Self { config }
-    }
+    let input = map_err!(read_docx(input));
+    let mut out = String::new();
 
-    pub fn parse(&self, input: &[u8]) -> Result<String, ChonkitError> {
-        let start = Instant::now();
-
-        let input = map_err!(read_docx(input));
-        let mut out = String::new();
-
-        for el in input.document.children {
-            match el {
-                docx_rs::DocumentChild::Paragraph(ref el) => {
-                    let mut paragraph = String::new();
-                    let text = map_err!(extract_paragraph(el));
-                    for text in text {
-                        let text = text.trim();
-                        if text.is_empty() {
-                            continue;
-                        }
-                        let _ = write!(paragraph, "{text} ");
+    for el in input.document.children {
+        match el {
+            docx_rs::DocumentChild::Paragraph(ref el) => {
+                let mut paragraph = String::new();
+                let text = map_err!(extract_paragraph(el));
+                for text in text {
+                    let text = text.trim();
+                    if text.is_empty() {
+                        continue;
                     }
-                    let _ = writeln!(out, "{paragraph}");
+                    let _ = write!(paragraph, "{text} ");
                 }
-                docx_rs::DocumentChild::Table(el) => {
-                    let table = map_err!(extract_table(*el));
-                    let _ = writeln!(out, "{table}");
-                }
-                _ => {}
+                let _ = writeln!(out, "{paragraph}");
             }
+            docx_rs::DocumentChild::Table(el) => {
+                let table = map_err!(extract_table(*el));
+                let _ = writeln!(out, "{table}");
+            }
+            _ => {}
         }
-
-        debug!(
-            "Finished processing DOCX, took {}ms",
-            Instant::now().duration_since(start).as_millis()
-        );
-
-        Ok(out)
     }
+
+    debug!(
+        "Finished processing DOCX, took {}ms",
+        Instant::now().duration_since(start).as_millis()
+    );
+
+    Ok(out)
 }
 
 /// Given a DOCX table, create the equivalent table in Markdown style.

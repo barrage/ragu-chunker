@@ -18,13 +18,11 @@ use axum::{
     http::{HeaderMap, HeaderValue},
     Form, Json,
 };
-use axum_macros::debug_handler;
 use cookie::CookieBuilder;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use validify::Validate;
 
-#[debug_handler]
 #[utoipa::path(
     post,
     path = "/external/google/auth",

@@ -819,7 +819,8 @@ mod tests {
         app::test::{init_repository, PostgresContainer},
         core::{
             chunk::ChunkConfig,
-            model::document::{DocumentInsert, DocumentType, TextDocumentType},
+            document::{DocumentType, TextDocumentType},
+            model::document::DocumentInsert,
             repo::{document::DocumentRepo, Repository},
         },
     };

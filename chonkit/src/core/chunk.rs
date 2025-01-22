@@ -55,11 +55,10 @@ impl ChunkConfig {
     /// Create a default `SlidingWindow` chunker.
     pub fn sliding_default() -> Self {
         let config = chunx::SlidingWindow::default();
-        let config = SlidingWindowConfig {
+        Self::Sliding(SlidingWindowConfig {
             size: config.size,
             overlap: config.overlap,
-        };
-        Self::Sliding(config)
+        })
     }
 
     /// Create a `SnappingWindow` chunker.
@@ -73,32 +72,33 @@ impl ChunkConfig {
         overlap: usize,
         skip_f: Vec<String>,
         skip_b: Vec<String>,
+        delimiter: char,
     ) -> Result<Self, ChunkerError> {
         Ok(Self::Snapping(SnappingWindowConfig {
             size,
             overlap,
             skip_f,
             skip_b,
-            delimiter: '.',
+            delimiter,
         }))
     }
 
     /// Create a default `SnappingWindow` chunker.
     pub fn snapping_default() -> Self {
-        let config = chunx::SnappingWindow::default();
-        let config = SnappingWindowConfig {
+        let config = chunx::Snapping::default();
+        Self::Snapping(SnappingWindowConfig {
             size: config.size,
             overlap: config.overlap,
             skip_f: config.skip_forward,
             skip_b: config.skip_back,
             delimiter: '.',
-        };
-        Self::Snapping(config)
+        })
     }
 
     /// Create a `SemanticWindow` chunker.
     ///
     /// See [SemanticWindow](chunx::semantic::SemanticWindow) for more details.
+    #[allow(clippy::too_many_arguments)]
     pub fn semantic(
         size: usize,
         threshold: f64,
@@ -125,8 +125,8 @@ impl ChunkConfig {
     ///
     /// * `embedder`: Embedder to use for embedding chunks, uses the default embedder model.
     pub fn semantic_default(embedding_provider: String, embedding_model: String) -> Self {
-        let config = chunx::semantic::SemanticWindow::default();
-        let config = SemanticWindowConfig {
+        let config = chunx::semantic::Semantic::default();
+        Self::Semantic(SemanticWindowConfig {
             size: config.size,
             delimiter: config.delimiter,
             distance_fn: config.distance_fn,
@@ -135,8 +135,7 @@ impl ChunkConfig {
             skip_b: config.skip_back,
             embedding_provider,
             embedding_model,
-        };
-        Self::Semantic(config)
+        })
     }
 }
 

@@ -5,8 +5,10 @@ mod document_service_integration_tests {
     use crate::{
         app::test::{TestState, TestStateConfig},
         core::{
-            document::parser::{docx::DocxParser, pdf::PdfParser, text::TextParser, ParseConfig},
-            model::document::{DocumentType, TextDocumentType},
+            document::{
+                parser::{Parse, ParseConfig, Parser},
+                DocumentType, Docx, Pdf, Text, TextDocumentType,
+            },
             service::{
                 document::dto::DocumentUpload,
                 vector::dto::{CreateCollectionPayload, CreateEmbeddings},
@@ -56,7 +58,7 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = TextParser::default().parse(content).unwrap();
+        let text_from_bytes = Parser::default().parse(Text(content)).unwrap();
         let text_from_store = service.get_content(document.id).await.unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
@@ -81,7 +83,7 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = PdfParser::default().parse(content).unwrap();
+        let text_from_bytes = Parser::default().parse(Pdf(content)).unwrap();
         let text_from_store = service.get_content(document.id).await.unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
@@ -106,7 +108,7 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = DocxParser::default().parse(content).unwrap();
+        let text_from_bytes = Parser::default().parse(Docx(content)).unwrap();
         let text_from_store = service.get_content(document.id).await.unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
@@ -164,10 +166,7 @@ mod document_service_integration_tests {
 
         let document = file_service.upload(upload, false).await.unwrap();
 
-        let config = ParseConfig::new(10, 20)
-            .use_range()
-            .with_filter("foo")
-            .unwrap();
+        let config = ParseConfig::new(10, 20).use_range().with_filter("foo");
 
         service
             .update_parser(document.id, config.clone())

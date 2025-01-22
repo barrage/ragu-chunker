@@ -4,7 +4,7 @@ use crate::{
     config::FS_STORE_ID,
     core::{
         chunk::ChunkConfig,
-        model::document::{DocumentType, TextDocumentType},
+        document::{DocumentType, TextDocumentType},
         provider::{DocumentStorageProvider, EmbeddingProvider, ProviderState, VectorDbProvider},
         repo::Repository,
         service::{
@@ -258,6 +258,7 @@ impl AppState {
                 DocumentType::Text(TextDocumentType::Txt).to_string(),
                 DocumentType::Docx.to_string(),
                 DocumentType::Pdf.to_string(),
+                DocumentType::Excel.to_string(),
             ],
         })
     }

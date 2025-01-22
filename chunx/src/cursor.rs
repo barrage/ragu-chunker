@@ -1,7 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
 /// Default patterns to skip in front of delimiters.
-/// `___. some text`
+/// `___. Some text`
 pub(super) const DEFAULT_SKIP_F: &[&str] = &[
     "com", "org", "net", // Common URL patterns
     "g.", "e.", // Common acronyms (e.g., i.e.)
@@ -9,7 +9,7 @@ pub(super) const DEFAULT_SKIP_F: &[&str] = &[
 ];
 
 /// Default patterns to skip behind delimiters.
-/// `Some text.___` <
+/// `Some text.___`
 pub(super) const DEFAULT_SKIP_B: &[&str] = &[
     "www", // Common URL patterns
     "etc", "e.g", "i.e", // Common acronyms

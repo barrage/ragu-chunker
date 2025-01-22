@@ -9,7 +9,8 @@ mod vector_service_integration_tests {
         app::test::{TestState, TestStateConfig},
         config::{DEFAULT_COLLECTION_NAME, FEMBED_EMBEDDER_ID},
         core::{
-            model::document::{DocumentInsert, DocumentType, TextDocumentType},
+            document::{DocumentType, TextDocumentType},
+            model::document::DocumentInsert,
             repo::{document::DocumentRepo, vector::VectorRepo},
             service::vector::dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload},
         },

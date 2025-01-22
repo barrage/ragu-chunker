@@ -609,7 +609,6 @@ dependencies = [
  "reqwest 0.12.9",
  "serde",
  "serde_json",
- "serde_regex",
  "serde_with",
  "sha2",
  "sqlx",
@@ -664,6 +663,7 @@ version = "0.1.0"
 dependencies = [
  "chonkit-embedders",
  "rayon",
+ "regex",
  "serde",
  "suitest",
  "thiserror 1.0.69",
@@ -3813,16 +3813,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af99884400da37c88f5e9146b7f1fd0fbcae8f6eec4e9da38b67d05486f814a6"
 dependencies = [
  "itoa",
- "serde",
-]
-
-[[package]]
-name = "serde_regex"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8136f1a4ea815d7eac4101cfd0b16dc0cb5e1fe1b8609dfd728058656b7badf"
-dependencies = [
- "regex",
  "serde",
 ]
 

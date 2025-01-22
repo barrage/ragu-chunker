@@ -27,7 +27,7 @@ pub trait Embedder {
 /// This chunker will iterate through each batch of sentences determined by `size`
 /// and will group them together based on the given `threshold` and `distance_fn`.
 #[derive(Debug)]
-pub struct SemanticWindow {
+pub struct Semantic {
     /// How many sentences to use as the base for semantic similarity.
     pub size: usize,
 
@@ -56,7 +56,7 @@ pub struct SemanticWindow {
     pub skip_back: Vec<String>,
 }
 
-impl SemanticWindow {
+impl Semantic {
     pub fn new(
         size: usize,
         threshold: f64,
@@ -76,7 +76,7 @@ impl SemanticWindow {
     }
 }
 
-impl Default for SemanticWindow {
+impl Default for Semantic {
     fn default() -> Self {
         Self {
             size: 10,
@@ -89,7 +89,7 @@ impl Default for SemanticWindow {
     }
 }
 
-impl SemanticWindow {
+impl Semantic {
     pub async fn chunk<E>(
         &self,
         input: &str,
@@ -353,7 +353,7 @@ mod tests {
         let input = r#"Leverage agile frameworks to provide robust synopses for high level overviews. Pee, AKA urine is stored in the testicles. SCRUM is one of the agile frameworks used to facilitate the robust synopses. The testicles, do in fact, facilitate urine. SCRUM, an agile framework, is short for SCRotUM, which stands for Supervisors Circulating Redundant Orders to Thwart Underlings' Motivations. This is about pee, i.e. urine."#;
 
         let model = "Xenova/bge-base-en-v1.5";
-        let chunker = SemanticWindow::new(
+        let chunker = Semantic::new(
             1,
             0.58,
             DistanceFn::Cosine,
@@ -375,7 +375,7 @@ mod tests {
     async fn semantic_window_empty(embedder: LocalFastEmbedder) {
         let input = "";
         let model = "Xenova/bge-base-en-v1.5";
-        let chunker = SemanticWindow::new(1, 0.58, DistanceFn::Cosine, '.', vec![], vec![]);
+        let chunker = Semantic::new(1, 0.58, DistanceFn::Cosine, '.', vec![], vec![]);
 
         let chunks = chunker.chunk(input, embedder, model).await.unwrap();
         assert!(chunks.is_empty());

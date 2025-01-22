@@ -4,10 +4,11 @@ mod cursor;
 pub mod semantic;
 pub mod sliding;
 pub mod snapping;
+pub mod splitline;
 
-pub use semantic::SemanticWindow;
+pub use semantic::Semantic;
 pub use sliding::SlidingWindow;
-pub use snapping::SnappingWindow;
+pub use snapping::Snapping;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChunkerError {

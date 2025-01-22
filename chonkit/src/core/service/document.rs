@@ -7,12 +7,11 @@ use crate::{
         },
         document::{
             parser::{ParseConfig, Parser},
-            sha256,
+            sha256, DocumentType, TextDocumentType,
         },
         model::{
             document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentParameterUpdate,
-                DocumentType, TextDocumentType,
             },
             List, PaginationSort,
         },
@@ -105,9 +104,11 @@ impl DocumentService {
         let store = self.providers.storage.get_provider(&document.src)?;
 
         let ext = document.ext.as_str().try_into()?;
-        let parser = self.get_parser(id, ext).await?;
+        let parser = self.get_parsing_config(id).await?;
 
-        store.read(&document.path, &parser).await
+        let content = store.read(&document.path).await?;
+
+        crate::parse!(&parser, ext, &content)
     }
 
     /// Get document chunks using its parsing and chunking configuration,
@@ -158,7 +159,7 @@ impl DocumentService {
 
         // The default parser parses the whole input so we use it
         // to check whether the document has any content. Reject if empty.
-        Parser::new(ty).parse(file)?;
+        crate::parse!(&Parser::default(), ty, file)?;
 
         // Always return errors if there is a hash collision
         if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
@@ -303,7 +304,7 @@ impl DocumentService {
                     skip_b,
                 } = config;
 
-                let chunker = map_err!(chunx::SnappingWindow::new(
+                let chunker = map_err!(chunx::Snapping::new(
                     size, overlap, delimiter, skip_f, skip_b
                 ));
 
@@ -323,14 +324,8 @@ impl DocumentService {
                     skip_b,
                 } = config;
 
-                let chunker = chunx::SemanticWindow::new(
-                    size,
-                    threshold,
-                    distance_fn,
-                    delimiter,
-                    skip_f,
-                    skip_b,
-                );
+                let chunker =
+                    chunx::Semantic::new(size, threshold, distance_fn, delimiter, skip_f, skip_b);
 
                 let embedder = self.providers.embedding.get_provider(&embedding_provider)?;
 
@@ -378,12 +373,14 @@ impl DocumentService {
 
         let store = self.providers.storage.get_provider(&document.src)?;
 
-        let ext = document.ext.as_str().try_into()?;
-        let parser = Parser::new_from(ext, config);
+        let ext: DocumentType = document.ext.as_str().try_into()?;
+        let parser = Parser::new(config);
 
         tracing::info!("Using parser ({ext}) for '{id}'");
 
-        store.read(&document.path, &parser).await
+        let content = store.read(&document.path).await?;
+
+        crate::parse!(&parser, ext, &content)
     }
 
     /// Update a document's parsing configuration.
@@ -453,11 +450,11 @@ impl DocumentService {
     ///
     /// * `id`: Document ID.
     /// * `ext`: Document extension.
-    async fn get_parser(&self, id: Uuid, ext: DocumentType) -> Result<Parser, ChonkitError> {
+    async fn get_parsing_config(&self, id: Uuid) -> Result<Parser, ChonkitError> {
         let config = self.repo.get_document_parse_config(id).await?;
         match config {
-            Some(cfg) => Ok(Parser::new_from(ext, cfg.config)),
-            None => Ok(Parser::new(ext)),
+            Some(cfg) => Ok(Parser::new(cfg.config)),
+            None => Ok(Parser::default()),
         }
     }
 }
@@ -465,7 +462,8 @@ impl DocumentService {
 /// Document service DTOs.
 pub mod dto {
     use crate::core::{
-        chunk::ChunkConfig, document::parser::ParseConfig, model::document::DocumentType,
+        chunk::ChunkConfig,
+        document::{parser::ParseConfig, DocumentType},
     };
     use serde::Deserialize;
     use validify::{Validate, Validify};

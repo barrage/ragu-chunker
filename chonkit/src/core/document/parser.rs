@@ -1,23 +1,33 @@
-use crate::{core::model::document::DocumentType, error::ChonkitError, map_err};
-use docx::DocxParser;
-use excel::ExcelParser;
-use pdf::PdfParser;
-use regex::Regex;
+use crate::error::ChonkitError;
 use serde::{Deserialize, Serialize};
-use text::TextParser;
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
+
+use super::{Docx, Excel, Pdf, Text};
 
 pub mod docx;
 pub mod excel;
 pub mod pdf;
 pub mod text;
 
-/// General parsing configuration for documents.
+#[derive(Debug, Default)]
+pub struct Parser<C = ParseConfig>(C);
+
+impl Parser {
+    pub fn new(config: ParseConfig) -> Self {
+        Self(config)
+    }
+}
+
+pub trait Parse<T> {
+    fn parse(&self, input: T) -> Result<String, ChonkitError>;
+}
+
+/// Generic parsing configuration for documents.
 /// A text element is parser specific, it could be PDF pages,
 /// DOCX paragraphs, CSV rows, etc.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-#[validate(Self::validate)]
+#[validate(Self::validate_schema)]
 pub struct ParseConfig {
     /// Skip the first amount of text elements.
     pub start: usize,
@@ -31,9 +41,7 @@ pub struct ParseConfig {
     pub range: bool,
 
     /// Filter specific patterns in text elements. Parser specific.
-    #[serde(with = "serde_regex")]
-    #[schema(value_type = Vec<String>)]
-    pub filters: Vec<Regex>,
+    pub filters: Vec<String>,
 }
 
 impl ParseConfig {
@@ -52,17 +60,15 @@ impl ParseConfig {
     }
 
     /// Add a filter to the parser.
-    /// Each text element (depending on the parser implementation)
-    /// will be checked for the regex and will be omitted if it matches.
     ///
     /// * `re`: The expression to match for.
-    pub fn with_filter(mut self, re: &str) -> Result<Self, ChonkitError> {
-        self.filters.push(map_err!(Regex::new(re)));
-        Ok(self)
+    pub fn with_filter(mut self, re: &str) -> Self {
+        self.filters.push(re.to_string());
+        self
     }
 
     #[schema_validation]
-    fn validate(&self) -> Result<(), ValidationErrors> {
+    fn validate_schema(&self) -> Result<(), ValidationErrors> {
         if self.range && self.end <= self.start {
             schema_err!(
                 "range=true;start>=end",
@@ -75,45 +81,58 @@ impl ParseConfig {
     }
 }
 
-/// Enumeration of all supported parser types.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Parser {
-    Text(TextParser),
-    Pdf(PdfParser),
-    Docx(DocxParser),
-    Excel(ExcelParser),
+impl Parse<Docx<'_>> for Parser {
+    fn parse(&self, input: Docx<'_>) -> Result<String, ChonkitError> {
+        docx::parse(input.0, &self.0)
+    }
 }
 
-impl Parser {
-    /// Returns the default parser for a document.
-    pub fn new(ty: DocumentType) -> Self {
-        match ty {
-            // TODO
-            DocumentType::Text(_) => Self::Text(TextParser::default()),
-            DocumentType::Docx => Self::Docx(DocxParser::default()),
-            DocumentType::Pdf => Self::Pdf(PdfParser::default()),
-            DocumentType::Excel => Self::Excel(ExcelParser::default()),
-        }
+impl Parse<Pdf<'_>> for Parser {
+    fn parse(&self, input: Pdf<'_>) -> Result<String, ChonkitError> {
+        pdf::parse(input.0, &self.0)
     }
+}
 
-    /// Returns a configured parser for a document.
-    pub fn new_from(ty: DocumentType, config: ParseConfig) -> Self {
-        match ty {
-            // TODO
-            DocumentType::Text(_) => Self::Text(TextParser::new(config)),
-            DocumentType::Docx => Self::Docx(DocxParser::new(config)),
-            DocumentType::Pdf => Self::Pdf(PdfParser::new(config)),
-            DocumentType::Excel => Self::Excel(ExcelParser::new(config)),
-        }
+impl Parse<Excel<'_>> for Parser {
+    fn parse(&self, input: Excel<'_>) -> Result<String, ChonkitError> {
+        excel::parse(input.0, &self.0)
     }
+}
 
-    pub fn parse(&self, input: &[u8]) -> Result<String, ChonkitError> {
-        match self {
-            Self::Text(p) => p.parse(input),
-            Self::Pdf(p) => p.parse(input),
-            Self::Docx(p) => p.parse(input),
-            Self::Excel(p) => p.parse(input),
-        }
+impl Parse<Text<'_>> for Parser {
+    fn parse(&self, input: Text<'_>) -> Result<String, ChonkitError> {
+        text::parse(input.0, &self.0)
     }
+}
+
+#[macro_export]
+macro_rules! parse {
+    ($parser:expr, $ext:expr, $content:expr) => {
+        match $ext {
+            $crate::core::document::DocumentType::Text(_) => {
+                $crate::core::document::parser::Parse::parse(
+                    $parser,
+                    $crate::core::document::Text($content),
+                )
+            }
+            $crate::core::document::DocumentType::Docx => {
+                $crate::core::document::parser::Parse::parse(
+                    $parser,
+                    $crate::core::document::Docx($content),
+                )
+            }
+            $crate::core::document::DocumentType::Pdf => {
+                $crate::core::document::parser::Parse::parse(
+                    $parser,
+                    $crate::core::document::Pdf($content),
+                )
+            }
+            $crate::core::document::DocumentType::Excel => {
+                $crate::core::document::parser::Parse::parse(
+                    $parser,
+                    $crate::core::document::Excel($content),
+                )
+            }
+        }
+    };
 }
