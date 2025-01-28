@@ -118,7 +118,7 @@ where
                 }
             };
 
-            let path = &storage.absolute_path(&file.path, file.ext);
+            let path = &storage.absolute_path(&file.name, file.ext);
 
             // Check for path collision first to prevent downloading file in case it already
             // exists
@@ -128,13 +128,13 @@ where
                     // Handles database errors
                     result
                         .failed
-                        .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
                     continue;
                 }
             };
 
             let document = if let Some(existing) = existing {
-                // Document at path already exists, skip it
+                // Document at path already exists, attempt redownload
                 if !force_download {
                     tracing::info!(
                         "Document '{}' already exists ({})",
@@ -160,16 +160,18 @@ where
                 {
                     Ok(existing) => existing,
                     Err(e) => {
-                        result
-                            .failed
-                            .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
                         continue;
                     }
                 };
 
                 if let Some(existing) = existing_hash {
                     result.failed.push(ImportFailure::new(
-                        file.path,
+                        file.path.0,
                         file.name,
                         format!(
                             "New document has same hash as existing '{}' ({})",
@@ -180,12 +182,14 @@ where
                 };
 
                 // Redownload and rehash the content
-                let content = match self.api.download(&file.path).await {
+                let content = match self.api.download(&file.path.0).await {
                     Ok(content) => content,
                     Err(e) => {
-                        result
-                            .failed
-                            .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
                         continue;
                     }
                 };
@@ -194,7 +198,7 @@ where
                 if let Err(e) = storage.write(path, &content, true).await {
                     result
                         .failed
-                        .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
                     continue;
                 };
 
@@ -209,19 +213,25 @@ where
                 {
                     Ok(document) => document,
                     Err(e) => {
-                        result
-                            .failed
-                            .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
                         continue;
                     }
                 }
             } else {
-                let content = match self.api.download(&file.path).await {
+                // Document does not exist, download as usual
+
+                let content = match self.api.download(&file.path.0).await {
                     Ok(content) => content,
                     Err(e) => {
-                        result
-                            .failed
-                            .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
                         continue;
                     }
                 };
@@ -230,9 +240,11 @@ where
                 match storage.write(path, &content, false).await {
                     Ok(path) => path,
                     Err(e) => {
-                        result
-                            .failed
-                            .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
                         continue;
                     }
                 };
@@ -241,9 +253,11 @@ where
                 match self.repo.insert_document(insert).await {
                     Ok(document) => document,
                     Err(e) => {
-                        result
-                            .failed
-                            .push(ImportFailure::new(file.path, file.name, e.to_string()));
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
                         continue;
                     }
                 }
@@ -276,32 +290,39 @@ where
             }
         };
 
-        let path = storage.absolute_path(&file.path, file.ext);
+        let local_path = storage.absolute_path(&file.name, file.ext);
 
-        if let Some(doc) = self.repo.get_document_by_path(&path, self.api.id()).await? {
+        if let Some(doc) = self
+            .repo
+            .get_document_by_path(&local_path, self.api.id())
+            .await?
+        {
             if !force_download {
                 tracing::error!("Document '{}' already exists ({})", doc.name, doc.id);
                 return err!(AlreadyExists, "Document with ID '{}'", doc.id);
             }
-            let content = self.api.download(&file.path).await?;
+            let content = self.api.download(&file.path.0).await?;
             let hash = file.hash.unwrap_or_else(|| sha256(&content));
-            storage.write(&path, &content, true).await?;
+            storage.write(&local_path, &content, true).await?;
 
             // Triggering updates will update the `updated_at` field
             return self
                 .repo
-                .update_document_parameters(doc.id, DocumentParameterUpdate::new(&path, &hash))
+                .update_document_parameters(
+                    doc.id,
+                    DocumentParameterUpdate::new(&local_path, &hash),
+                )
                 .await;
         }
 
         let content = self.api.download(file_id).await?;
         let hash = sha256(&content);
-        storage.write(&path, &content, force_download).await?;
+        storage.write(&local_path, &content, force_download).await?;
 
         self.repo
             .insert_document(DocumentInsert::new(
                 &file.name,
-                &path,
+                &local_path,
                 file.ext,
                 &hash,
                 self.api.id(),
@@ -325,10 +346,9 @@ where
         let mut outdated = vec![];
 
         for (id, path, updated_at) in documents {
-            let Some(ext_document) = ext_documents
-                .iter()
-                .find(|d| path.ends_with(&storage.absolute_path(&d.path, d.ext)))
-            else {
+            let Some(ext_document) = ext_documents.iter().find(|document| {
+                path.ends_with(&storage.absolute_path(&document.name, document.ext))
+            }) else {
                 continue;
             };
 
@@ -336,7 +356,7 @@ where
                 if ext_modified_at > updated_at {
                     outdated.push(OutdatedDocument::new(
                         id,
-                        ext_document.path.clone(),
+                        ext_document.path.0.clone(),
                         ext_document.name.clone(),
                         updated_at,
                         ext_modified_at,

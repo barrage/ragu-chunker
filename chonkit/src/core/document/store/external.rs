@@ -1,4 +1,4 @@
-use super::DocumentStoreFile;
+use super::{DocumentFile, ExternalPath};
 use crate::{core::provider::Identity, error::ChonkitError};
 
 /// Implement on API clients that obtain documents from an external source.
@@ -14,12 +14,12 @@ pub trait ExternalDocumentStorage: Identity {
     async fn list_files(
         &self,
         file_ids: Option<&[String]>,
-    ) -> Result<Vec<DocumentStoreFile>, ChonkitError>;
+    ) -> Result<Vec<DocumentFile<ExternalPath>>, ChonkitError>;
 
     /// Get file info based on the provided file identifiers.
     ///
     /// * `file_id`: Storage specific file identifier.
-    async fn get_file(&self, file_id: &str) -> Result<DocumentStoreFile, ChonkitError>;
+    async fn get_file(&self, file_id: &str) -> Result<DocumentFile<ExternalPath>, ChonkitError>;
 
     /// Get the raw bytes of a document based on the `file_id`.
     ///

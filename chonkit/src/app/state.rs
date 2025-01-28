@@ -4,12 +4,12 @@ use crate::{
     config::FS_STORE_ID,
     core::{
         chunk::ChunkConfig,
-        document::store::DocumentStore,
-        embedder::Embedder,
         model::document::{DocumentType, TextDocumentType},
-        provider::{ProviderFactory, ProviderState},
-        service::{document::DocumentService, vector::VectorService},
-        vector::VectorDb,
+        provider::{DocumentStorageProvider, EmbeddingProvider, ProviderState, VectorDbProvider},
+        repo::Repository,
+        service::{
+            document::DocumentService, external::ExternalServiceFactory, vector::VectorService,
+        },
     },
     error::ChonkitError,
 };

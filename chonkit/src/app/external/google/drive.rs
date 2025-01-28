@@ -5,7 +5,7 @@ use crate::{
     },
     config::GOOGLE_STORE_ID,
     core::{
-        document::store::{external::ExternalDocumentStorage, DocumentStoreFile},
+        document::store::{external::ExternalDocumentStorage, DocumentFile, ExternalPath},
         model::document::DocumentType,
         provider::Identity,
     },
@@ -294,8 +294,8 @@ impl ExternalDocumentStorage for GoogleDriveApi {
     async fn list_files(
         &self,
         file_ids: Option<&[String]>,
-    ) -> Result<Vec<DocumentStoreFile>, ChonkitError> {
-        let files: Vec<DocumentStoreFile> = self
+    ) -> Result<Vec<DocumentFile<ExternalPath>>, ChonkitError> {
+        let files = self
             .list_all_drive_files()
             .await?
             .into_iter()
@@ -316,10 +316,10 @@ impl ExternalDocumentStorage for GoogleDriveApi {
                     }
                 }
 
-                Some(DocumentStoreFile::new(
+                Some(DocumentFile::new(
                     file.name,
                     ext,
-                    file.id,
+                    ExternalPath(file.id),
                     file.modified_time,
                     hash,
                 ))
@@ -329,7 +329,7 @@ impl ExternalDocumentStorage for GoogleDriveApi {
         Ok(files)
     }
 
-    async fn get_file(&self, file_id: &str) -> Result<DocumentStoreFile, ChonkitError> {
+    async fn get_file(&self, file_id: &str) -> Result<DocumentFile<ExternalPath>, ChonkitError> {
         let file = self.get_drive_file(file_id).await?;
 
         let hash = file.hash().map(String::from);
@@ -347,10 +347,10 @@ impl ExternalDocumentStorage for GoogleDriveApi {
             }
         };
 
-        Ok(DocumentStoreFile::new(
+        Ok(DocumentFile::new(
             file.name.clone(),
             ext,
-            file.id.clone(),
+            ExternalPath(file.id.clone()),
             file.modified_time,
             hash,
         ))

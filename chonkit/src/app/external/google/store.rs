@@ -4,7 +4,7 @@ use crate::{
     core::{
         document::{
             parser::Parser,
-            store::{DocumentStorage, DocumentStoreFile},
+            store::{DocumentFile, DocumentStorage, LocalPath},
         },
         model::document::DocumentType,
         provider::Identity,
@@ -62,7 +62,7 @@ impl DocumentStorage for GoogleDriveStore {
         self.dir.read(path, parser).await
     }
 
-    async fn list_files(&self) -> Result<Vec<DocumentStoreFile>, ChonkitError> {
+    async fn list_files(&self) -> Result<Vec<DocumentFile<LocalPath>>, ChonkitError> {
         self.dir.list_files().await
     }
 

@@ -1,11 +1,11 @@
 use crate::{
     config::FS_STORE_ID,
-    core::model::document::DocumentType,
     core::{
         document::{
             parser::Parser,
-            store::{DocumentStorage, DocumentStoreFile},
+            store::{DocumentFile, DocumentStorage, LocalPath},
         },
+        model::document::DocumentType,
         provider::Identity,
     },
     err,
@@ -46,7 +46,7 @@ impl DocumentStorage for FsDocumentStore {
         self.dir.read(path, parser).await
     }
 
-    async fn list_files(&self) -> Result<Vec<DocumentStoreFile>, ChonkitError> {
+    async fn list_files(&self) -> Result<Vec<DocumentFile<LocalPath>>, ChonkitError> {
         self.dir.list_files().await
     }
 
@@ -140,7 +140,7 @@ impl TokioDirectory {
     /// - `ext`: The extension of the file.
     /// - `path`: The _absolute_ path to the file.
     /// - `modified_at`: The time the file was last modified on the file system.
-    pub async fn list_files(&self) -> Result<Vec<DocumentStoreFile>, ChonkitError> {
+    pub async fn list_files(&self) -> Result<Vec<DocumentFile<LocalPath>>, ChonkitError> {
         let mut files = vec![];
 
         let mut entries = map_err!(tokio::fs::read_dir(&self.base).await);
@@ -161,7 +161,13 @@ impl TokioDirectory {
                 .await
                 .map(|meta| DateTime::from_timestamp(meta.mtime(), 0)));
 
-            files.push(DocumentStoreFile::new(name, ext, path, modified_at, None));
+            files.push(DocumentFile::new(
+                name,
+                ext,
+                LocalPath(path),
+                modified_at,
+                None,
+            ));
         }
 
         Ok(files)
