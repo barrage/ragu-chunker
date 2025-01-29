@@ -71,6 +71,7 @@ use utoipa::OpenApi;
         parse_preview,
         update_document_config,
         sync,
+
         // Vectors
         list_collections,
         get_collection,

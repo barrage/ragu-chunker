@@ -7,6 +7,7 @@ use crate::{
         chunk::ChunkConfig,
         document::store::DocumentStore,
         embedder::Embedder,
+        model::document::{DocumentType, TextDocumentType},
         provider::{ProviderFactory, ProviderState},
         service::{document::DocumentService, vector::VectorService},
         vector::VectorDb,
@@ -209,6 +210,15 @@ impl AppState {
             embedding_providers,
             default_chunkers,
             document_providers,
+            supported_document_types: vec![
+                DocumentType::Text(TextDocumentType::Md).to_string(),
+                DocumentType::Text(TextDocumentType::Csv).to_string(),
+                DocumentType::Text(TextDocumentType::Xml).to_string(),
+                DocumentType::Text(TextDocumentType::Json).to_string(),
+                DocumentType::Text(TextDocumentType::Txt).to_string(),
+                DocumentType::Docx.to_string(),
+                DocumentType::Pdf.to_string(),
+            ],
         })
     }
 
@@ -267,6 +277,8 @@ pub struct AppConfig {
 
     /// A list of default chunking configurations.
     pub default_chunkers: Vec<ChunkConfig>,
+
+    pub supported_document_types: Vec<String>,
 }
 
 /// Creates and implements functions for `$target` to easily get an instance of whatever
