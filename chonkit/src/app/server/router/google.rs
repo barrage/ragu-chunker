@@ -79,7 +79,7 @@ pub(super) async fn import_files(
     let result = service
         .import_documents(payload.files, force.map(|f| f.force).unwrap_or_default())
         .await?;
-    Ok((StatusCode::CREATED, Json(result)))
+    Ok((StatusCode::OK, Json(result)))
 }
 
 #[utoipa::path(

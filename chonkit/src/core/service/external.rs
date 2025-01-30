@@ -1,13 +1,15 @@
 use crate::{
     core::{
         auth::{OAuth, OAuthExchangeRequest, OAuthToken},
-        document::{sha256, store::external::ExternalDocumentStorage},
+        chunk::ChunkConfig,
+        document::{parser::ParseConfig, sha256, store::external::ExternalDocumentStorage},
         model::document::{Document, DocumentInsert, DocumentParameterUpdate},
         provider::ProviderState,
-        repo::{document::DocumentRepo, Repository},
+        repo::{document::DocumentRepo, Atomic, Repository},
     },
     err,
     error::ChonkitError,
+    transaction,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -100,7 +102,7 @@ where
         file_ids: Vec<String>,
         force_download: bool,
     ) -> Result<ImportResult, ChonkitError> {
-        let storage = self.providers.storage.get_provider(self.api.id())?;
+        let storage = &self.providers.storage.get_provider(self.api.id())?;
 
         let mut result = ImportResult::default();
 
@@ -118,11 +120,11 @@ where
                 }
             };
 
-            let path = &storage.absolute_path(&file.name, file.ext);
+            let path = storage.absolute_path(&file.name, file.ext);
 
             // Check for path collision first to prevent downloading file in case it already
             // exists
-            let existing = match self.repo.get_document_by_path(path, self.api.id()).await {
+            let existing = match self.repo.get_document_by_path(&path, self.api.id()).await {
                 Ok(doc) => doc,
                 Err(e) => {
                     // Handles database errors
@@ -195,7 +197,7 @@ where
                 };
 
                 // Write new contents with the overwrite flag enabled
-                if let Err(e) = storage.write(path, &content, true).await {
+                if let Err(e) = storage.write(&path, &content, true).await {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -204,7 +206,7 @@ where
 
                 // Update the repository entry, its `updated_at` field is also updated
                 let hash = file.hash.unwrap_or_else(|| sha256(&content));
-                let update = DocumentParameterUpdate::new(path, &hash);
+                let update = DocumentParameterUpdate::new(&path, &hash);
 
                 match self
                     .repo
@@ -235,22 +237,30 @@ where
                         continue;
                     }
                 };
-                let hash = sha256(&content);
 
-                match storage.write(path, &content, false).await {
-                    Ok(path) => path,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
+                let hash = file.hash.unwrap_or_default();
+                let name = file.name.clone();
+
+                let insert_result = transaction!(self.repo, |tx| async move {
+                    let insert = DocumentInsert::new(&name, &path, file.ext, &hash, self.api.id());
+
+                    let document = self
+                        .repo
+                        .insert_document_with_configs(
+                            insert,
+                            ParseConfig::default(),
+                            ChunkConfig::snapping_default(),
+                            tx,
+                        )
+                        .await?;
+
+                    match storage.write(&path, &content, false).await {
+                        Ok(_) => Ok(document),
+                        Err(e) => Err(e),
                     }
-                };
+                });
 
-                let insert = DocumentInsert::new(&file.name, path, file.ext, &hash, self.api.id());
-                match self.repo.insert_document(insert).await {
+                match insert_result {
                     Ok(document) => document,
                     Err(e) => {
                         result.failed.push(ImportFailure::new(
