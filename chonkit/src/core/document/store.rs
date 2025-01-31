@@ -1,12 +1,13 @@
-use super::{sha256, DocumentType};
+use super::{parser::ParseConfig, sha256, DocumentType};
 use crate::{
     core::{
+        chunk::ChunkConfig,
         model::document::{Document, DocumentInsert},
         provider::Identity,
-        repo::{document::DocumentRepo, Repository},
+        repo::{document::DocumentRepo, Atomic, Repository},
     },
     error::ChonkitError,
-    map_err,
+    map_err, transaction,
 };
 use chrono::{DateTime, Utc};
 
@@ -126,9 +127,19 @@ pub trait DocumentStorage: Identity {
 
             let hash = sha256(&map_err!(tokio::fs::read(&file.path.0).await));
 
-            let insert = DocumentInsert::new(&file.name, &file.path.0, file.ext, &hash, self.id());
+            let result = transaction!(repo, |tx| async move {
+                let insert =
+                    DocumentInsert::new(&file.name, &file.path.0, file.ext, &hash, self.id());
+                repo.insert_document_with_configs(
+                    insert,
+                    ParseConfig::default(),
+                    ChunkConfig::snapping_default(),
+                    tx,
+                )
+                .await
+            });
 
-            match repo.insert_document(insert).await {
+            match result {
                 Ok(Document { id, name, .. }) => {
                     tracing::info!("Successfully inserted '{name}' ({id})")
                 }
