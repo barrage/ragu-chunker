@@ -140,10 +140,10 @@ impl GoogleDriveApi {
             ))));
         };
 
-        // Special case for CSV and XLSX since they are known to return 500 internal server errors
+        // Special case for string files since they throw 500 errors
         // for some reason. These can usually be downloaded with `?alt=media`.
         if let Some(ext) = file.file_extension {
-            if ext == "csv" || ext == "xlsx" {
+            if !is_google_binary(DocumentType::try_from(ext)?) {
                 let response = map_err!(
                     self.client
                         .get(format!("{FILES_EP}/{drive_file_id}"))
@@ -352,5 +352,12 @@ impl ExternalDocumentStorage for GoogleDriveApi {
 
     async fn download(&self, file_id: &str) -> Result<Vec<u8>, ChonkitError> {
         self.download_drive_file(file_id).await
+    }
+}
+
+fn is_google_binary(ext: DocumentType) -> bool {
+    match ext {
+        DocumentType::Text(_) | DocumentType::Excel => false,
+        DocumentType::Docx | DocumentType::Pdf => true,
     }
 }
