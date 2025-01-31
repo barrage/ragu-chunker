@@ -1,4 +1,3 @@
-use crate::config::DEFAULT_COLLECTION_NAME;
 use crate::core::model::collection::{
     Collection, CollectionDisplay, CollectionInsert, Embedding, EmbeddingInsert,
 };
@@ -8,10 +7,10 @@ use crate::core::repo::document::DocumentRepo;
 use crate::core::repo::vector::VectorRepo;
 use crate::core::repo::{Atomic, Repository};
 use crate::core::vector::CreateVectorCollection;
-use crate::error::{ChonkitErr, ChonkitError};
+use crate::error::ChonkitError;
 use crate::{err, map_err, transaction};
 use dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload};
-use tracing::{error, info};
+use tracing::info;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
@@ -98,60 +97,6 @@ impl VectorService {
     ) -> Result<Vec<(String, usize)>, ChonkitError> {
         let embedder = self.providers.embedding.get_provider(embedder)?;
         embedder.list_embedding_models().await
-    }
-
-    /// Create the default vector collection if it doesn't already exist.
-    pub async fn create_default_collection(&self, vector_db: &str, embedder: &str) {
-        let vector_db = self
-            .providers
-            .vector
-            .get_provider(vector_db)
-            .expect("invalid vector provider");
-
-        let embedder = self
-            .providers
-            .embedding
-            .get_provider(embedder)
-            .expect("invalid embedding provider");
-
-        transaction!(infallible self.repo, |tx| async move {
-            let (model, size) = embedder.default_model();
-
-            let collection_name = format!("{DEFAULT_COLLECTION_NAME}_{}_{}", vector_db.id(), embedder.id());
-
-            let db_insert = CollectionInsert::new(
-                &collection_name,
-                &model,
-                embedder.id(),
-                vector_db.id(),
-            );
-
-            let collection = match self.repo.insert_collection(db_insert, Some(tx)).await {
-                Ok(c) => { info!("Created default collection '{collection_name}'"); c },
-                Err(ChonkitError {
-                    error: ChonkitErr::AlreadyExists(_),
-                    ..
-                }) => {
-                    info!("Default collection '{collection_name}' already exists");
-                    let collection = self.repo.get_collection_by_name(&collection_name, vector_db.id()).await?;
-                    match collection {
-                        Some(c) => c,
-                        None => panic!("irrecoverable state: collection '{collection_name}' not found in {}", vector_db.id()),
-                    }
-                }
-                Err(e) =>  {
-                    error!("Failed to create default collection: {e}");
-                    return Err(e)
-                },
-            };
-
-            let vector_db_insert =
-                CreateVectorCollection::new(collection.id, &collection_name, size, embedder.id(), &model);
-
-            vector_db.create_default_collection(vector_db_insert).await?;
-
-            Result::<(), ChonkitError>::Ok(())
-        })
     }
 
     /// Create a collection in the vector DB and store its info in the repository.

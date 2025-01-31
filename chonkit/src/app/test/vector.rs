@@ -36,21 +36,27 @@ mod vector_service_integration_tests {
         .await;
 
         for provider in test_state.active_vector_providers.iter() {
+            let embedder = test_state
+                .app
+                .providers
+                .embedding
+                .get_provider(FEMBED_EMBEDDER_ID)
+                .unwrap();
+
+            let create = CreateCollectionPayload {
+                name: format!("{DEFAULT_COLLECTION_NAME}_{}_{}", provider, embedder.id()),
+                model: embedder.default_model().0,
+                vector_provider: provider.to_string(),
+                embedding_provider: embedder.id().to_string(),
+            };
+
             test_state
                 .app
                 .services
                 .vector
-                .create_default_collection(
-                    provider,
-                    test_state
-                        .app
-                        .providers
-                        .embedding
-                        .get_provider(FEMBED_EMBEDDER_ID)
-                        .unwrap()
-                        .id(),
-                )
-                .await;
+                .create_collection(create)
+                .await
+                .unwrap();
         }
 
         test_state
@@ -70,7 +76,6 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn default_collection_stored_successfully(state: TestState) {
-        let service = &state.app.services.vector;
         let embedder = state
             .app
             .providers
@@ -102,11 +107,6 @@ mod vector_service_integration_tests {
             let size = embedder.size(&collection.model).await.unwrap().unwrap();
 
             assert_eq!(size, v_collection.size);
-
-            // Assert this can be called again without errors.
-            service
-                .create_default_collection(vector_db.id(), embedder.id())
-                .await;
         }
     }
 

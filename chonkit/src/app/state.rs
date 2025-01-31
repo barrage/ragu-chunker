@@ -80,12 +80,6 @@ impl AppState {
 
         document.create_default_document().await;
 
-        for provider in providers.vector.list_provider_ids() {
-            for e_provider in providers.embedding.list_provider_ids() {
-                vector.create_default_collection(provider, e_provider).await;
-            }
-        }
-
         let service_state = ServiceState {
             document,
             vector,
