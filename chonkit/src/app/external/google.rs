@@ -71,21 +71,6 @@ struct DriveFile {
     capabilities: Option<DriveFileCapabilities>,
     file_extension: Option<String>,
     modified_time: Option<DateTime<Utc>>,
-    #[serde(alias = "sha256Checksum")]
-    sha256checksum: Option<String>,
-    #[serde(alias = "md5Checksum")]
-    md5checksum: Option<String>,
-    #[serde(alias = "sha1Checksum")]
-    sha1checksum: Option<String>,
-}
-
-impl DriveFile {
-    fn hash(&self) -> Option<&str> {
-        self.sha256checksum
-            .as_deref()
-            .or(self.sha1checksum.as_deref())
-            .or(self.md5checksum.as_deref())
-    }
 }
 
 #[derive(Debug, Deserialize)]

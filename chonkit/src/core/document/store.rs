@@ -28,7 +28,6 @@ pub struct DocumentFile<T> {
 
     /// Last modification time of document. Used to sync.
     pub modified_at: Option<DateTime<Utc>>,
-    pub hash: Option<String>,
 }
 
 impl<T> DocumentFile<T> {
@@ -37,14 +36,12 @@ impl<T> DocumentFile<T> {
         ext: DocumentType,
         path: T,
         modified_at: Option<DateTime<Utc>>,
-        hash: Option<String>,
     ) -> Self {
         Self {
             name,
             ext,
             path,
             modified_at,
-            hash,
         }
     }
 }
@@ -54,7 +51,7 @@ impl<T> DocumentFile<T> {
 pub struct LocalPath(pub String);
 
 /// A _path_ on an external document provider.
-/// For Google, this is the file ID.
+/// For external APIs, these usually represent file IDs.
 #[derive(Debug)]
 pub struct ExternalPath(pub String);
 

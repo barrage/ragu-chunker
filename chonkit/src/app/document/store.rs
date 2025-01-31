@@ -113,13 +113,7 @@ impl TokioDirectory {
                 .await
                 .map(|meta| DateTime::from_timestamp(meta.mtime(), 0)));
 
-            files.push(DocumentFile::new(
-                name,
-                ext,
-                LocalPath(path),
-                modified_at,
-                None,
-            ));
+            files.push(DocumentFile::new(name, ext, LocalPath(path), modified_at));
         }
 
         Ok(files)

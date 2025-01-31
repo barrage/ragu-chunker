@@ -300,8 +300,6 @@ impl ExternalDocumentStorage for GoogleDriveApi {
             .await?
             .into_iter()
             .filter_map(|file| {
-                let hash = file.hash().map(String::from);
-
                 let Some(ref ext) = file.file_extension.or(file.mime_type) else {
                     tracing::warn!("File {} does not have an extension, skipping", file.name);
                     return None;
@@ -321,7 +319,6 @@ impl ExternalDocumentStorage for GoogleDriveApi {
                     ext,
                     ExternalPath(file.id),
                     file.modified_time,
-                    hash,
                 ))
             })
             .collect();
@@ -331,8 +328,6 @@ impl ExternalDocumentStorage for GoogleDriveApi {
 
     async fn get_file(&self, file_id: &str) -> Result<DocumentFile<ExternalPath>, ChonkitError> {
         let file = self.get_drive_file(file_id).await?;
-
-        let hash = file.hash().map(String::from);
 
         let Some(ext) = file.file_extension.or(file.mime_type) else {
             tracing::warn!("File {} does not have an extension, skipping", file.name);
@@ -352,7 +347,6 @@ impl ExternalDocumentStorage for GoogleDriveApi {
             ext,
             ExternalPath(file.id.clone()),
             file.modified_time,
-            hash,
         ))
     }
 

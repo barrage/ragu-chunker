@@ -124,7 +124,8 @@ where
 
             // Check for path collision first to prevent downloading file in case it already
             // exists
-            let existing = match self.repo.get_document_by_path(&path, self.api.id()).await {
+            let existing_by_path = match self.repo.get_document_by_path(&path, self.api.id()).await
+            {
                 Ok(doc) => doc,
                 Err(e) => {
                     // Handles database errors
@@ -135,7 +136,7 @@ where
                 }
             };
 
-            let document = if let Some(existing) = existing {
+            let document = if let Some(existing) = existing_by_path {
                 // Document at path already exists, attempt redownload
                 if !force_download {
                     tracing::info!(
@@ -147,43 +148,9 @@ where
                     continue;
                 }
 
-                tracing::debug!(
-                    "Redownloading document '{}' ({})",
-                    existing.name,
-                    existing.id
-                );
-
-                // Always return errors if there is a hash collision
-                // Files from GDrive always have their hashes on them so it's ok to unwrap
-                let existing_hash = match self
-                    .repo
-                    .get_document_by_hash(file.hash.as_deref().unwrap_or_default())
-                    .await
-                {
-                    Ok(existing) => existing,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                };
-
-                if let Some(existing) = existing_hash {
-                    result.failed.push(ImportFailure::new(
-                        file.path.0,
-                        file.name,
-                        format!(
-                            "New document has same hash as existing '{}' ({})",
-                            existing.name, existing.id
-                        ),
-                    ));
-                    continue;
-                };
-
                 // Redownload and rehash the content
+                tracing::debug!("'{}' - downloading content", existing.name);
+
                 let content = match self.api.download(&file.path.0).await {
                     Ok(content) => content,
                     Err(e) => {
@@ -195,6 +162,39 @@ where
                         continue;
                     }
                 };
+                let hash = sha256(&content);
+
+                tracing::debug!(
+                    "Redownloading document '{}' ({})",
+                    existing.name,
+                    existing.id
+                );
+
+                // Always return errors if there is a hash collision
+                // Files from GDrive always have their hashes on them so it's ok to unwrap
+                let existing_by_hash = match self.repo.get_document_by_hash(&hash).await {
+                    Ok(existing) => existing,
+                    Err(e) => {
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
+                        continue;
+                    }
+                };
+
+                if let Some(existing) = existing_by_hash {
+                    result.failed.push(ImportFailure::new(
+                        file.path.0,
+                        file.name,
+                        format!(
+                            "New document has same hash as existing '{}' ({})",
+                            existing.name, existing.id
+                        ),
+                    ));
+                    continue;
+                };
 
                 // Write new contents with the overwrite flag enabled
                 if let Err(e) = storage.write(&path, &content, true).await {
@@ -205,7 +205,6 @@ where
                 };
 
                 // Update the repository entry, its `updated_at` field is also updated
-                let hash = file.hash.unwrap_or_else(|| sha256(&content));
                 let update = DocumentParameterUpdate::new(&path, &hash);
 
                 match self
@@ -238,7 +237,7 @@ where
                     }
                 };
 
-                let hash = file.hash.unwrap_or_default();
+                let hash = sha256(&content);
                 let name = file.name.clone();
 
                 let insert_result = transaction!(self.repo, |tx| async move {
@@ -312,7 +311,7 @@ where
                 return err!(AlreadyExists, "Document with ID '{}'", doc.id);
             }
             let content = self.api.download(&file.path.0).await?;
-            let hash = file.hash.unwrap_or_else(|| sha256(&content));
+            let hash = sha256(&content);
             storage.write(&local_path, &content, true).await?;
 
             // Triggering updates will update the `updated_at` field
