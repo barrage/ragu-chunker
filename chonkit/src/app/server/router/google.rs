@@ -1,12 +1,15 @@
 use super::Force;
 use crate::{
     app::{
-        external::google::{auth::GoogleAccessToken, GOOGLE_ACCESS_TOKEN_COOKIE},
-        server::router::HttpConfiguration,
-        state::ServiceState,
+        external::google::{
+            auth::{GoogleAccessToken, GoogleOAuth},
+            drive::GoogleDriveApi,
+            GOOGLE_ACCESS_TOKEN_COOKIE,
+        },
+        state::AppState,
     },
     core::{
-        auth::{OAuthExchangeRequest, OAuthToken},
+        auth::{OAuth, OAuthExchangeRequest, OAuthToken},
         model::document::Document,
         service::external::{ImportFailure, ImportResult, OutdatedDocument},
     },
@@ -34,18 +37,17 @@ use validify::Validate;
     ),
 )]
 pub(super) async fn authorize(
-    State((services, http_config)): axum::extract::State<(ServiceState, HttpConfiguration)>,
+    State(state): State<AppState>,
     Form(request): axum::extract::Form<OAuthExchangeRequest>,
 ) -> Result<(HeaderMap, Json<OAuthToken>), ChonkitError> {
-    let api = services.external.google_auth_api();
-    let service = services.external.authorization(api);
+    let service = GoogleOAuth::new(state.http_client.clone(), state.google_oauth_config.clone());
 
     let access_token = service.exchange_code(request).await?;
 
     let cookie = CookieBuilder::new(GOOGLE_ACCESS_TOKEN_COOKIE, &access_token.access_token)
         .secure(true)
         .http_only(true)
-        .domain(&*http_config.cookie_domain)
+        .domain(&*state.http_config.cookie_domain)
         .build();
 
     let mut headers = HeaderMap::new();
@@ -67,13 +69,13 @@ pub(super) async fn authorize(
     request_body = ImportPayload
 )]
 pub(super) async fn import_files(
+    State(state): State<AppState>,
     access_token: axum::extract::Extension<GoogleAccessToken>,
-    State(services): State<ServiceState>,
     force: Option<Query<Force>>,
     Json(payload): Json<ImportPayload>,
 ) -> Result<(StatusCode, Json<ImportResult>), ChonkitError> {
-    let api = services.external.google_drive_api(access_token.0);
-    let service = services.external.storage(api);
+    let api = GoogleDriveApi::new(state.http_client.clone(), access_token.0);
+    let service = state.services.external.storage(api);
     let result = service
         .import_documents(payload.files, force.map(|f| f.force).unwrap_or_default())
         .await?;
@@ -92,13 +94,13 @@ pub(super) async fn import_files(
     )
 )]
 pub(super) async fn import_file(
+    State(state): State<AppState>,
     access_token: axum::extract::Extension<GoogleAccessToken>,
-    State(services): State<ServiceState>,
     Path(file_id): Path<String>,
     force: Option<Query<Force>>,
 ) -> Result<(StatusCode, Json<Document>), ChonkitError> {
-    let api = services.external.google_drive_api(access_token.0);
-    let service = services.external.storage(api);
+    let api = GoogleDriveApi::new(state.http_client.clone(), access_token.0);
+    let service = state.services.external.storage(api);
     let document = service
         .import_document(&file_id, force.map(|f| f.force).unwrap_or_default())
         .await?;
@@ -115,10 +117,10 @@ pub(super) async fn import_file(
 )]
 pub(super) async fn list_outdated_documents(
     access_token: axum::extract::Extension<GoogleAccessToken>,
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
 ) -> Result<Json<Vec<OutdatedDocument>>, ChonkitError> {
-    let api = services.external.google_drive_api(access_token.0);
-    let service = services.external.storage(api);
+    let api = GoogleDriveApi::new(state.http_client.clone(), access_token.0);
+    let service = state.services.external.storage(api);
     let outdated = service.list_outdated_documents().await?;
     Ok(Json(outdated))
 }

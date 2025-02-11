@@ -1,15 +1,15 @@
 use crate::{
-    app::{
-        server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
-        state::ServiceState,
-    },
+    app::server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
     core::{
         document::{parser::ParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
             List,
         },
-        service::document::dto::{ChunkPreviewPayload, DocumentUpload},
+        service::{
+            document::dto::{ChunkPreviewPayload, DocumentUpload},
+            ServiceState,
+        },
     },
     error::ChonkitError,
 };

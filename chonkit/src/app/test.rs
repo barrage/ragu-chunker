@@ -5,12 +5,15 @@ mod vector;
 
 use super::{
     document::store::FsDocumentStore,
-    state::{AppProviderState, AppState, ServiceState},
+    state::{AppProviderState, AppState},
 };
 use crate::core::{
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
     repo::Repository,
-    service::{document::DocumentService, external::ExternalServiceFactory, vector::VectorService},
+    service::{
+        document::DocumentService, external::ExternalServiceFactory, vector::VectorService,
+        ServiceState,
+    },
 };
 use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
 use std::sync::Arc;
@@ -126,12 +129,7 @@ impl TestState {
         let services = ServiceState {
             vector: VectorService::new(postgres.clone(), providers.clone().into()),
             document: DocumentService::new(postgres.clone(), providers.clone().into()),
-            external: ExternalServiceFactory::new(
-                postgres,
-                providers.clone().into(),
-                #[cfg(feature = "gdrive")]
-                crate::app::external::google::auth::GoogleOAuthConfig::new("", ""),
-            ),
+            external: ExternalServiceFactory::new(postgres, providers.clone().into()),
         };
 
         let app = AppState::new_test(
@@ -165,6 +163,31 @@ struct TestContainers {
 
     #[cfg(feature = "weaviate")]
     pub _weaviate: ContainerAsync<GenericImage>,
+}
+
+impl AppState {
+    #[cfg(test)]
+    pub fn new_test(
+        services: ServiceState,
+        providers: AppProviderState,
+        #[cfg(feature = "auth-vault")] vault: super::auth::vault::VaultAuthenticator,
+    ) -> Self {
+        use crate::app::batch;
+
+        use super::server::HttpConfiguration;
+
+        Self {
+            services: services.clone(),
+            providers,
+            batch_embedder: batch::start_batch_embedder(services.clone()),
+            #[cfg(feature = "auth-vault")]
+            vault,
+            #[cfg(feature = "gdrive")]
+            google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig::new("", ""),
+            http_client: reqwest::Client::new(),
+            http_config: HttpConfiguration::default(),
+        }
+    }
 }
 
 /// Setup a postgres test container and connect to it using PgPool.

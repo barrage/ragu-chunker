@@ -22,12 +22,12 @@ impl GoogleAccessToken {
 }
 
 pub struct GoogleOAuth {
-    client: Arc<reqwest::Client>,
+    client: reqwest::Client,
     config: GoogleOAuthConfig,
 }
 
 impl GoogleOAuth {
-    pub fn new(client: Arc<reqwest::Client>, config: GoogleOAuthConfig) -> Self {
+    pub fn new(client: reqwest::Client, config: GoogleOAuthConfig) -> Self {
         Self { client, config }
     }
 }

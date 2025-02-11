@@ -1,5 +1,8 @@
-use super::state::ServiceState;
-use crate::{core::service::vector::dto::CreateEmbeddings, err, error::ChonkitError};
+use crate::{
+    core::service::{vector::dto::CreateEmbeddings, ServiceState},
+    err,
+    error::ChonkitError,
+};
 use chrono::Utc;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -8,6 +11,12 @@ use uuid::Uuid;
 
 /// Sending end for batch embedding jobs.
 pub type BatchEmbedderHandle = mpsc::Sender<BatchJob>;
+
+pub fn start_batch_embedder(state: ServiceState) -> BatchEmbedderHandle {
+    let (tx, rx) = mpsc::channel(128);
+    BatchEmbedder::new(rx, state).start();
+    tx
+}
 
 pub struct BatchEmbedder {
     /// Job queue.

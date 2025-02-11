@@ -3,7 +3,7 @@ use crate::{
         auth::{OAuth, OAuthExchangeRequest, OAuthToken},
         chunk::ChunkConfig,
         document::{
-            parser::{Parse, ParseConfig, Parser},
+            parser::{ParseConfig, Parser},
             sha256,
             store::external::ExternalDocumentStorage,
         },
@@ -13,45 +13,21 @@ use crate::{
     },
     err,
     error::ChonkitError,
-    parse, transaction,
+    transaction,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::sync::Arc;
 use uuid::Uuid;
-
-// TODO: Move out of core.
-#[cfg(feature = "gdrive")]
-use crate::app::external::google::{
-    auth::{GoogleAccessToken, GoogleOAuth, GoogleOAuthConfig},
-    drive::GoogleDriveApi,
-};
 
 #[derive(Clone)]
 pub struct ExternalServiceFactory {
-    #[allow(unused)]
-    client: Arc<reqwest::Client>,
     repo: Repository,
     providers: ProviderState,
-
-    #[cfg(feature = "gdrive")]
-    google_oauth_config: GoogleOAuthConfig,
 }
 
 impl ExternalServiceFactory {
-    pub fn new(
-        repo: Repository,
-        providers: ProviderState,
-        #[cfg(feature = "gdrive")] google_oauth_config: GoogleOAuthConfig,
-    ) -> Self {
-        Self {
-            client: Arc::new(reqwest::Client::new()),
-            repo,
-            providers,
-
-            #[cfg(feature = "gdrive")]
-            google_oauth_config,
-        }
+    pub fn new(repo: Repository, providers: ProviderState) -> Self {
+        Self { repo, providers }
     }
 
     /// Create an instance of [ExternalFileService] using the provided storage API.
@@ -62,16 +38,6 @@ impl ExternalServiceFactory {
     /// Create an instance of [ExternalAuthorizationService] using the provided OAuth API.
     pub fn authorization<T: OAuth>(&self, api: T) -> ExternalAuthorizationService<T> {
         ExternalAuthorizationService::new(api)
-    }
-
-    #[cfg(feature = "gdrive")]
-    pub fn google_auth_api(&self) -> GoogleOAuth {
-        GoogleOAuth::new(self.client.clone(), self.google_oauth_config.clone())
-    }
-
-    #[cfg(feature = "gdrive")]
-    pub fn google_drive_api(&self, config: GoogleAccessToken) -> GoogleDriveApi {
-        GoogleDriveApi::new(self.client.clone(), config)
     }
 }
 

@@ -1,4 +1,7 @@
-use super::batch::{BatchEmbedder, BatchEmbedderHandle};
+use super::{
+    batch::{self, BatchEmbedderHandle},
+    server::HttpConfiguration,
+};
 use crate::{
     app::document::store::FsDocumentStore,
     config::FS_STORE_ID,
@@ -9,6 +12,7 @@ use crate::{
         repo::Repository,
         service::{
             document::DocumentService, external::ExternalServiceFactory, vector::VectorService,
+            ServiceState,
         },
     },
     error::ChonkitError,
@@ -29,8 +33,17 @@ pub struct AppState {
     /// Used for displaying some metadata and in tests.
     pub providers: AppProviderState,
 
+    /// HTTP client for making requests to external services.
+    pub http_client: reqwest::Client,
+
+    /// The http configuration for the server for CORS and cookies.
+    pub http_config: HttpConfiguration,
+
     #[cfg(feature = "auth-vault")]
     pub vault: crate::app::auth::vault::VaultAuthenticator,
+
+    #[cfg(feature = "gdrive")]
+    pub google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig,
 }
 
 impl AppState {
@@ -45,72 +58,66 @@ impl AppState {
 
         let repository = crate::core::repo::Repository::new(&args.db_url()).await;
 
-        let vector_provider = Self::init_vector_providers(args);
-        let embedding_provider = Self::init_embedding_providers(args);
-
-        let storage = Self::init_storage(args);
-
         let providers = AppProviderState {
             database: repository.clone(),
-            vector: vector_provider,
-            embedding: embedding_provider,
-            storage,
+            vector: Self::init_vector_providers(args),
+            embedding: Self::init_embedding_providers(args),
+            storage: Self::init_storage(args),
         };
 
-        let document = DocumentService::new(repository.clone(), providers.clone().into());
+        let services = ServiceState {
+            document: DocumentService::new(repository.clone(), providers.clone().into()),
+            vector: VectorService::new(repository.clone(), providers.clone().into()),
+            external: ExternalServiceFactory::new(repository, providers.clone().into()),
+        };
 
         for provider in providers.storage.list_provider_ids() {
-            match document.sync(provider).await {
+            match services.document.sync(provider).await {
                 Ok(_) => tracing::info!("Synced document provider {provider}"),
                 Err(e) => e.print(),
             }
         }
 
-        let vector = VectorService::new(repository.clone(), providers.clone().into());
+        services.document.create_default_document().await;
 
-        let external = ExternalServiceFactory::new(
-            repository,
-            providers.clone().into(),
+        Self {
+            services: services.clone(),
+
+            batch_embedder: batch::start_batch_embedder(services),
+
+            providers,
+
+            #[cfg(feature = "auth-vault")]
+            vault: crate::app::auth::vault::VaultAuthenticator::new(
+                args.vault_url(),
+                args.vault_role_id(),
+                args.vault_secret_id(),
+                args.vault_key_name(),
+            )
+            .await,
+
             #[cfg(feature = "gdrive")]
-            crate::app::external::google::auth::GoogleOAuthConfig::new(
+            google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig::new(
                 &args.google_oauth_client_id(),
                 &args.google_oauth_client_secret(),
             ),
-        );
 
-        document.create_default_document().await;
+            http_client: reqwest::Client::new(),
 
-        let service_state = ServiceState {
-            document,
-            vector,
-            external,
-        };
-
-        let batch_embedder = Self::init_batch_embedder(service_state.clone());
-
-        #[cfg(feature = "auth-vault")]
-        let vault = Self::init_vault(args).await;
-
-        Self {
-            services: service_state,
-            batch_embedder,
-            providers,
-            #[cfg(feature = "auth-vault")]
-            vault,
+            http_config: Self::server_config(args),
         }
     }
 
-    #[cfg(feature = "auth-vault")]
-    async fn init_vault(
-        args: &crate::config::StartArgs,
-    ) -> crate::app::auth::vault::VaultAuthenticator {
-        crate::app::auth::vault::VaultAuthenticator::new(
-            args.vault_url(),
-            args.vault_role_id(),
-            args.vault_secret_id(),
-            args.vault_key_name(),
-        )
-        .await
+    fn server_config(args: &crate::config::StartArgs) -> HttpConfiguration {
+        let cors_origins = args.allowed_origins();
+        let cors_headers = args.allowed_headers();
+        let cookie_domain = args.cookie_domain();
+
+        HttpConfiguration {
+            cors_origins: std::sync::Arc::from(&*cors_origins.leak()),
+            cors_headers: std::sync::Arc::from(&*cors_headers.leak()),
+            cookie_domain: cookie_domain.into(),
+        }
     }
 
     fn init_vector_providers(args: &crate::config::StartArgs) -> VectorDbProvider {
@@ -191,16 +198,6 @@ impl AppState {
         storage
     }
 
-    // fn init_external_apis(_args: &crate::config::StartArgs) -> ExternalApiProvider {
-    //
-    // }
-
-    fn init_batch_embedder(state: ServiceState) -> BatchEmbedderHandle {
-        let (tx, rx) = tokio::sync::mpsc::channel(128);
-        BatchEmbedder::new(rx, state).start();
-        tx
-    }
-
     /// Used for metadata display.
     pub async fn get_configuration(&self) -> Result<AppConfig, ChonkitError> {
         let mut embedding_providers = HashMap::new();
@@ -256,21 +253,6 @@ impl AppState {
             ],
         })
     }
-
-    #[cfg(test)]
-    pub fn new_test(
-        services: ServiceState,
-        providers: AppProviderState,
-        #[cfg(feature = "auth-vault")] vault: super::auth::vault::VaultAuthenticator,
-    ) -> Self {
-        Self {
-            services: services.clone(),
-            providers,
-            batch_embedder: Self::init_batch_embedder(services),
-            #[cfg(feature = "auth-vault")]
-            vault,
-        }
-    }
 }
 
 /// Concrete version of [ProviderState].
@@ -292,15 +274,6 @@ impl From<AppProviderState> for ProviderState {
     }
 }
 
-#[derive(Clone)]
-pub struct ServiceState {
-    pub document: DocumentService,
-
-    pub vector: VectorService,
-
-    pub external: ExternalServiceFactory,
-}
-
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -316,5 +289,6 @@ pub struct AppConfig {
     /// A list of default chunking configurations.
     pub default_chunkers: Vec<ChunkConfig>,
 
+    /// A list of extensions supported by chonkit.
     pub supported_document_types: Vec<String>,
 }

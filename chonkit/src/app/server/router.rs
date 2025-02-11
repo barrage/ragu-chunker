@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use serde::Deserialize;
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, time::Duration};
 use tower_http::{
     classify::ServerErrorsFailureClass,
     cors::{AllowCredentials, CorsLayer},
@@ -24,15 +24,9 @@ pub(super) mod vector;
 #[cfg(feature = "gdrive")]
 pub(super) mod google;
 
-#[derive(Debug, Clone)]
-pub struct HttpConfiguration {
-    pub cors_origins: Arc<[String]>,
-    pub cors_headers: Arc<[String]>,
-    pub cookie_domain: Arc<str>,
-}
-
-pub fn router(state: AppState, config: HttpConfiguration) -> Router {
-    let origins = config
+pub fn router(state: AppState) -> Router {
+    let origins = state
+        .http_config
         .cors_origins
         .iter()
         .map(|origin| {
@@ -41,7 +35,8 @@ pub fn router(state: AppState, config: HttpConfiguration) -> Router {
         })
         .map(Result::unwrap);
 
-    let headers = config
+    let headers = state
+        .http_config
         .cors_headers
         .iter()
         .map(|header| {
@@ -137,13 +132,10 @@ pub fn router(state: AppState, config: HttpConfiguration) -> Router {
             .layer(axum::middleware::from_fn(
                 crate::app::server::middleware::extract_google_access_token,
             ))
-            .with_state(state.services.clone());
-
-        let gdrive_auth_router = Router::new()
             .route("/google/auth", post(google::authorize))
-            .with_state((state.services.clone(), config.clone()));
+            .with_state(state.clone());
 
-        router.merge(Router::new().nest("/external", gdrive_router.merge(gdrive_auth_router)))
+        router.merge(Router::new().nest("/external", gdrive_router))
     };
 
     #[cfg(feature = "auth-vault")]

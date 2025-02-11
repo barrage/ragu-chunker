@@ -13,7 +13,6 @@ use crate::{
     error::{ChonkitErr, ChonkitError},
     map_err,
 };
-use std::sync::Arc;
 
 const FILES_EP: &str = "https://www.googleapis.com/drive/v3/files";
 const OPERATIONS_EP: &str = "https://www.googleapis.com/drive/v3/operations";
@@ -28,11 +27,11 @@ const GET_FILE_FIELDS: &str =
 pub struct GoogleDriveApi {
     /// Must already be in the form of `Bearer <JWT>`.
     token: String,
-    client: Arc<reqwest::Client>,
+    client: reqwest::Client,
 }
 
 impl GoogleDriveApi {
-    pub fn new(client: Arc<reqwest::Client>, token: GoogleAccessToken) -> Self {
+    pub fn new(client: reqwest::Client, token: GoogleAccessToken) -> Self {
         Self {
             token: token.0,
             client,

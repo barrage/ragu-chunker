@@ -23,3 +23,8 @@ pub trait OAuth {
         request: OAuthExchangeRequest,
     ) -> impl Future<Output = Result<OAuthToken, ChonkitError>> + Send + Sync;
 }
+
+#[async_trait::async_trait]
+pub trait Authorize {
+    async fn verify(&self, token: &str) -> Result<(), ChonkitError>;
+}
