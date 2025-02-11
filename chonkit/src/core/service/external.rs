@@ -2,14 +2,18 @@ use crate::{
     core::{
         auth::{OAuth, OAuthExchangeRequest, OAuthToken},
         chunk::ChunkConfig,
-        document::{parser::ParseConfig, sha256, store::external::ExternalDocumentStorage},
+        document::{
+            parser::{Parse, ParseConfig, Parser},
+            sha256,
+            store::external::ExternalDocumentStorage,
+        },
         model::document::{Document, DocumentInsert, DocumentParameterUpdate},
         provider::ProviderState,
         repo::{document::DocumentRepo, Atomic, Repository},
     },
     err,
     error::ChonkitError,
-    transaction,
+    parse, transaction,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -162,6 +166,16 @@ where
                         continue;
                     }
                 };
+
+                // Attempt to parse with defaults to check for empty documents.
+                let parser = Parser::default();
+                if let Err(e) = crate::parse!(&parser, file.ext, content.as_slice()) {
+                    result
+                        .failed
+                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
+                    continue;
+                }
+
                 let hash = sha256(&content);
 
                 tracing::debug!(
@@ -236,6 +250,15 @@ where
                         continue;
                     }
                 };
+
+                // Attempt to parse with defaults to check for empty documents.
+                let parser = Parser::default();
+                if let Err(e) = crate::parse!(&parser, file.ext, content.as_slice()) {
+                    result
+                        .failed
+                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
+                    continue;
+                }
 
                 let hash = sha256(&content);
                 let name = file.name.clone();
@@ -325,6 +348,11 @@ where
         }
 
         let content = self.api.download(file_id).await?;
+
+        // Attempt to parse with defaults to check for empty documents.
+        let parser = Parser::default();
+        crate::parse!(&parser, file.ext, content.as_slice())?;
+
         let hash = sha256(&content);
         storage.write(&local_path, &content, force_download).await?;
 
