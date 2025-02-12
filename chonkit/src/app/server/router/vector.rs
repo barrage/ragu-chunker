@@ -1,5 +1,5 @@
 use crate::{
-    app::{batch::{BatchEmbedderHandle, BatchJob, JobResult}, server::dto::{ EmbeddingBatchPayload, EmbeddingSinglePayload, ListEmbeddingsPayload, } }, core::{
+    app::{batch::{BatchEmbedderHandle, BatchJob, JobResult}, server::dto::{ EmbeddingBatchPayload, EmbeddingSinglePayload, ListEmbeddingsPayload, }, state::AppState }, core::{
         chunk::ChunkedDocument, model::{
             collection::{Collection, CollectionDisplay, Embedding},  List, PaginationSort
         }, service::{vector::dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload }, ServiceState}
@@ -26,11 +26,11 @@ use uuid::Uuid;
     )
 )]
 pub(super) async fn list_collections(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     payload: Option<Query<PaginationSort>>,
 ) -> Result<Json<List<Collection>>, ChonkitError> {
     let Query(pagination) = payload.unwrap_or_default();
-    let collections = services.vector.list_collections(pagination).await?;
+    let collections = state.services.vector.list_collections(pagination).await?;
     Ok(Json(collections))
 }
 
@@ -47,11 +47,11 @@ pub(super) async fn list_collections(
     ),
 )]
 pub(super) async fn list_collections_display(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     payload: Option<Query<PaginationSort>>,
 ) -> Result<Json<List<CollectionDisplay>>, ChonkitError> {
     let Query(pagination) = payload.unwrap_or_default();
-    let collections = services.vector.list_collections_display(pagination).await?;
+    let collections = state.services.vector.list_collections_display(pagination).await?;
     Ok(Json(collections))
 }
 
@@ -68,10 +68,10 @@ pub(super) async fn list_collections_display(
     ) 
 )]
 pub(super) async fn collection_display(
-    State(services): State<ServiceState>,
+    State(state):State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CollectionDisplay>, ChonkitError> {
-    let collection = services.vector.get_collection_display(id).await?;
+    let collection = state.services.vector.get_collection_display(id).await?;
     Ok(Json(collection))
 }
 
@@ -86,10 +86,10 @@ pub(super) async fn collection_display(
     request_body = CreateCollectionPayload
 )]
 pub(super) async fn create_collection(
-    State(services): State<ServiceState>,
+    State(state):State<AppState>,
     Json(payload): Json<CreateCollectionPayload>,
 ) -> Result<(StatusCode, Json<Collection>), ChonkitError> {
-    let collection = services.vector
+    let collection = state.services.vector
         .create_collection( payload)
         .await?;
     Ok((StatusCode::CREATED, Json(collection)))
@@ -109,12 +109,11 @@ pub(super) async fn create_collection(
     )
 )]
 pub(super) async fn get_collection(
-    services: State<ServiceState>,
+    State(state): State<AppState>,
     Path(id_str): Path<String>,
 ) -> Result<Json<Collection>, ChonkitError> {
     let collection_id = map_err!(Uuid::parse_str(&id_str));
-
-    let collection = services.vector.get_collection(collection_id).await?;
+    let collection = state.services.vector.get_collection(collection_id).await?;
     Ok(Json(collection))
 }
 
@@ -131,12 +130,12 @@ pub(super) async fn get_collection(
     )
 )]
 pub(super) async fn delete_collection(
-    services: State<ServiceState>,
+    State(state): State<AppState>,
     Path(id_str): Path<String>,
 ) -> Result<StatusCode, ChonkitError> {
     let collection_id = map_err!(Uuid::parse_str(&id_str));
 
-    services.vector
+    state.services.vector
         .delete_collection(collection_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)
@@ -154,10 +153,10 @@ pub(super) async fn delete_collection(
     ),
 )]
 pub(super) async fn list_embedding_models(
-    State(services): State<ServiceState>,
+    State(state):State<AppState>,
     Path(provider): Path<String>,
 ) -> Result<Json<HashMap<String, usize>>, ChonkitError> {
-    let models = services.vector
+    let models = state.services.vector
         .list_embedding_models(&provider)
         .await?
         .into_iter()
@@ -176,7 +175,7 @@ pub(super) async fn list_embedding_models(
     request_body = EmbeddingSinglePayload
 )]
 pub(super) async fn embed(
-    State(services): axum::extract::State<ServiceState>,
+    State(state):State<AppState>,
     Json(payload): Json<EmbeddingSinglePayload>,
 ) -> Result<(StatusCode, Json<Embedding>), ChonkitError> {
     let EmbeddingSinglePayload {
@@ -184,11 +183,11 @@ pub(super) async fn embed(
         collection,
     } = payload;
 
-    let document = services.document.get_document(document_id).await?;
-    let collection = services.vector.get_collection(collection).await?;
-    let content = services.document.get_content(document_id).await?;
+    let document = state.services.document.get_document(document_id).await?;
+    let collection = state.services.vector.get_collection(collection).await?;
+    let content = state.services.document.get_content(document_id).await?;
 
-    let chunks = services.document
+    let chunks = state.services.document
         .get_chunks(&document, &content)
         .await?;
 
@@ -205,7 +204,7 @@ pub(super) async fn embed(
         chunks: &chunks,
     };
 
-    let embedding = services.vector
+    let embedding = state.services.vector
         .create_embeddings(create)
         .await?;
 
@@ -222,7 +221,7 @@ pub(super) async fn embed(
     request_body = EmbeddingBatchPayload
 )]
 pub(super) async fn batch_embed(
-    State(batch_embedder): axum::extract::State<BatchEmbedderHandle>,
+    State(state): State<AppState>,
     Json(job): Json<EmbeddingBatchPayload>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, ChonkitError>>>, ChonkitError> {
     map_err!(job.validate());
@@ -237,7 +236,7 @@ pub(super) async fn batch_embed(
 
     let job = BatchJob::new(collection, add, remove, tx);
 
-    if let Err(e) = batch_embedder.send(job).await {
+    if let Err(e) = state.batch_embedder.send(job).await {
         tracing::error!("Error sending embedding job: {:?}", e.0);
         return err!(Batch);
     };
@@ -280,7 +279,7 @@ pub(super) async fn batch_embed(
     ),
 )]
 pub(super) async fn list_embedded_documents(
-    State(services): State<ServiceState>,
+    State(state):State<AppState>,
     Query(payload): Query<ListEmbeddingsPayload>,
 ) -> Result<Json<List<Embedding>>, ChonkitError> {
     let ListEmbeddingsPayload {
@@ -288,7 +287,7 @@ pub(super) async fn list_embedded_documents(
         pagination,
     } = payload;
 
-    let embeddings = services.vector.list_embeddings(pagination.unwrap_or_default(), collection_id).await?;
+    let embeddings = state.services.vector.list_embeddings(pagination.unwrap_or_default(), collection_id).await?;
     Ok(Json(embeddings))
 }
 
@@ -301,10 +300,10 @@ pub(super) async fn list_embedded_documents(
     ),
 )]
 pub(super) async fn list_outdated_embeddings(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     Path(collection_id): Path<Uuid>,
 ) -> Result<Json<Vec<Embedding>>, ChonkitError> {
-    let embeddings = services.vector.list_outdated_embeddings(collection_id).await?;
+    let embeddings = state.services.vector.list_outdated_embeddings(collection_id).await?;
     Ok(Json(embeddings))
 }
 
@@ -318,10 +317,10 @@ pub(super) async fn list_outdated_embeddings(
     request_body = SearchPayload
 )]
 pub(super) async fn search(
-    State(services): State<ServiceState>,
+    State(state):State<AppState>,
     Json(search): Json<SearchPayload>,
 ) -> Result<Json<Vec<String>>, ChonkitError> {
-    let chunks = services.vector.search(search).await?;
+    let chunks = state.services.vector.search(search).await?;
     Ok(Json(chunks))
 }
 
@@ -338,10 +337,10 @@ pub(super) async fn search(
     ),
 )]
 pub(super) async fn count_embeddings(
-    State(services): State<ServiceState>,
+    State(state):State<AppState>,
     Path((collection_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<usize>, ChonkitError> {
-    let amount = services.vector
+    let amount = state.services.vector
         .count_embeddings(collection_id, document_id)
         .await?;
     Ok(Json(amount))
@@ -360,10 +359,10 @@ pub(super) async fn count_embeddings(
     ),
 )]
 pub(super) async fn delete_embeddings(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     Path((collection_id, document_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, ChonkitError> {
-    services.vector
+    state.services.vector
         .delete_embeddings(collection_id, document_id)
         .await?;
     Ok(StatusCode::NO_CONTENT)

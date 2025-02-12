@@ -11,7 +11,7 @@ use crate::{
     core::{
         auth::{OAuth, OAuthExchangeRequest, OAuthToken},
         model::document::Document,
-        service::external::{ImportFailure, ImportResult, OutdatedDocument},
+        service::external::file::{ImportFailure, ImportResult, OutdatedDocument},
     },
     error::ChonkitError,
     map_err,

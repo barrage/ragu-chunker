@@ -1,15 +1,15 @@
 use crate::{
-    app::server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
+    app::{
+        server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
+        state::AppState,
+    },
     core::{
         document::{parser::ParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
             List,
         },
-        service::{
-            document::dto::{ChunkPreviewPayload, DocumentUpload},
-            ServiceState,
-        },
+        service::document::dto::{ChunkPreviewPayload, DocumentUpload},
     },
     error::ChonkitError,
 };
@@ -36,12 +36,13 @@ use super::Force;
     ),
 )]
 pub(super) async fn list_documents(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     params: Option<Query<ListDocumentsPayload>>,
 ) -> Result<Json<List<Document>>, ChonkitError> {
     let Query(params) = params.unwrap_or_default();
 
-    let documents = services
+    let documents = state
+        .services
         .document
         .list_documents(params.pagination, params.src.as_deref(), params.ready)
         .await?;
@@ -62,12 +63,13 @@ pub(super) async fn list_documents(
     ),
 )]
 pub(super) async fn list_documents_display(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     payload: Option<Query<ListDocumentsPayload>>,
 ) -> Result<Json<List<DocumentDisplay>>, ChonkitError> {
     let Query(payload) = payload.unwrap_or_default();
 
-    let documents = services
+    let documents = state
+        .services
         .document
         .list_documents_display(
             payload.pagination,
@@ -92,10 +94,10 @@ pub(super) async fn list_documents_display(
     )
 )]
 pub(super) async fn get_document(
-    State(services): axum::extract::State<ServiceState>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DocumentConfig>, ChonkitError> {
-    let document = services.document.get_config(id).await?;
+    let document = state.services.document.get_config(id).await?;
     Ok(Json(document))
 }
 
@@ -112,10 +114,10 @@ pub(super) async fn get_document(
     )
 )]
 pub(super) async fn delete_document(
-    State(services): axum::extract::State<ServiceState>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ChonkitError> {
-    services.document.delete(id).await?;
+    state.services.document.delete(id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -130,7 +132,7 @@ pub(super) async fn delete_document(
     ),
 )]
 pub(super) async fn upload_documents(
-    State(services): axum::extract::State<ServiceState>,
+    State(state): State<AppState>,
     force: Option<Query<Force>>,
     mut form: axum::extract::Multipart,
 ) -> Result<Json<UploadResult>, ChonkitError> {
@@ -171,7 +173,7 @@ pub(super) async fn upload_documents(
 
         let upload = DocumentUpload::new(name.to_string(), typ, &file);
 
-        let document = match services.document.upload(upload, force).await {
+        let document = match state.services.document.upload(upload, force).await {
             Ok(doc) => doc,
             Err(e) => {
                 tracing::error!("{e}");
@@ -203,18 +205,23 @@ pub(super) async fn upload_documents(
     request_body = ConfigUpdatePayload
 )]
 pub(super) async fn update_document_config(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     Path(document_id): Path<Uuid>,
     Json(config): Json<ConfigUpdatePayload>,
 ) -> Result<StatusCode, ChonkitError> {
     let ConfigUpdatePayload { parser, chunker } = config;
 
     if let Some(parser) = parser {
-        services.document.update_parser(document_id, parser).await?;
+        state
+            .services
+            .document
+            .update_parser(document_id, parser)
+            .await?;
     }
 
     if let Some(chunker) = chunker {
-        services
+        state
+            .services
             .document
             .update_chunker(document_id, chunker)
             .await?;
@@ -237,11 +244,11 @@ pub(super) async fn update_document_config(
     request_body = ChunkPreviewPayload
 )]
 pub(super) async fn chunk_preview(
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(config): Json<ChunkPreviewPayload>,
 ) -> Result<Json<Vec<String>>, ChonkitError> {
-    let chunks = services.document.chunk_preview(id, config).await?;
+    let chunks = state.services.document.chunk_preview(id, config).await?;
 
     Ok(Json(chunks))
 }
@@ -260,12 +267,11 @@ pub(super) async fn chunk_preview(
     request_body(content = ParseConfig, description = "Optional parse configuration for preview")
 )]
 pub(super) async fn parse_preview(
-    // google_access_token: Option<axum::extract::Extension<GoogleAccessToken>>,
-    State(services): State<ServiceState>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(config): Json<ParseConfig>,
 ) -> Result<Json<String>, ChonkitError> {
-    let parsed = services.document.parse_document(id, config).await?;
+    let parsed = state.services.document.parse_document(id, config).await?;
     Ok(Json(parsed))
 }
 
@@ -281,9 +287,9 @@ pub(super) async fn parse_preview(
     ),
 )]
 pub(super) async fn sync(
-    services: axum::extract::State<ServiceState>,
+    State(state): State<AppState>,
     Path(provider): Path<String>,
 ) -> Result<StatusCode, ChonkitError> {
-    services.document.sync(&provider).await?;
+    state.services.document.sync(&provider).await?;
     Ok(StatusCode::NO_CONTENT)
 }

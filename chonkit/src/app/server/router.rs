@@ -57,15 +57,8 @@ pub fn router(state: AppState) -> Router {
             Method::PATCH,
         ]);
 
-    let info_router = Router::new()
-        .route("/info", get(app_config))
-        .with_state(state.clone());
-
-    let batch_router = Router::new()
-        .route("/embeddings/batch", post(vector::batch_embed))
-        .with_state(state.batch_embedder.clone());
-
     let router = Router::new()
+        .route("/info", get(app_config))
         .route("/documents", get(document::list_documents))
         .route("/documents", post(document::upload_documents))
         .route_layer(DefaultBodyLimit::max(100_000_000))
@@ -106,6 +99,7 @@ pub fn router(state: AppState) -> Router {
             "/embeddings/:provider/models",
             get(vector::list_embedding_models),
         )
+        .route("/embeddings/batch", post(vector::batch_embed))
         .route("/search", post(vector::search))
         .route("/display/documents", get(document::list_documents_display))
         .route(
@@ -113,9 +107,7 @@ pub fn router(state: AppState) -> Router {
             get(vector::list_collections_display),
         )
         .route("/display/collections/:id", get(vector::collection_display))
-        .with_state(state.services.clone())
-        .merge(batch_router)
-        .merge(info_router);
+        .with_state(state.clone());
 
     #[cfg(feature = "gdrive")]
     let router = {
