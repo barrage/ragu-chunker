@@ -1,5 +1,5 @@
 use super::ParseConfig;
-use crate::{err, error::ChonkitError, map_err};
+use crate::{error::ChonkitError, map_err};
 use pdfium_render::prelude::Pdfium;
 use regex::Regex;
 use std::{fmt::Write, time::Instant};
@@ -80,15 +80,6 @@ pub fn parse(input: &[u8], config: &ParseConfig) -> Result<String, ChonkitError>
         "Finished processing PDF, {page_count}/{total_pages} pages took {}ms",
         Instant::now().duration_since(_start).as_millis()
     );
-
-    if out.is_empty() {
-        tracing::error!("Parsing resulted in empty output. Config: {:?}", config);
-
-        return err!(
-                ParseConfig,
-                "empty output (total pages: {total_pages} | start: {start} | end: {end} | range: {range})",
-            );
-    }
 
     Ok(out)
 }

@@ -2,15 +2,15 @@ use crate::error::ChonkitError;
 use serde::{Deserialize, Serialize};
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 
-use super::{Docx, Excel, Pdf, Text};
+use super::{DocumentType, Docx, Excel, Pdf, Text};
 
 pub mod docx;
 pub mod excel;
 pub mod pdf;
 pub mod text;
 
-#[derive(Debug, Default)]
-pub struct Parser<C = ParseConfig>(C);
+#[derive(Debug)]
+pub struct Parser<C = ParseConfig>(pub C);
 
 impl Parser {
     pub fn new(config: ParseConfig) -> Self {
@@ -18,8 +18,10 @@ impl Parser {
     }
 }
 
-pub trait Parse<T> {
-    fn parse(&self, input: T) -> Result<String, ChonkitError>;
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new(ParseConfig::default())
+    }
 }
 
 /// Generic parsing configuration for documents.
@@ -81,6 +83,10 @@ impl ParseConfig {
     }
 }
 
+pub trait Parse<T> {
+    fn parse(&self, input: T) -> Result<String, ChonkitError>;
+}
+
 impl Parse<Docx<'_>> for Parser {
     fn parse(&self, input: Docx<'_>) -> Result<String, ChonkitError> {
         docx::parse(input.0, &self.0)
@@ -89,7 +95,9 @@ impl Parse<Docx<'_>> for Parser {
 
 impl Parse<Pdf<'_>> for Parser {
     fn parse(&self, input: Pdf<'_>) -> Result<String, ChonkitError> {
-        pdf::parse(input.0, &self.0)
+        let out = pdf::parse(input.0, &self.0)?;
+
+        Ok(out)
     }
 }
 
@@ -105,34 +113,28 @@ impl Parse<Text<'_>> for Parser {
     }
 }
 
-#[macro_export]
-macro_rules! parse {
-    ($parser:expr, $ext:expr, $content:expr) => {
-        match $ext {
-            $crate::core::document::DocumentType::Text(_) => {
-                $crate::core::document::parser::Parse::parse(
-                    $parser,
-                    $crate::core::document::Text($content),
-                )
-            }
-            $crate::core::document::DocumentType::Docx => {
-                $crate::core::document::parser::Parse::parse(
-                    $parser,
-                    $crate::core::document::Docx($content),
-                )
-            }
-            $crate::core::document::DocumentType::Pdf => {
-                $crate::core::document::parser::Parse::parse(
-                    $parser,
-                    $crate::core::document::Pdf($content),
-                )
-            }
-            $crate::core::document::DocumentType::Excel => {
-                $crate::core::document::parser::Parse::parse(
-                    $parser,
-                    $crate::core::document::Excel($content),
-                )
-            }
+impl Parser {
+    pub fn parse_bytes(&self, ext: DocumentType, input: &[u8]) -> Result<String, ChonkitError> {
+        let out = match ext {
+            DocumentType::Text(_) => Parse::parse(self, Text(input)),
+            DocumentType::Docx => Parse::parse(self, Docx(input)),
+            DocumentType::Pdf => Parse::parse(self, Pdf(input)),
+            DocumentType::Excel => Parse::parse(self, Excel(input)),
+        }?;
+
+        let ParseConfig {
+            start, end, range, ..
+        } = self.0;
+
+        if out.is_empty() {
+            tracing::error!("Parsing resulted in empty output. Config: {:?}", self.0);
+
+            return crate::err!(
+                ParseConfig,
+                "empty output (start: {start} | end: {end} | range: {range})",
+            );
         }
-    };
+
+        Ok(out)
+    }
 }

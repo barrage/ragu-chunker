@@ -213,9 +213,8 @@ mod tests {
         let file = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(CONTENT, file);
 
-        let parser = Parser::default();
         let read = store.read(&path).await.unwrap();
-        let content = crate::parse!(&parser, ext, &read).unwrap();
+        let content = Parser::default().parse_bytes(ext, &read).unwrap();
 
         assert_eq!(CONTENT, content);
 

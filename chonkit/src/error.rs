@@ -162,7 +162,7 @@ impl ChonkitError {
 #[macro_export]
 macro_rules! err {
     ($ty:ident $(, $l:literal $(,)? $($args:expr),* )?) => {
-        Err(ChonkitError::new(
+        Err($crate::error::ChonkitError::new(
             file!(),
             line!(),
             column!(),
@@ -171,7 +171,7 @@ macro_rules! err {
     };
 
     ($expr:expr) => {
-        Err(ChonkitError::new(
+        Err($crate::error::ChonkitError::new(
             file!(),
             line!(),
             column!(),

@@ -108,7 +108,7 @@ impl DocumentService {
 
         let content = store.read(&document.path).await?;
 
-        crate::parse!(&parser, ext, &content)
+        parser.parse_bytes(ext, &content)
     }
 
     /// Get document chunks using its parsing and chunking configuration,
@@ -159,7 +159,7 @@ impl DocumentService {
 
         // The default parser parses the whole input so we use it
         // to check whether the document has any content. Reject if empty.
-        crate::parse!(&Parser::default(), ty, file)?;
+        Parser::default().parse_bytes(ty, file)?;
 
         // Always return errors if there is a hash collision
         if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
@@ -380,7 +380,7 @@ impl DocumentService {
 
         let content = store.read(&document.path).await?;
 
-        crate::parse!(&parser, ext, &content)
+        parser.parse_bytes(ext, &content)
     }
 
     /// Update a document's parsing configuration.

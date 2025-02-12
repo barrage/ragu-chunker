@@ -134,8 +134,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                let parser = Parser::default();
-                if let Err(e) = crate::parse!(&parser, file.ext, content.as_slice()) {
+                if let Err(e) = Parser::default().parse_bytes(file.ext, content.as_slice()) {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -218,8 +217,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                let parser = Parser::default();
-                if let Err(e) = crate::parse!(&parser, file.ext, content.as_slice()) {
+                if let Err(e) = Parser::default().parse_bytes(file.ext, content.as_slice()) {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -316,8 +314,7 @@ where
         let content = self.api.download(file_id).await?;
 
         // Attempt to parse with defaults to check for empty documents.
-        let parser = Parser::default();
-        crate::parse!(&parser, file.ext, content.as_slice())?;
+        Parser::default().parse_bytes(file.ext, content.as_slice())?;
 
         let hash = sha256(&content);
         storage.write(&local_path, &content, force_download).await?;
