@@ -22,9 +22,9 @@ pub struct FsDocumentStore {
 }
 
 impl FsDocumentStore {
-    pub fn new(dir: &str) -> Self {
+    pub async fn new(dir: &str) -> Self {
         Self {
-            dir: TokioDirectory::new(dir),
+            dir: TokioDirectory::new(dir).await,
         }
     }
 }
@@ -66,8 +66,15 @@ pub struct TokioDirectory {
 }
 
 impl TokioDirectory {
-    pub fn new(path: &str) -> Self {
+    pub async fn new(path: &str) -> Self {
         info!("Initialising document store at {path}");
+
+        if let Err(e) = tokio::fs::create_dir_all(path).await {
+            match e.kind() {
+                std::io::ErrorKind::AlreadyExists => {}
+                _ => panic!("unable to create directory ({path}): {e}"),
+            }
+        }
 
         let base = std::path::absolute(path)
             .unwrap_or_else(|e| panic!("unable to determine absolute path ({path}): {e}"));
@@ -75,8 +82,6 @@ impl TokioDirectory {
         if !base.is_dir() {
             panic!("not a directory: {path}");
         }
-
-        info!("Initialised document store at {}", base.display());
 
         Self { base }
     }
@@ -191,9 +196,8 @@ mod tests {
     #[tokio::test]
     async fn works() {
         let _ = tokio::fs::remove_dir_all(DIR).await;
-        tokio::fs::create_dir(DIR).await.unwrap();
 
-        let store = FsDocumentStore::new(DIR);
+        let store = FsDocumentStore::new(DIR).await;
 
         let d = Document {
             name: "foo".to_string(),

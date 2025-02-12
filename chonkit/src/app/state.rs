@@ -8,7 +8,9 @@ use crate::{
     core::{
         chunk::ChunkConfig,
         document::{DocumentType, TextDocumentType},
-        provider::{DocumentStorageProvider, EmbeddingProvider, ProviderState, VectorDbProvider},
+        provider::{
+            DocumentStorageProvider, EmbeddingProvider, Identity, ProviderState, VectorDbProvider,
+        },
         repo::Repository,
         service::{
             document::DocumentService, external::ExternalServiceFactory, vector::VectorService,
@@ -62,7 +64,7 @@ impl AppState {
             database: repository.clone(),
             vector: Self::init_vector_providers(args),
             embedding: Self::init_embedding_providers(args),
-            storage: Self::init_storage(args),
+            storage: Self::init_storage(args).await,
         };
 
         let services = ServiceState {
@@ -179,20 +181,23 @@ impl AppState {
         provider
     }
 
-    fn init_storage(args: &crate::config::StartArgs) -> DocumentStorageProvider {
+    async fn init_storage(args: &crate::config::StartArgs) -> DocumentStorageProvider {
         let mut storage = DocumentStorageProvider::default();
 
-        let fs = Arc::new(FsDocumentStore::new(&args.upload_path()));
+        let fs = Arc::new(FsDocumentStore::new(&args.upload_path()).await);
+        tracing::info!("Registering storage provider {}", fs.id());
         storage.register(fs);
-        tracing::info!("Registered local FS storage provider");
 
         #[cfg(feature = "gdrive")]
         {
-            let drive = Arc::new(crate::app::external::google::store::GoogleDriveStore::new(
-                &args.google_drive_download_path(),
-            ));
+            let drive = Arc::new(
+                crate::app::external::google::store::GoogleDriveStore::new(
+                    &args.google_drive_download_path(),
+                )
+                .await,
+            );
+            tracing::info!("Registering storage provider {}", drive.id());
             storage.register(drive);
-            tracing::info!("Registered Google Drive storage provider");
         };
 
         storage

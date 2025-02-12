@@ -53,14 +53,17 @@ impl TestState {
 
         let mut storage = DocumentStorageProvider::default();
 
-        let fs_store = Arc::new(FsDocumentStore::new(&config.fs_store_path));
+        let fs_store = Arc::new(FsDocumentStore::new(&config.fs_store_path).await);
         storage.register(fs_store);
 
         #[cfg(feature = "gdrive")]
         {
-            let drive = Arc::new(crate::app::external::google::store::GoogleDriveStore::new(
-                &config.gdrive_download_path,
-            ));
+            let drive = Arc::new(
+                crate::app::external::google::store::GoogleDriveStore::new(
+                    &config.gdrive_download_path,
+                )
+                .await,
+            );
             storage.register(drive);
         }
 

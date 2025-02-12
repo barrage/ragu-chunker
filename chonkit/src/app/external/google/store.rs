@@ -38,9 +38,9 @@ impl GoogleDriveStore {
     /// Construct a new instance of the store at the provided path.
     /// The path must be a directory.
     /// All files imported from Drive will be downloaded to this path.
-    pub fn new(base: &str) -> Self {
+    pub async fn new(base: &str) -> Self {
         Self {
-            dir: TokioDirectory::new(base),
+            dir: TokioDirectory::new(base).await,
         }
     }
 }
@@ -87,9 +87,7 @@ mod tests {
 
     #[tokio::test]
     async fn works() {
-        tokio::fs::create_dir(DIR).await.unwrap();
-
-        let store = GoogleDriveStore::new(DIR);
+        let store = GoogleDriveStore::new(DIR).await;
 
         let d = Document {
             name: "foo".to_string(),
