@@ -11,8 +11,7 @@ use crate::core::{
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
     repo::Repository,
     service::{
-        document::DocumentService, external::ExternalServiceFactory, vector::VectorService,
-        ServiceState,
+        document::DocumentService, external::ServiceFactory, vector::VectorService, ServiceState,
     },
 };
 use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
@@ -132,7 +131,7 @@ impl TestState {
         let services = ServiceState {
             vector: VectorService::new(postgres.clone(), providers.clone().into()),
             document: DocumentService::new(postgres.clone(), providers.clone().into()),
-            external: ExternalServiceFactory::new(postgres, providers.clone().into()),
+            external: ServiceFactory::new(postgres, providers.clone().into()),
         };
 
         let app = AppState::new_test(
@@ -175,20 +174,20 @@ impl AppState {
         providers: AppProviderState,
         #[cfg(feature = "auth-vault")] vault: super::auth::vault::VaultAuthenticator,
     ) -> Self {
-        use crate::app::batch;
-
         use super::server::HttpConfiguration;
+        use crate::{app::batch, core::service::token::Tokenizer};
 
         Self {
             services: services.clone(),
             providers,
             batch_embedder: batch::start_batch_embedder(services.clone()),
+            tokenizer: Tokenizer::new(),
+            http_client: reqwest::Client::new(),
+            http_config: HttpConfiguration::default(),
             #[cfg(feature = "auth-vault")]
             vault,
             #[cfg(feature = "gdrive")]
             google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig::new("", ""),
-            http_client: reqwest::Client::new(),
-            http_config: HttpConfiguration::default(),
         }
     }
 }

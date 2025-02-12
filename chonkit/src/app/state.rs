@@ -13,8 +13,8 @@ use crate::{
         },
         repo::Repository,
         service::{
-            document::DocumentService, external::ExternalServiceFactory, vector::VectorService,
-            ServiceState,
+            document::DocumentService, external::ServiceFactory, token::Tokenizer,
+            vector::VectorService, ServiceState,
         },
     },
     error::ChonkitError,
@@ -40,6 +40,8 @@ pub struct AppState {
 
     /// The http configuration for the server for CORS and cookies.
     pub http_config: HttpConfiguration,
+
+    pub tokenizer: Tokenizer,
 
     #[cfg(feature = "auth-vault")]
     pub vault: crate::app::auth::vault::VaultAuthenticator,
@@ -70,7 +72,7 @@ impl AppState {
         let services = ServiceState {
             document: DocumentService::new(repository.clone(), providers.clone().into()),
             vector: VectorService::new(repository.clone(), providers.clone().into()),
-            external: ExternalServiceFactory::new(repository, providers.clone().into()),
+            external: ServiceFactory::new(repository, providers.clone().into()),
         };
 
         for provider in providers.storage.list_provider_ids() {
@@ -89,6 +91,12 @@ impl AppState {
 
             providers,
 
+            tokenizer: Tokenizer::new(),
+
+            http_client: reqwest::Client::new(),
+
+            http_config: Self::server_config(args),
+
             #[cfg(feature = "auth-vault")]
             vault: crate::app::auth::vault::VaultAuthenticator::new(
                 args.vault_url(),
@@ -103,10 +111,6 @@ impl AppState {
                 &args.google_oauth_client_id(),
                 &args.google_oauth_client_secret(),
             ),
-
-            http_client: reqwest::Client::new(),
-
-            http_config: Self::server_config(args),
         }
     }
 
