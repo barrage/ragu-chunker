@@ -1,8 +1,10 @@
 ARG ONX_VERSION=1.20.1
+ARG PDFIUM_VERSION=6996
 
 FROM rust:latest AS builder
 
 ARG ONX_VERSION
+ARG PDFIUM_VERSION
 ARG FEATURES="weaviate openai gdrive"
 
 WORKDIR /app
@@ -10,9 +12,9 @@ WORKDIR /app
 COPY chonkit ./chonkit
 COPY chunx ./chunx
 COPY embedders ./embedders
-COPY sqlx-data.json ./chonkit/sqlx-data.json
+COPY .sqlx ./chonkit/.sqlx
 
-RUN mkdir pdfium && curl -sL https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F6666/pdfium-linux-x64.tgz | tar -xzf - -C ./pdfium
+RUN mkdir pdfium && curl -sL https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F${PDFIUM_VERSION}/pdfium-linux-x64.tgz | tar -xzf - -C ./pdfium
 RUN mkdir onnxruntime && curl -sL https://github.com/microsoft/onnxruntime/releases/download/v${ONX_VERSION}/onnxruntime-linux-x64-${ONX_VERSION}.tgz | tar -xzf - -C ./onnxruntime
 
 WORKDIR /app/chonkit

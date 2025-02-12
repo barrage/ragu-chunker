@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO embeddings(id, document_id, collection_id)\n                    VALUES ($1, $2, $3)\n                    ON CONFLICT(id) DO UPDATE\n                    SET id = $1\n                    RETURNING \n                    id, document_id, collection_id, created_at, updated_at\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "document_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "collection_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "9d458af953e39cdd9fa5da457fe8a11e7aa520d9fa79b0afbc2a39db96c3b36f"
+}

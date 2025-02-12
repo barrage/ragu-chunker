@@ -464,7 +464,7 @@ impl DocumentRepo for Repository {
     ) -> Result<u64, ChonkitError> {
         let query = sqlx::query!("DELETE FROM documents WHERE id = $1", id);
         if let Some(tx) = tx {
-            Ok(map_err!(query.execute(tx).await).rows_affected())
+            Ok(map_err!(query.execute(&mut **tx).await).rows_affected())
         } else {
             Ok(map_err!(query.execute(&self.client).await).rows_affected())
         }
@@ -632,7 +632,7 @@ impl DocumentRepo for Repository {
                 label,
                 tags.as_deref(),
             )
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await
         );
 
@@ -648,7 +648,7 @@ impl DocumentRepo for Repository {
                 parse_insert.document_id,
                 parse_insert.config as Json<ParseConfig>,
             )
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
         );
 
@@ -664,7 +664,7 @@ impl DocumentRepo for Repository {
                 chunk_insert.document_id,
                 chunk_insert.config as Json<ChunkConfig>,
             )
-            .execute(tx)
+            .execute(&mut **tx)
             .await
         );
 

@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    SELECT \n                        d.id,\n                        d.name,\n                        d.path,\n                        d.ext,\n                        d.hash,\n                        d.src,\n                        c.config AS \"chunk_config: Option<Json<ChunkConfig>>\",\n                        p.config AS \"parse_config: _\"\n                    FROM documents d \n                    LEFT JOIN chunkers c ON c.document_id = d.id\n                    LEFT JOIN parsers p ON p.document_id = d.id\n                    WHERE d.id = $1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "ext",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "src",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "chunk_config: Option<Json<ChunkConfig>>",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "parse_config: _",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "07b0df9c8d20e18e17e7d30a76ab1e097ce10779d09c5125f5db172c348a93c9"
+}

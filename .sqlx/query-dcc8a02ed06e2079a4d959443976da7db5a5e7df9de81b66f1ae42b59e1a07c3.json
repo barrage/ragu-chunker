@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH embeddings AS (SELECT document_id FROM embeddings WHERE collection_id = $1) \n                SELECT documents.id, documents.name FROM documents RIGHT JOIN embeddings ON documents.id = embeddings.document_id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "dcc8a02ed06e2079a4d959443976da7db5a5e7df9de81b66f1ae42b59e1a07c3"
+}
