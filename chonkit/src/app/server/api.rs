@@ -48,7 +48,7 @@ use crate::{
             List, Pagination, PaginationSort, SortDirection,
         },
         service::{
-            document::dto::ChunkPreviewPayload,
+            document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
             vector::dto::{CreateCollectionPayload, SearchPayload},
         },
         vector::VectorCollection,
@@ -113,6 +113,8 @@ use utoipa::OpenApi;
         EmbeddingSinglePayload,
         ListEmbeddingsPayload,
         ListDocumentsPayload,
+        ChunkForPreview,
+        ChunkPreview,
 
         // Display
         DocumentDisplay,

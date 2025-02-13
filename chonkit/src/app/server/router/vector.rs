@@ -1,8 +1,8 @@
 use crate::{
-    app::{batch::{BatchEmbedderHandle, BatchJob, JobResult}, server::dto::{ EmbeddingBatchPayload, EmbeddingSinglePayload, ListEmbeddingsPayload, }, state::AppState }, core::{
+    app::{batch::{BatchJob, JobResult}, server::dto::{ EmbeddingBatchPayload, EmbeddingSinglePayload, ListEmbeddingsPayload, }, state::AppState }, core::{
         chunk::ChunkedDocument, model::{
             collection::{Collection, CollectionDisplay, Embedding},  List, PaginationSort
-        }, service::{vector::dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload }, ServiceState}
+        }, service::vector::dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload }
     }, err, error::ChonkitError, map_err
 };
 use axum::{

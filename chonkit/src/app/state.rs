@@ -41,8 +41,6 @@ pub struct AppState {
     /// The http configuration for the server for CORS and cookies.
     pub http_config: HttpConfiguration,
 
-    pub tokenizer: Tokenizer,
-
     #[cfg(feature = "auth-vault")]
     pub vault: crate::app::auth::vault::VaultAuthenticator,
 
@@ -70,7 +68,11 @@ impl AppState {
         };
 
         let services = ServiceState {
-            document: DocumentService::new(repository.clone(), providers.clone().into()),
+            document: DocumentService::new(
+                repository.clone(),
+                providers.clone().into(),
+                Tokenizer::new(),
+            ),
             vector: VectorService::new(repository.clone(), providers.clone().into()),
             external: ServiceFactory::new(repository, providers.clone().into()),
         };
@@ -91,8 +93,7 @@ impl AppState {
 
             providers,
 
-            tokenizer: Tokenizer::new(),
-
+            // tokenizer: Tokenizer::new(),
             http_client: reqwest::Client::new(),
 
             http_config: Self::server_config(args),

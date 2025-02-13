@@ -9,7 +9,7 @@ use crate::{
             document::{Document, DocumentConfig, DocumentDisplay},
             List,
         },
-        service::document::dto::{ChunkPreviewPayload, DocumentUpload},
+        service::document::dto::{ChunkPreview, ChunkPreviewPayload, DocumentUpload},
     },
     error::ChonkitError,
 };
@@ -234,7 +234,7 @@ pub(super) async fn update_document_config(
     post,
     path = "/documents/{id}/chunk/preview",
     responses(
-        (status = 200, description = "Preview document chunks", body = Vec<String>),
+        (status = 200, description = "Preview document chunks", body = Vec<ChunkPreview>),
         (status = 404, description = "Document not found"),
         (status = 500, description = "Internal server error")
     ),
@@ -247,9 +247,8 @@ pub(super) async fn chunk_preview(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(config): Json<ChunkPreviewPayload>,
-) -> Result<Json<Vec<String>>, ChonkitError> {
+) -> Result<Json<ChunkPreview>, ChonkitError> {
     let chunks = state.services.document.chunk_preview(id, config).await?;
-
     Ok(Json(chunks))
 }
 

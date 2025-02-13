@@ -17,26 +17,34 @@ use crate::{
         },
         provider::ProviderState,
         repo::{document::DocumentRepo, Atomic, Repository},
+        service::token::TokenCount,
     },
     err,
     error::ChonkitError,
     map_err, transaction,
 };
-use dto::DocumentUpload;
+use dto::{ChunkForPreview, ChunkPreview, DocumentUpload};
 use std::time::Instant;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
+use super::token::Tokenizer;
+
 /// High level operations for document management.
 #[derive(Clone)]
 pub struct DocumentService {
-    pub repo: Repository,
+    repo: Repository,
     providers: ProviderState,
+    tokenizer: Tokenizer,
 }
 
 impl DocumentService {
-    pub fn new(repo: Repository, providers: ProviderState) -> Self {
-        Self { repo, providers }
+    pub fn new(repo: Repository, providers: ProviderState, tokenizer: Tokenizer) -> Self {
+        Self {
+            repo,
+            providers,
+            tokenizer,
+        }
     }
 
     /// Get a paginated list of documents from the repository.
@@ -260,7 +268,7 @@ impl DocumentService {
         &self,
         document_id: Uuid,
         config: dto::ChunkPreviewPayload,
-    ) -> Result<Vec<String>, ChonkitError> {
+    ) -> Result<ChunkPreview, ChonkitError> {
         map_err!(config.validate());
 
         let parser = if let Some(parser) = config.parser {
@@ -275,12 +283,39 @@ impl DocumentService {
 
         let content = self.parse_document(document_id, parser).await?;
 
+        let total_tokens_pre = self.tokenizer.count(&content);
+        let mut total_tokens_post = TokenCount::default();
+
         let chunks = match self.chunk(config.chunker, &content).await? {
-            ChunkedDocument::Ref(chunked) => chunked.iter().map(|s| s.to_string()).collect(),
-            ChunkedDocument::Owned(chunked) => chunked,
+            ChunkedDocument::Ref(chunked) => chunked
+                .into_iter()
+                .map(|s| {
+                    let token_count = self.tokenizer.count(s);
+                    total_tokens_post += token_count;
+                    ChunkForPreview {
+                        token_count,
+                        chunk: s.to_string(),
+                    }
+                })
+                .collect(),
+            ChunkedDocument::Owned(chunked) => chunked
+                .into_iter()
+                .map(|s| {
+                    let token_count = self.tokenizer.count(&s);
+                    total_tokens_post += token_count;
+                    ChunkForPreview {
+                        token_count,
+                        chunk: s,
+                    }
+                })
+                .collect(),
         };
 
-        Ok(chunks)
+        Ok(ChunkPreview {
+            chunks,
+            total_tokens_pre,
+            total_tokens_post,
+        })
     }
 
     async fn chunk<'i>(
@@ -464,8 +499,9 @@ pub mod dto {
     use crate::core::{
         chunk::ChunkConfig,
         document::{parser::ParseConfig, DocumentType},
+        service::token::TokenCount,
     };
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use validify::{Validate, Validify};
 
     #[derive(Debug, Clone, Validify)]
@@ -497,5 +533,20 @@ pub mod dto {
 
         /// Chunking configuration.
         pub chunker: ChunkConfig,
+    }
+
+    #[derive(Debug, Serialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ChunkForPreview {
+        pub chunk: String,
+        pub token_count: TokenCount,
+    }
+
+    #[derive(Debug, Serialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ChunkPreview {
+        pub chunks: Vec<ChunkForPreview>,
+        pub total_tokens_pre: TokenCount,
+        pub total_tokens_post: TokenCount,
     }
 }
