@@ -7,6 +7,10 @@ use tracing::debug;
 
 const DEFAULT_OPENAI_ENDPOINT: &str = "https://api.openai.com";
 
+const TEXT_EMBEDDING_3_LARGE: &str = "text-embedding-3-large";
+const TEXT_EMBEDDING_3_SMALL: &str = "text-embedding-3-small";
+const TEXT_EMBEDDING_ADA_002: &str = "text-embedding-ada-002";
+
 pub struct OpenAiEmbeddings {
     endpoint: String,
     key: String,
@@ -34,7 +38,7 @@ impl OpenAiEmbeddings {
         &self,
         input: &[&str],
         model: &str,
-    ) -> Result<Vec<Vec<f64>>, EmbeddingError> {
+    ) -> Result<EmbeddingResponse, EmbeddingError> {
         let request = EmbeddingRequest {
             model: model.to_string(),
             input: input.iter().map(|s| s.to_string()).collect(),
@@ -80,7 +84,7 @@ impl OpenAiEmbeddings {
             return Err(EmbeddingError::OpenAI(response));
         }
 
-        let response = match response.json::<EmbeddingResponse>().await {
+        let response = match response.json::<OpenAIEmbeddingResponse>().await {
             Ok(res) => res,
             Err(e) => {
                 tracing::error!("Error decoding OpenAI response: {}", e);
@@ -97,7 +101,11 @@ impl OpenAiEmbeddings {
             response.usage.total_tokens
         );
 
-        Ok(response.data.into_iter().map(|o| o.embedding).collect())
+        Ok(EmbeddingResponse {
+            embeddings: response.data.into_iter().map(|o| o.embedding).collect(),
+            prompt_tokens: response.usage.prompt_tokens,
+            total_tokens: response.usage.total_tokens,
+        })
     }
 }
 
@@ -107,9 +115,16 @@ struct EmbeddingRequest {
     input: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct EmbeddingResponse {
+    pub embeddings: Vec<Vec<f64>>,
+    pub prompt_tokens: usize,
+    pub total_tokens: usize,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
-struct EmbeddingResponse {
+struct OpenAIEmbeddingResponse {
     object: String,
     data: Vec<EmbeddingObject>,
     model: String,
@@ -144,7 +159,3 @@ pub struct OpenAIErrorParams {
 pub struct OpenAIError {
     pub error: OpenAIErrorParams,
 }
-
-const TEXT_EMBEDDING_3_LARGE: &str = "text-embedding-3-large";
-const TEXT_EMBEDDING_3_SMALL: &str = "text-embedding-3-small";
-const TEXT_EMBEDDING_ADA_002: &str = "text-embedding-ada-002";

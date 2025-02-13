@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use super::provider::Identity;
 use crate::error::ChonkitError;
 
@@ -29,5 +31,33 @@ pub trait Embedder: Identity {
     ///
     /// * `content`: The text to embed.
     /// * `model`: The embedding model to use.
-    async fn embed(&self, content: &[&str], model: &str) -> Result<Vec<Vec<f64>>, ChonkitError>;
+    async fn embed(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError>;
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct Embeddings {
+    pub embeddings: Vec<Vec<f64>>,
+    pub tokens_used: Option<usize>,
+}
+
+impl Embeddings {
+    pub fn new(embeddings: Vec<Vec<f64>>, tokens_used: Option<usize>) -> Self {
+        Embeddings {
+            embeddings,
+            tokens_used,
+        }
+    }
+}
+
+impl std::fmt::Display for Embeddings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Embeddings {{ total embeddings: {}, tokens_used: {} }}",
+            self.embeddings.len(),
+            self.tokens_used
+                .map(|t| t.to_string())
+                .unwrap_or(String::from("N/A"))
+        )
+    }
 }

@@ -87,39 +87,3 @@ impl CollectionDisplay {
         }
     }
 }
-
-/// Embedding information model.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct Embedding {
-    /// Primary key.
-    pub id: Uuid,
-
-    /// Which document these embeddings belong to.
-    pub document_id: uuid::Uuid,
-
-    /// Collection name.
-    pub collection_id: uuid::Uuid,
-
-    pub created_at: DateTime<Utc>,
-
-    pub updated_at: DateTime<Utc>,
-}
-
-/// DTO for inserting.
-#[derive(Debug)]
-pub struct EmbeddingInsert {
-    pub id: Uuid,
-    pub document_id: Uuid,
-    pub collection_id: Uuid,
-}
-
-impl EmbeddingInsert {
-    pub fn new(document_id: Uuid, collection_id: Uuid) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4(),
-            document_id,
-            collection_id,
-        }
-    }
-}

@@ -11,8 +11,8 @@ use crate::core::{
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
     repo::Repository,
     service::{
-        document::DocumentService, external::ServiceFactory, token::Tokenizer,
-        vector::VectorService, ServiceState,
+        document::DocumentService, embedding::EmbeddingService, external::ServiceFactory,
+        token::Tokenizer, vector::CollectionService, ServiceState,
     },
 };
 use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
@@ -132,9 +132,10 @@ impl TestState {
         };
 
         let services = ServiceState {
-            vector: VectorService::new(postgres.clone(), providers.clone().into()),
+            collection: CollectionService::new(postgres.clone(), providers.clone().into()),
             document: DocumentService::new(postgres.clone(), providers.clone().into(), tokenizer),
-            external: ServiceFactory::new(postgres, providers.clone().into()),
+            external: ServiceFactory::new(postgres.clone(), providers.clone().into()),
+            embedding: EmbeddingService::new(postgres, providers.clone().into()),
         };
 
         let app = AppState::new_test(

@@ -7,6 +7,9 @@ use validify::{field_err, Validate, ValidationError};
 /// Vector collection models.
 pub mod collection;
 
+/// Models for embeddings present in collections.
+pub mod embedding;
+
 /// Document models.
 pub mod document;
 

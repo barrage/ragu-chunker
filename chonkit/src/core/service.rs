@@ -1,6 +1,7 @@
 //! Business logic.
 
 pub mod document;
+pub mod embedding;
 pub mod external;
 pub mod token;
 pub mod vector;
@@ -9,7 +10,9 @@ pub mod vector;
 pub struct ServiceState {
     pub document: document::DocumentService,
 
-    pub vector: vector::VectorService,
+    pub collection: vector::CollectionService,
 
     pub external: external::ServiceFactory,
+
+    pub embedding: embedding::EmbeddingService,
 }

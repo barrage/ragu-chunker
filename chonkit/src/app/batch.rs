@@ -1,5 +1,11 @@
 use crate::{
-    core::service::{vector::dto::CreateEmbeddings, ServiceState},
+    core::{
+        model::embedding::{
+            EmbeddingRemovalReportBuilder, EmbeddingRemovalReportInsert, EmbeddingReportBuilder,
+            EmbeddingReportInsert,
+        },
+        service::{embedding::CreateEmbeddings, ServiceState},
+    },
     err,
     error::ChonkitError,
 };
@@ -149,7 +155,7 @@ impl BatchEmbedder {
             };
         }
 
-        let collection = ok_or_return!(services.vector.get_collection(collection_id).await);
+        let collection = ok_or_return!(services.collection.get_collection(collection_id).await);
 
         for document_id in add.into_iter() {
             tracing::debug!("Processing document '{document_id}'");
@@ -157,7 +163,7 @@ impl BatchEmbedder {
             // Map the existence of the embeddings as an error
             let embeddings = ok_or_continue!(
                 services
-                    .vector
+                    .embedding
                     .get_embeddings(document_id, collection_id)
                     .await
             );
@@ -176,7 +182,12 @@ impl BatchEmbedder {
             let document = ok_or_continue!(services.document.get_document(document_id).await);
 
             // Initialize the report so we get the timestamp before the embedding starts
-            let report = EmbeddingAddReportBuilder::new(document.id, collection.id);
+            let report = EmbeddingReportBuilder::new(
+                document.id,
+                document.name.clone(),
+                collection.id,
+                collection.name.clone(),
+            );
 
             // Get the content and chunk it
             let content = ok_or_continue!(services.document.get_content(document.id).await);
@@ -194,15 +205,18 @@ impl BatchEmbedder {
                 chunks: &chunks,
             };
 
-            let embeddings = ok_or_continue!(services.vector.create_embeddings(create).await);
+            let embeddings = ok_or_continue!(services.embedding.create_embeddings(create).await);
 
             let report = report
-                .embeddings_id(embeddings.id)
                 .model_used(collection.model.clone())
                 .vector_db(collection.provider.clone())
-                .total_chunks(chunks.len())
+                .total_vectors(chunks.len())
+                .tokens_used(embeddings.tokens_used)
+                .embedding_provider(collection.embedder.clone())
                 .finished_at(Utc::now())
                 .build();
+
+            ok_or_continue!(services.embedding.store_embedding_report(&report).await);
 
             let result = JobEvent {
                 job_id,
@@ -213,16 +227,33 @@ impl BatchEmbedder {
         }
 
         for document_id in remove.into_iter() {
-            let report = EmbeddingRemovalReportBuilder::new(document_id, collection.id);
+            let document = ok_or_continue!(services.document.get_document(document_id).await);
 
-            let _ = ok_or_continue!(
+            let report = EmbeddingRemovalReportBuilder::new(
+                document.id,
+                document.name.clone(),
+                collection.id,
+                collection.name.clone(),
+            );
+
+            let (_, total_deleted) = ok_or_continue!(
                 services
-                    .vector
-                    .delete_embeddings(collection_id, document_id)
+                    .embedding
+                    .delete_embeddings(collection.id, document.id)
                     .await
             );
 
-            let report = report.finished_at(Utc::now()).build();
+            let report = report
+                .total_vectors_removed(total_deleted)
+                .finished_at(Utc::now())
+                .build();
+
+            ok_or_continue!(
+                services
+                    .embedding
+                    .store_embedding_removal_report(&report)
+                    .await
+            );
 
             let result = JobEvent {
                 job_id,
@@ -295,126 +326,8 @@ struct JobEvent {
 #[serde(rename_all = "camelCase")]
 pub enum JobReport {
     /// Job type for adding documents to a collection.
-    Addition(EmbeddingAddReport),
+    Addition(EmbeddingReportInsert),
 
     /// Job type for removing documents from a collection.
-    Removal(EmbeddingRemovalReport),
-}
-
-#[derive(Debug, Serialize)]
-pub struct EmbeddingAddReport {
-    pub document_id: Uuid,
-    pub collection_id: Uuid,
-    pub embeddings_id: Uuid,
-    pub model_used: String,
-    pub vector_db: String,
-    pub total_chunks: usize,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-    pub finished_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct EmbeddingRemovalReport {
-    pub document_id: Uuid,
-    pub collection_id: Uuid,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-    pub finished_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug)]
-struct EmbeddingAddReportBuilder {
-    document_id: Uuid,
-    collection_id: Uuid,
-    embeddings_id: Option<Uuid>,
-    model_used: Option<String>,
-    vector_db: Option<String>,
-    total_chunks: Option<usize>,
-    started_at: chrono::DateTime<chrono::Utc>,
-    finished_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-impl EmbeddingAddReportBuilder {
-    fn new(document_id: Uuid, collection_id: Uuid) -> Self {
-        Self {
-            document_id,
-            collection_id,
-            started_at: chrono::Utc::now(),
-            embeddings_id: None,
-            model_used: None,
-            vector_db: None,
-            total_chunks: None,
-            finished_at: None,
-        }
-    }
-
-    fn embeddings_id(mut self, embeddings_id: Uuid) -> Self {
-        self.embeddings_id = Some(embeddings_id);
-        self
-    }
-
-    fn model_used(mut self, model_used: String) -> Self {
-        self.model_used = Some(model_used);
-        self
-    }
-
-    fn vector_db(mut self, vector_db: String) -> Self {
-        self.vector_db = Some(vector_db);
-        self
-    }
-
-    fn finished_at(mut self, finished_at: chrono::DateTime<chrono::Utc>) -> Self {
-        self.finished_at = Some(finished_at);
-        self
-    }
-
-    fn total_chunks(mut self, total_chunks: usize) -> Self {
-        self.total_chunks = Some(total_chunks);
-        self
-    }
-
-    fn build(self) -> EmbeddingAddReport {
-        EmbeddingAddReport {
-            document_id: self.document_id,
-            collection_id: self.collection_id,
-            embeddings_id: self.embeddings_id.unwrap(),
-            model_used: self.model_used.unwrap(),
-            vector_db: self.vector_db.unwrap(),
-            total_chunks: self.total_chunks.unwrap(),
-            started_at: self.started_at,
-            finished_at: self.finished_at.unwrap(),
-        }
-    }
-}
-
-#[derive(Debug)]
-struct EmbeddingRemovalReportBuilder {
-    document_id: Uuid,
-    collection_id: Uuid,
-    started_at: chrono::DateTime<chrono::Utc>,
-    finished_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-impl EmbeddingRemovalReportBuilder {
-    fn new(document_id: Uuid, collection_id: Uuid) -> Self {
-        Self {
-            document_id,
-            collection_id,
-            started_at: chrono::Utc::now(),
-            finished_at: None,
-        }
-    }
-
-    fn finished_at(mut self, finished_at: chrono::DateTime<chrono::Utc>) -> Self {
-        self.finished_at = Some(finished_at);
-        self
-    }
-
-    fn build(self) -> EmbeddingRemovalReport {
-        EmbeddingRemovalReport {
-            document_id: self.document_id,
-            collection_id: self.collection_id,
-            started_at: self.started_at,
-            finished_at: self.finished_at.unwrap(),
-        }
-    }
+    Removal(EmbeddingRemovalReportInsert),
 }

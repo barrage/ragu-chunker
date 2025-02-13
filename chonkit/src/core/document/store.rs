@@ -4,7 +4,7 @@ use crate::{
         chunk::ChunkConfig,
         model::document::{Document, DocumentInsert},
         provider::Identity,
-        repo::{document::DocumentRepo, Atomic, Repository},
+        repo::{Atomic, Repository},
     },
     error::ChonkitError,
     map_err, transaction,

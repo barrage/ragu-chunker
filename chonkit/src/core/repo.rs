@@ -2,8 +2,9 @@ use crate::{error::ChonkitError, map_err};
 use sqlx::Transaction;
 use std::future::Future;
 
+pub mod collection;
 pub mod document;
-pub mod vector;
+pub mod embedding;
 
 /// Thin wrapper around a database connection pool that implements all core repository traits.
 #[derive(Debug, Clone)]

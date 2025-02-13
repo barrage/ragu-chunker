@@ -1,6 +1,7 @@
 use crate::config::{
     DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE, FEMBED_EMBEDDER_ID,
 };
+use crate::core::embedder::Embeddings;
 use crate::core::provider::Identity;
 use crate::{core::embedder::Embedder, error::ChonkitError, map_err};
 
@@ -29,7 +30,8 @@ impl Embedder for LocalFastEmbedder {
             .collect())
     }
 
-    async fn embed(&self, content: &[&str], model: &str) -> Result<Vec<Vec<f64>>, ChonkitError> {
-        Ok(map_err!(self.embed(content, model)))
+    async fn embed(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
+        // TODO: Token usage
+        Ok(Embeddings::new(map_err!(self.embed(content, model)), None))
     }
 }

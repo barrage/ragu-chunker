@@ -10,8 +10,8 @@ mod document_service_integration_tests {
                 DocumentType, Docx, Pdf, Text, TextDocumentType,
             },
             service::{
-                document::dto::DocumentUpload,
-                vector::dto::{CreateCollectionPayload, CreateEmbeddings},
+                document::dto::DocumentUpload, embedding::CreateEmbeddings,
+                vector::dto::CreateCollectionPayload,
             },
         },
     };
@@ -236,7 +236,7 @@ mod document_service_integration_tests {
                 let collection_1 = state
                     .app
                     .services
-                    .vector
+                    .collection
                     .create_collection(collection_1)
                     .await
                     .unwrap();
@@ -244,7 +244,7 @@ mod document_service_integration_tests {
                 let collection_2 = state
                     .app
                     .services
-                    .vector
+                    .collection
                     .create_collection(collection_2)
                     .await
                     .unwrap();
@@ -266,7 +266,7 @@ mod document_service_integration_tests {
                 state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .create_embeddings(embeddings_1)
                     .await
                     .unwrap();
@@ -274,7 +274,7 @@ mod document_service_integration_tests {
                 state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .create_embeddings(embeddings_2)
                     .await
                     .unwrap();
@@ -282,7 +282,7 @@ mod document_service_integration_tests {
                 let count = state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .count_embeddings(collection_1.id, document.id)
                     .await
                     .unwrap();
@@ -292,7 +292,7 @@ mod document_service_integration_tests {
                 let count = state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .count_embeddings(collection_2.id, document.id)
                     .await
                     .unwrap();
@@ -310,7 +310,7 @@ mod document_service_integration_tests {
                 let count = state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .count_embeddings(collection_1.id, document.id)
                     .await
                     .unwrap();
@@ -320,7 +320,7 @@ mod document_service_integration_tests {
                 let count = state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .count_embeddings(collection_2.id, document.id)
                     .await
                     .unwrap();
@@ -330,7 +330,7 @@ mod document_service_integration_tests {
                 let emb_1 = state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .get_embeddings(document.id, collection_1.id)
                     .await
                     .unwrap();
@@ -339,7 +339,7 @@ mod document_service_integration_tests {
                 let emb_2 = state
                     .app
                     .services
-                    .vector
+                    .embedding
                     .get_embeddings(document.id, collection_2.id)
                     .await
                     .unwrap();

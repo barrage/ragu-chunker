@@ -9,9 +9,6 @@ pub mod document;
 /// Text embedder implementations.
 pub mod embedder;
 
-/// Repository implementations.
-pub mod repo;
-
 /// Application state configuration.
 pub mod state;
 

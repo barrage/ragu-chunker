@@ -13,8 +13,8 @@ use crate::{
         },
         repo::Repository,
         service::{
-            document::DocumentService, external::ServiceFactory, token::Tokenizer,
-            vector::VectorService, ServiceState,
+            document::DocumentService, embedding::EmbeddingService, external::ServiceFactory,
+            token::Tokenizer, vector::CollectionService, ServiceState,
         },
     },
     error::ChonkitError,
@@ -73,8 +73,9 @@ impl AppState {
                 providers.clone().into(),
                 Tokenizer::new(),
             ),
-            vector: VectorService::new(repository.clone(), providers.clone().into()),
-            external: ServiceFactory::new(repository, providers.clone().into()),
+            collection: CollectionService::new(repository.clone(), providers.clone().into()),
+            external: ServiceFactory::new(repository.clone(), providers.clone().into()),
+            embedding: EmbeddingService::new(repository, providers.clone().into()),
         };
 
         for provider in providers.storage.list_provider_ids() {

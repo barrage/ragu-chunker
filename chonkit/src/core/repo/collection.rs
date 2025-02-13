@@ -1,13 +1,11 @@
 use crate::{
     core::{
         model::{
-            collection::{
-                Collection, CollectionDisplay, CollectionInsert, Embedding, EmbeddingInsert,
-            },
+            collection::{Collection, CollectionDisplay, CollectionInsert},
             document::DocumentShort,
-            List, Pagination, PaginationSort,
+            List, PaginationSort,
         },
-        repo::{vector::VectorRepo, Atomic, Repository},
+        repo::{Atomic, Repository},
     },
     err,
     error::ChonkitError,
@@ -18,8 +16,8 @@ use sqlx::{prelude::FromRow, Postgres};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-impl VectorRepo for Repository {
-    async fn list_collections(
+impl Repository {
+    pub async fn list_collections(
         &self,
         params: PaginationSort,
     ) -> Result<List<Collection>, ChonkitError> {
@@ -50,7 +48,7 @@ impl VectorRepo for Repository {
         Ok(List::new(total, collections))
     }
 
-    async fn list_collections_display(
+    pub async fn list_collections_display(
         &self,
         p: PaginationSort,
     ) -> Result<List<CollectionDisplay>, ChonkitError> {
@@ -165,7 +163,7 @@ impl VectorRepo for Repository {
         ))
     }
 
-    async fn insert_collection(
+    pub async fn insert_collection(
         &self,
         insert: CollectionInsert<'_>,
         tx: Option<&mut <Repository as Atomic>::Tx>,
@@ -209,7 +207,7 @@ impl VectorRepo for Repository {
         }
     }
 
-    async fn delete_collection(&self, id: Uuid) -> Result<u64, ChonkitError> {
+    pub async fn delete_collection(&self, id: Uuid) -> Result<u64, ChonkitError> {
         let result = map_err!(
             sqlx::query!("DELETE FROM collections WHERE id = $1", id)
                 .execute(&self.client)
@@ -218,7 +216,7 @@ impl VectorRepo for Repository {
         Ok(result.rows_affected())
     }
 
-    async fn get_collection(&self, id: Uuid) -> Result<Option<Collection>, ChonkitError> {
+    pub async fn get_collection(&self, id: Uuid) -> Result<Option<Collection>, ChonkitError> {
         Ok(map_err!(sqlx::query_as!(
             Collection,
             "SELECT id, name, model, embedder, provider, created_at, updated_at FROM collections WHERE id = $1",
@@ -228,7 +226,7 @@ impl VectorRepo for Repository {
         .await))
     }
 
-    async fn get_collection_display(
+    pub async fn get_collection_display(
         &self,
         collection_id: Uuid,
     ) -> Result<Option<CollectionDisplay>, ChonkitError> {
@@ -262,7 +260,7 @@ impl VectorRepo for Repository {
         )))
     }
 
-    async fn get_collection_by_name(
+    pub async fn get_collection_by_name(
         &self,
         name: &str,
         provider: &str,
@@ -275,173 +273,6 @@ impl VectorRepo for Repository {
         )
         .fetch_optional(&self.client)
         .await))
-    }
-
-    async fn insert_embeddings(
-        &self,
-        embeddings: EmbeddingInsert,
-    ) -> Result<Embedding, ChonkitError> {
-        let EmbeddingInsert {
-            id,
-            document_id,
-            collection_id,
-        } = embeddings;
-
-        Ok(map_err!(
-            sqlx::query_as!(
-                Embedding,
-                r#"
-                    INSERT INTO embeddings(id, document_id, collection_id)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT(id) DO UPDATE
-                    SET id = $1
-                    RETURNING 
-                    id, document_id, collection_id, created_at, updated_at
-                "#,
-                id,
-                document_id,
-                collection_id,
-            )
-            .fetch_one(&self.client)
-            .await
-        ))
-    }
-
-    async fn get_all_embeddings(&self, document_id: Uuid) -> Result<Vec<Embedding>, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query_as!(
-                Embedding,
-                "SELECT id, document_id, collection_id, created_at, updated_at 
-             FROM embeddings
-             WHERE document_id = $1",
-                document_id
-            )
-            .fetch_all(&self.client)
-            .await
-        ))
-    }
-
-    async fn get_embeddings(
-        &self,
-        document_id: Uuid,
-        collection_id: Uuid,
-    ) -> Result<Option<Embedding>, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query_as!(
-                Embedding,
-                "SELECT id, document_id, collection_id, created_at, updated_at 
-             FROM embeddings
-             WHERE document_id = $1 AND collection_id = $2",
-                document_id,
-                collection_id
-            )
-            .fetch_optional(&self.client)
-            .await
-        ))
-    }
-
-    async fn list_embeddings(
-        &self,
-        pagination: Pagination,
-        collection_id: Option<Uuid>,
-    ) -> Result<List<Embedding>, ChonkitError> {
-        let total = map_err!(sqlx::query!(
-            "SELECT COUNT(id) FROM embeddings WHERE $1::UUID IS NULL OR collection_id = $1",
-            collection_id
-        )
-        .fetch_one(&self.client)
-        .await
-        .map(|row| row.count.map(|count| count as usize)));
-
-        let (limit, offset) = pagination.to_limit_offset();
-
-        let embeddings = map_err!(
-            sqlx::query_as!(
-                Embedding,
-                "SELECT id, document_id, collection_id, created_at, updated_at 
-             FROM embeddings
-             WHERE $1::UUID IS NULL OR collection_id = $1
-             LIMIT $2 OFFSET $3",
-                collection_id,
-                limit,
-                offset
-            )
-            .fetch_all(&self.client)
-            .await
-        )
-        .into_iter()
-        .collect();
-
-        Ok(List::new(total, embeddings))
-    }
-
-    async fn get_embeddings_by_name(
-        &self,
-        document_id: Uuid,
-        collection_name: &str,
-        provider: &str,
-    ) -> Result<Option<Embedding>, ChonkitError> {
-        Ok(map_err!(sqlx::query_as!(
-            Embedding,
-            "SELECT id, document_id, collection_id, created_at, updated_at 
-             FROM embeddings
-             WHERE document_id = $1 AND collection_id = (SELECT id FROM collections WHERE name = $2 AND provider = $3)",
-            document_id,
-            collection_name,
-            provider
-        )
-        .fetch_optional(&self.client)
-        .await))
-    }
-
-    async fn delete_embeddings(
-        &self,
-        document_id: Uuid,
-        collection_id: Uuid,
-    ) -> Result<u64, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query!(
-                "DELETE FROM embeddings WHERE document_id = $1 AND collection_id = $2",
-                document_id,
-                collection_id
-            )
-            .execute(&self.client)
-            .await
-        )
-        .rows_affected())
-    }
-
-    async fn delete_all_embeddings(&self, collection_id: Uuid) -> Result<u64, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query!(
-                "DELETE FROM embeddings WHERE collection_id = $1",
-                collection_id
-            )
-            .execute(&self.client)
-            .await
-        )
-        .rows_affected())
-    }
-
-    async fn list_outdated_embeddings(
-        &self,
-        collection_id: Uuid,
-    ) -> Result<Vec<Embedding>, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query_as!(
-                Embedding,
-                r#"
-                    SELECT e.id, e.document_id, e.collection_id, e.created_at, e.updated_at 
-                    FROM embeddings e
-                    LEFT JOIN documents
-                    ON e.document_id = documents.id
-                    WHERE collection_id = $1 AND e.created_at < documents.updated_at
-                "#,
-                collection_id
-            )
-            .fetch_all(&self.client)
-            .await
-        ))
     }
 }
 

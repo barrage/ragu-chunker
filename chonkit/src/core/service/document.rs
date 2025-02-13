@@ -16,7 +16,7 @@ use crate::{
             List, PaginationSort,
         },
         provider::ProviderState,
-        repo::{document::DocumentRepo, Atomic, Repository},
+        repo::{Atomic, Repository},
         service::token::TokenCount,
     },
     err,

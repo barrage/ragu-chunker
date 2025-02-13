@@ -18,8 +18,9 @@ use tracing::Span;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+pub(super) mod collection;
 pub(super) mod document;
-pub(super) mod vector;
+pub(super) mod embedding;
 
 #[cfg(feature = "gdrive")]
 pub(super) mod google;
@@ -77,36 +78,43 @@ pub fn router(state: AppState) -> Router {
             post(document::parse_preview),
         )
         .route("/documents/sync/:provider", get(document::sync))
-        .route("/collections", get(vector::list_collections))
-        .route("/collections", post(vector::create_collection))
-        .route("/collections/:id", get(vector::get_collection))
-        .route("/collections/:id", delete(vector::delete_collection))
+        .route("/collections", get(collection::list_collections))
+        .route("/collections", post(collection::create_collection))
+        .route("/collections/:id", get(collection::get_collection))
+        .route("/collections/:id", delete(collection::delete_collection))
         .route(
             "/collections/:collection_id/documents/:document_id",
-            delete(vector::delete_embeddings),
+            delete(embedding::delete_embeddings),
         )
         .route(
             "/collections/:collection_id/documents/:document_id/count",
-            get(vector::count_embeddings),
+            get(embedding::count_embeddings),
         )
-        .route("/embeddings", get(vector::list_embedded_documents))
+        .route(
+            "/collections/:collection_id/embeddings/reports",
+            get(embedding::list_embedding_reports),
+        )
+        .route("/embeddings", get(embedding::list_embedded_documents))
         .route(
             "/embeddings/:collection_id/outdated",
-            get(vector::list_outdated_embeddings),
+            get(embedding::list_outdated_embeddings),
         )
-        .route("/embeddings", post(vector::embed))
+        .route("/embeddings", post(embedding::embed))
         .route(
             "/embeddings/:provider/models",
-            get(vector::list_embedding_models),
+            get(embedding::list_embedding_models),
         )
-        .route("/embeddings/batch", post(vector::batch_embed))
-        .route("/search", post(vector::search))
+        .route("/embeddings/batch", post(embedding::batch_embed))
+        .route("/search", post(collection::search))
         .route("/display/documents", get(document::list_documents_display))
         .route(
             "/display/collections",
-            get(vector::list_collections_display),
+            get(collection::list_collections_display),
         )
-        .route("/display/collections/:id", get(vector::collection_display))
+        .route(
+            "/display/collections/:id",
+            get(collection::collection_display),
+        )
         .with_state(state.clone());
 
     #[cfg(feature = "gdrive")]

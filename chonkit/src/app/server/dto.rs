@@ -45,7 +45,7 @@ pub(super) struct EmbeddingSinglePayload {
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[validate(Self::validate_schema)]
-pub(super) struct EmbeddingBatchPayload {
+pub struct EmbeddingBatchPayload {
     /// The documents to embed and add to the collection.
     pub add: Vec<Uuid>,
 

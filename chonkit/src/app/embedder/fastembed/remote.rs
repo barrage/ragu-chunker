@@ -2,7 +2,10 @@ use crate::config::{
     DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE, FEMBED_EMBEDDER_ID,
 };
 use crate::{
-    core::{embedder::Embedder, provider::Identity},
+    core::{
+        embedder::{Embedder, Embeddings},
+        provider::Identity,
+    },
     error::ChonkitError,
     map_err,
 };
@@ -27,7 +30,11 @@ impl Embedder for RemoteFastEmbedder {
         Ok(map_err!(self.list_models().await))
     }
 
-    async fn embed(&self, content: &[&str], model: &str) -> Result<Vec<Vec<f64>>, ChonkitError> {
-        Ok(map_err!(self.embed(content, model).await))
+    async fn embed(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
+        // TODO: Token usage
+        Ok(Embeddings::new(
+            map_err!(self.embed(content, model).await),
+            None,
+        ))
     }
 }

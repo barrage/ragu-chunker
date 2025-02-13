@@ -172,6 +172,6 @@ impl chunx::semantic::Embedder for SemanticEmbedder {
 
     async fn embed(&self, input: &[&str], model: &str) -> Result<Vec<Vec<f64>>, Self::Error> {
         let embeddings = self.0.embed(input, model).await?;
-        Ok(embeddings)
+        Ok(embeddings.embeddings)
     }
 }

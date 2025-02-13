@@ -17,20 +17,23 @@ use super::router::{
     },
 
     // Vectors
-    vector::{
+    collection::{
         __path_list_collections,
-        __path_list_embedding_models,
         __path_get_collection,
         __path_create_collection,
         __path_delete_collection,
+        __path_search, 
+        __path_list_collections_display,
+        __path_collection_display
+    },
+    embedding::{
+        __path_count_embeddings,
+        __path_delete_embeddings,
         __path_list_embedded_documents,
         __path_embed,
         __path_batch_embed,
-        __path_search, 
-        __path_count_embeddings,
-        __path_delete_embeddings,
-        __path_list_collections_display,
-        __path_collection_display
+        __path_list_embedding_models,
+        __path_list_embedding_reports,
     }
 };
 use super::dto::{
@@ -43,8 +46,9 @@ use crate::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig},
         document::parser::ParseConfig,
         model::{
-            collection::{Collection, CollectionDisplay, CollectionShort, Embedding},
+            collection::{Collection, CollectionDisplay, CollectionShort},
             document::{Document, DocumentConfig, DocumentDisplay, DocumentShort},
+            embedding::{Embedding, EmbeddingReport},
             List, Pagination, PaginationSort, SortDirection,
         },
         service::{
@@ -72,20 +76,23 @@ use utoipa::OpenApi;
         update_document_config,
         sync,
 
-        // Vectors
+        // Collections
         list_collections,
         get_collection,
         create_collection,
         delete_collection,
-        list_embedding_models,
-        list_embedded_documents,
-        embed,
-        batch_embed,
-        search,
-        delete_embeddings,
-        count_embeddings,
         list_collections_display,
         collection_display,
+        search,
+
+        // Embeddings
+        list_embedding_models,
+        list_embedded_documents,
+        list_embedding_reports,
+        embed,
+        batch_embed,
+        delete_embeddings,
+        count_embeddings,
     ),
     components(schemas(
         List<Collection>,
@@ -115,6 +122,7 @@ use utoipa::OpenApi;
         ListDocumentsPayload,
         ChunkForPreview,
         ChunkPreview,
+        EmbeddingReport,
 
         // Display
         DocumentDisplay,

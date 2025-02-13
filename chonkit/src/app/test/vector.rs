@@ -11,8 +11,10 @@ mod vector_service_integration_tests {
         core::{
             document::{DocumentType, TextDocumentType},
             model::document::DocumentInsert,
-            repo::{document::DocumentRepo, vector::VectorRepo},
-            service::vector::dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload},
+            service::{
+                embedding::CreateEmbeddings,
+                vector::dto::{CreateCollectionPayload, SearchPayload},
+            },
         },
         error::ChonkitErr,
     };
@@ -53,7 +55,7 @@ mod vector_service_integration_tests {
             test_state
                 .app
                 .services
-                .vector
+                .collection
                 .create_collection(create)
                 .await
                 .unwrap();
@@ -92,7 +94,7 @@ mod vector_service_integration_tests {
             let collection = state
                 .app
                 .services
-                .vector
+                .collection
                 .get_collection_by_name(&collection_name, provider)
                 .await
                 .unwrap();
@@ -112,7 +114,7 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn create_collection_works(state: TestState) {
-        let service = &state.app.services.vector;
+        let service = &state.app.services.collection;
         let embedder = state
             .app
             .providers
@@ -157,7 +159,7 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn create_collection_fails_with_invalid_model(state: TestState) {
-        let service = &state.app.services.vector;
+        let service = &state.app.services.collection;
         let embedder = state
             .app
             .providers
@@ -186,7 +188,7 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn create_collection_fails_with_existing_collection(state: TestState) {
-        let service = &state.app.services.vector;
+        let service = &state.app.services.collection;
         let embedder = state
             .app
             .providers
@@ -215,7 +217,7 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn inserting_and_searching_embeddings_works(state: TestState) {
-        let service = &state.app.services.vector;
+        let services = &state.app.services;
         let postgres = &state.app.providers.database;
         let embedder = state
             .app
@@ -230,7 +232,8 @@ mod vector_service_integration_tests {
             let collection_name =
                 format!("{DEFAULT_COLLECTION_NAME}_{}_{}", provider, embedder.id());
 
-            let default = service
+            let default = services
+                .collection
                 .get_collection_by_name(&collection_name, vector_db.id())
                 .await
                 .unwrap();
@@ -253,12 +256,17 @@ mod vector_service_integration_tests {
                 chunks: &[content],
             };
 
-            let collection = service
+            let collection = services
+                .collection
                 .get_collection_by_name(&collection_name, vector_db.id())
                 .await
                 .unwrap();
 
-            service.create_embeddings(embeddings).await.unwrap();
+            services
+                .embedding
+                .create_embeddings(embeddings)
+                .await
+                .unwrap();
 
             let search = SearchPayload {
                 query: content.to_string(),
@@ -268,7 +276,7 @@ mod vector_service_integration_tests {
                 provider: None,
             };
 
-            let results = service.search(search).await.unwrap();
+            let results = services.collection.search(search).await.unwrap();
 
             assert_eq!(1, results.len());
             assert_eq!(content, results[0]);
@@ -298,7 +306,7 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn deleting_collection_removes_all_embeddings(state: TestState) {
-        let service = &state.app.services.vector;
+        let services = &state.app.services;
         let postgres = &state.app.providers.database;
         let embedder = state
             .app
@@ -320,7 +328,7 @@ mod vector_service_integration_tests {
                 embedding_provider: embedder.id().to_string(),
             };
 
-            let collection = service.create_collection(create).await.unwrap();
+            let collection = services.collection.create_collection(create).await.unwrap();
 
             let create = DocumentInsert::new(
                 "test_document",
@@ -340,9 +348,17 @@ mod vector_service_integration_tests {
                 chunks: &[content],
             };
 
-            service.create_embeddings(embeddings).await.unwrap();
+            services
+                .embedding
+                .create_embeddings(embeddings)
+                .await
+                .unwrap();
 
-            service.delete_collection(collection.id).await.unwrap();
+            services
+                .collection
+                .delete_collection(collection.id)
+                .await
+                .unwrap();
 
             let embeddings = postgres
                 .get_embeddings(document.id, collection.id)
@@ -361,7 +377,7 @@ mod vector_service_integration_tests {
 
     #[test]
     async fn prevents_duplicate_embeddings(state: TestState) {
-        let service = &state.app.services.vector;
+        let services = &state.app.services;
         let postgres = &state.app.providers.database;
         let embedder = state
             .app
@@ -384,7 +400,8 @@ mod vector_service_integration_tests {
                 "fs",
             );
 
-            let default = service
+            let default = services
+                .collection
                 .get_collection_by_name(&collection_name, vector_db.id())
                 .await
                 .unwrap();
@@ -398,9 +415,13 @@ mod vector_service_integration_tests {
                 chunks: &[content],
             };
 
-            service.create_embeddings(create.clone()).await.unwrap();
+            services
+                .embedding
+                .create_embeddings(create.clone())
+                .await
+                .unwrap();
 
-            let duplicate = service.create_embeddings(create).await;
+            let duplicate = services.embedding.create_embeddings(create).await;
             let error = duplicate.unwrap_err().error;
 
             assert!(matches!(error, ChonkitErr::AlreadyExists(_)));

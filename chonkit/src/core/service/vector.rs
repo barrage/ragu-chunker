@@ -1,33 +1,29 @@
-use crate::core::model::collection::{
-    Collection, CollectionDisplay, CollectionInsert, Embedding, EmbeddingInsert,
-};
-use crate::core::model::{List, Pagination, PaginationSort};
+use crate::core::model::collection::{Collection, CollectionDisplay, CollectionInsert};
+use crate::core::model::{List, PaginationSort};
 use crate::core::provider::ProviderState;
-use crate::core::repo::document::DocumentRepo;
-use crate::core::repo::vector::VectorRepo;
 use crate::core::repo::{Atomic, Repository};
 use crate::core::vector::CreateVectorCollection;
 use crate::error::ChonkitError;
 use crate::{err, map_err, transaction};
-use dto::{CreateCollectionPayload, CreateEmbeddings, SearchPayload};
+use dto::{CreateCollectionPayload, SearchPayload};
 use tracing::info;
 use uuid::Uuid;
 use validify::{Validate, Validify};
 
-/// High level operations related to embeddings (vectors) and their storage.
+/// High level operations related to collections.
 #[derive(Clone)]
-pub struct VectorService {
+pub struct CollectionService {
     repo: Repository,
     providers: ProviderState,
 }
 
-impl VectorService {
+impl CollectionService {
     pub fn new(repo: Repository, providers: ProviderState) -> Self {
         Self { repo, providers }
     }
 }
 
-impl VectorService {
+impl CollectionService {
     /// List vector collections.
     ///
     /// * `p`: Pagination params.
@@ -86,17 +82,6 @@ impl VectorService {
             Some(collection) => Ok(collection),
             None => err!(DoesNotExist, "Collection '{name}'"),
         }
-    }
-
-    /// Return a list of models supported by this instance's embedder and their respective sizes.
-    ///
-    /// * `embedder`: The embedder to use.
-    pub async fn list_embedding_models(
-        &self,
-        embedder: &str,
-    ) -> Result<Vec<(String, usize)>, ChonkitError> {
-        let embedder = self.providers.embedding.get_provider(embedder)?;
-        embedder.list_embedding_models().await
     }
 
     /// Create a collection in the vector DB and store its info in the repository.
@@ -161,76 +146,6 @@ impl VectorService {
         Ok(count)
     }
 
-    /// Create and store embeddings in the vector database.
-    ///
-    /// Errors if embeddings already exist in the collection
-    /// for the document to prevent duplication in semantic search.
-    ///
-    /// * `id`: Document ID.
-    /// * `vector_db`: The vector DB implementation to use.
-    /// * `embedder`: The embedder to use.
-    pub async fn create_embeddings(
-        &self,
-        CreateEmbeddings {
-            document_id,
-            collection_id,
-            chunks,
-        }: CreateEmbeddings<'_>,
-    ) -> Result<Embedding, ChonkitError> {
-        // Make sure the collection exists.
-        let Some(collection) = self.repo.get_collection(collection_id).await? else {
-            return err!(DoesNotExist, "Collection with ID '{collection_id}'");
-        };
-
-        let existing = self.repo.get_embeddings(document_id, collection.id).await?;
-        if existing.is_some() {
-            let name = collection.name;
-            return err!(
-                AlreadyExists,
-                "Embeddings for document '{document_id}' in collection '{name}'"
-            );
-        }
-
-        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
-        let embedder = self
-            .providers
-            .embedding
-            .get_provider(&collection.embedder)?;
-
-        let v_collection = vector_db.get_collection(&collection.name).await?;
-
-        let Some(size) = embedder.size(&collection.model).await? else {
-            let (model, embedder) = (collection.model, embedder.id());
-            return err!(
-                InvalidEmbeddingModel,
-                "Model '{model}' not supported for embedder {embedder}"
-            );
-        };
-
-        if size != v_collection.size {
-            let v_size = v_collection.size;
-            return err!(
-                InvalidEmbeddingModel,
-                "Model size ({size}) not compatible with collection ({v_size})"
-            );
-        }
-
-        let embeddings = embedder.embed(chunks, &collection.model).await?;
-
-        debug_assert_eq!(chunks.len(), embeddings.len());
-
-        vector_db
-            .insert_embeddings(document_id, &collection.name, chunks, embeddings)
-            .await?;
-
-        let embeddings = self
-            .repo
-            .insert_embeddings(EmbeddingInsert::new(document_id, collection.id))
-            .await?;
-
-        Ok(embeddings)
-    }
-
     /// Query the vector database (semantic search).
     /// Limit defaults to 5.
     ///
@@ -257,106 +172,18 @@ impl VectorService {
 
         let mut embeddings = embedder.embed(&[&search.query], &collection.model).await?;
 
-        debug_assert_eq!(1, embeddings.len());
+        debug_assert_eq!(1, embeddings.embeddings.len());
 
         vector_db
             .query(
-                std::mem::take(&mut embeddings[0]),
+                std::mem::take(&mut embeddings.embeddings[0]),
                 &collection.name,
                 search.limit.unwrap_or(5),
             )
             .await
     }
-
-    pub async fn get_embeddings(
-        &self,
-        document_id: Uuid,
-        collection_id: Uuid,
-    ) -> Result<Option<Embedding>, ChonkitError> {
-        self.repo.get_embeddings(document_id, collection_id).await
-    }
-
-    pub async fn list_embeddings(
-        &self,
-        pagination: Pagination,
-        collection_id: Option<Uuid>,
-    ) -> Result<List<Embedding>, ChonkitError> {
-        map_err!(pagination.validate());
-        self.repo.list_embeddings(pagination, collection_id).await
-    }
-
-    pub async fn list_outdated_embeddings(
-        &self,
-        collection_id: Uuid,
-    ) -> Result<Vec<Embedding>, ChonkitError> {
-        self.repo.list_outdated_embeddings(collection_id).await
-    }
-
-    pub async fn delete_embeddings(
-        &self,
-        collection_id: Uuid,
-        document_id: Uuid,
-    ) -> Result<u64, ChonkitError> {
-        let Some(collection) = self.repo.get_collection(collection_id).await? else {
-            return err!(DoesNotExist, "Collection with ID '{collection_id}'");
-        };
-
-        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
-
-        vector_db
-            .delete_embeddings(&collection.name, document_id)
-            .await?;
-
-        let amount_deleted = self
-            .repo
-            .delete_embeddings(document_id, collection_id)
-            .await?;
-
-        tracing::info!(
-            "Deleted {amount_deleted} embeddings in collection '{}'",
-            collection.name
-        );
-
-        Ok(amount_deleted)
-    }
-
-    pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<usize, ChonkitError> {
-        let mut total_deleted = 0;
-
-        let collections = self
-            .repo
-            .get_document_assigned_collection_names(document_id)
-            .await?;
-
-        for (collection, provider) in collections.iter() {
-            let vector_db = self.providers.vector.get_provider(provider)?;
-            let amount = vector_db.count_vectors(collection, document_id).await?;
-            vector_db.delete_embeddings(collection, document_id).await?;
-            total_deleted += amount;
-        }
-
-        tracing::info!(
-            "Deleted {total_deleted} embeddings from {} collections",
-            collections.len()
-        );
-
-        Ok(total_deleted)
-    }
-
-    pub async fn count_embeddings(
-        &self,
-        collection_id: Uuid,
-        document_id: Uuid,
-    ) -> Result<usize, ChonkitError> {
-        let Some(collection) = self.repo.get_collection(collection_id).await? else {
-            return err!(DoesNotExist, "Collection with ID '{collection_id}'");
-        };
-        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
-        vector_db.count_vectors(&collection.name, document_id).await
-    }
 }
 
-/// Vector service DTOs.
 pub mod dto {
     use serde::Deserialize;
     use utoipa::ToSchema;
@@ -407,18 +234,6 @@ pub mod dto {
 
         /// Embeddings provider.
         pub embedding_provider: String,
-    }
-
-    #[derive(Debug, Clone, Validify)]
-    pub struct CreateEmbeddings<'a> {
-        /// Document ID.
-        pub document_id: Uuid,
-
-        /// Which collection these embeddings are for.
-        pub collection_id: Uuid,
-
-        /// The chunked document.
-        pub chunks: &'a [&'a str],
     }
 
     /// Params for semantic search.

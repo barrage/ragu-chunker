@@ -8,7 +8,7 @@ use crate::{
         },
         model::document::{Document, DocumentInsert, DocumentParameterUpdate},
         provider::ProviderState,
-        repo::{document::DocumentRepo, Atomic, Repository},
+        repo::{Atomic, Repository},
     },
     err,
     error::ChonkitError,
