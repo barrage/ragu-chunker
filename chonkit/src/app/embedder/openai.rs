@@ -1,5 +1,5 @@
 use crate::config::OPENAI_EMBEDDER_ID;
-use crate::core::embedder::{Embedder, Embeddings};
+use crate::core::embeddings::{Embedder, Embeddings};
 use crate::core::provider::Identity;
 use crate::error::ChonkitError;
 use crate::map_err;

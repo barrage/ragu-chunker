@@ -10,9 +10,23 @@ pub mod chunk;
 /// Document processing functionality.
 pub mod document;
 
-pub mod embedder;
+/// Embedding interfaces and data structs.
+pub mod embeddings;
+
+/// Embedding cache.
+pub mod cache;
+
+/// Database models.
 pub mod model;
+
+/// Provider infrastructure.
 pub mod provider;
+
+/// Database implementation.
 pub mod repo;
+
+/// High level chonkit APIs.
 pub mod service;
+
+/// Vector DB interfaces.
 pub mod vector;

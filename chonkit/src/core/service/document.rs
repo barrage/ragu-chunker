@@ -1,10 +1,7 @@
 use crate::{
     config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
     core::{
-        chunk::{
-            ChunkConfig, ChunkedDocument, SemanticEmbedder, SemanticWindowConfig,
-            SnappingWindowConfig,
-        },
+        chunk::{ChunkConfig, ChunkedDocument},
         document::{
             parser::{ParseConfig, Parser},
             sha256, DocumentType, TextDocumentType,
@@ -142,7 +139,7 @@ impl DocumentService {
             );
         };
 
-        self.chunk(config, content).await
+        crate::core::chunk::chunk(&self.providers, config, content).await
     }
 
     /// Insert the document metadata to the repository and persist it
@@ -225,15 +222,15 @@ impl DocumentService {
         };
         let collections = self
             .repo
-            .get_document_assigned_collection_names(document.id)
+            .get_document_assigned_collections(document.id)
             .await?;
         let store = self.providers.storage.get_provider(&document.src)?;
         transaction! {self.repo, |tx| async move {
                 self.repo.remove_document_by_id(document.id, Some(tx)).await?;
-                for (collection, provider) in collections {
+                for (_, name, provider) in collections {
                     let vector_db = self.providers.vector.get_provider(&provider)?;
                     vector_db
-                        .delete_embeddings(&collection, document.id)
+                        .delete_embeddings(&name, document.id)
                         .await?;
                 }
                 store.delete(&document.path).await
@@ -286,106 +283,37 @@ impl DocumentService {
         let total_tokens_pre = self.tokenizer.count(&content);
         let mut total_tokens_post = TokenCount::default();
 
-        let chunks = match self.chunk(config.chunker, &content).await? {
-            ChunkedDocument::Ref(chunked) => chunked
-                .into_iter()
-                .map(|s| {
-                    let token_count = self.tokenizer.count(s);
-                    total_tokens_post += token_count;
-                    ChunkForPreview {
-                        token_count,
-                        chunk: s.to_string(),
-                    }
-                })
-                .collect(),
-            ChunkedDocument::Owned(chunked) => chunked
-                .into_iter()
-                .map(|s| {
-                    let token_count = self.tokenizer.count(&s);
-                    total_tokens_post += token_count;
-                    ChunkForPreview {
-                        token_count,
-                        chunk: s,
-                    }
-                })
-                .collect(),
-        };
+        let chunks =
+            match crate::core::chunk::chunk(&self.providers, config.chunker, &content).await? {
+                ChunkedDocument::Ref(chunked) => chunked
+                    .into_iter()
+                    .map(|s| {
+                        let token_count = self.tokenizer.count(s);
+                        total_tokens_post += token_count;
+                        ChunkForPreview {
+                            token_count,
+                            chunk: s.to_string(),
+                        }
+                    })
+                    .collect(),
+                ChunkedDocument::Owned(chunked) => chunked
+                    .into_iter()
+                    .map(|s| {
+                        let token_count = self.tokenizer.count(&s);
+                        total_tokens_post += token_count;
+                        ChunkForPreview {
+                            token_count,
+                            chunk: s,
+                        }
+                    })
+                    .collect(),
+            };
 
         Ok(ChunkPreview {
             chunks,
             total_tokens_pre,
             total_tokens_post,
         })
-    }
-
-    async fn chunk<'i>(
-        &self,
-        config: ChunkConfig,
-        input: &'i str,
-    ) -> Result<ChunkedDocument<'i>, ChonkitError> {
-        let chunks = match config {
-            ChunkConfig::Sliding(config) => {
-                let chunker = map_err!(chunx::SlidingWindow::new(config.size, config.overlap));
-                let chunked = map_err!(chunker.chunk(input));
-
-                ChunkedDocument::Ref(chunked)
-            }
-            ChunkConfig::Snapping(config) => {
-                let SnappingWindowConfig {
-                    size,
-                    overlap,
-                    delimiter,
-                    skip_f,
-                    skip_b,
-                } = config;
-
-                let chunker = map_err!(chunx::Snapping::new(
-                    size, overlap, delimiter, skip_f, skip_b
-                ));
-
-                let chunked = map_err!(chunker.chunk(input));
-
-                ChunkedDocument::Owned(chunked)
-            }
-            ChunkConfig::Semantic(config) => {
-                let SemanticWindowConfig {
-                    size,
-                    threshold,
-                    distance_fn,
-                    delimiter,
-                    embedding_provider,
-                    embedding_model,
-                    skip_f,
-                    skip_b,
-                } = config;
-
-                let chunker =
-                    chunx::Semantic::new(size, threshold, distance_fn, delimiter, skip_f, skip_b);
-
-                let embedder = self.providers.embedding.get_provider(&embedding_provider)?;
-
-                if embedder.size(&embedding_model).await?.is_none() {
-                    return err!(
-                        InvalidEmbeddingModel,
-                        "Model '{embedding_model}' not supported by '{embedding_provider}'"
-                    );
-                };
-
-                let semantic_embedder = SemanticEmbedder(embedder.clone());
-
-                let chunked = chunker
-                    .chunk(input, &semantic_embedder, &embedding_model)
-                    .await?;
-
-                ChunkedDocument::Owned(chunked)
-            }
-        };
-
-        if chunks.is_empty() {
-            return err!(Chunks, "chunks cannot be empty");
-        }
-
-        Ok(chunks)
     }
 
     /// Parse the document and return its content.
@@ -486,8 +414,7 @@ impl DocumentService {
     /// * `id`: Document ID.
     /// * `ext`: Document extension.
     async fn get_parsing_config(&self, id: Uuid) -> Result<Parser, ChonkitError> {
-        let config = self.repo.get_document_parse_config(id).await?;
-        match config {
+        match self.repo.get_document_parse_config(id).await? {
             Some(cfg) => Ok(Parser::new(cfg.config)),
             None => Ok(Parser::default()),
         }

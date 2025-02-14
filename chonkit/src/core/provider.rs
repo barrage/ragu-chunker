@@ -1,4 +1,4 @@
-use super::{document::store::DocumentStorage, embedder::Embedder, vector::VectorDb};
+use super::{document::store::DocumentStorage, embeddings::Embedder, vector::VectorDb};
 use crate::{err, error::ChonkitError};
 use std::{collections::HashMap, sync::Arc};
 

@@ -47,6 +47,8 @@ impl ChonkitError {
             E::GoogleApi(_) => SC::INTERNAL_SERVER_ERROR,
             E::OperationUnsupported(_) => SC::BAD_REQUEST,
             E::InvalidHeader(_) => SC::INTERNAL_SERVER_ERROR,
+            E::Cache(_) => SC::BAD_REQUEST,
+            E::CachePool(_) => SC::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -154,6 +156,8 @@ impl IntoResponse for ChonkitError {
             CE::OperationUnsupported(e) => (status, e).into_response(),
             CE::Calamine(e) => (status, e.to_string()).into_response(),
             CE::Xlsx(e) => (status, e.to_string()).into_response(),
+            CE::Cache(e) => (status, e.to_string()).into_response(),
+            CE::CachePool(e) => (status, e.to_string()).into_response(),
         }
     }
 }

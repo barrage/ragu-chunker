@@ -149,12 +149,12 @@ This workspace consists the following binaries:
 Chonkit depends on [pdfium_render](https://github.com/ajrcarey/pdfium-render)
 to parse PDFs. This library depends on [libpdfium.so](https://github.com/bblanchon/pdfium-binaries).
 In order for compilation to succeed, the library must be installed on the system.
-To download a version of `libpdfium` compatible with chonkit (6666),
+To download a version of `libpdfium` compatible with chonkit (6996),
 run the following (assuming Linux):
 
 ```bash
 mkdir pdfium
-wget https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F6666/pdfium-linux-x64.tgz -O - | tar -xzvf - -C ./pdfium
+wget https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F6996/pdfium-linux-x64.tgz -O - | tar -xzvf - -C ./pdfium
 ```
 
 The library can be found in `./pdfium/lib/libpdfium.so`.

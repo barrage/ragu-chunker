@@ -6,7 +6,10 @@ pub mod collection;
 pub mod document;
 pub mod embedding;
 
-/// Thin wrapper around a database connection pool that implements all core repository traits.
+/// Thin wrapper around a database connection pool.
+/// Theoretically, this should be a generic repository not tied to SQL.
+/// In practice, and let's be real here, we'll be using postgres. Always. Literally for
+/// the past 3 years. It's okay.
 #[derive(Debug, Clone)]
 pub struct Repository {
     pub client: sqlx::PgPool,

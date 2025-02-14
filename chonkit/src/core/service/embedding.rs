@@ -1,25 +1,37 @@
+use crate::core::cache::{CachedEmbeddings, EmbeddingCache, EmbeddingCacheKey};
+use crate::core::chunk::{ChunkConfig, ChunkedDocument};
+use crate::core::document::parser::{ParseConfig, Parser};
 use crate::core::model::embedding::{
-    Embedding, EmbeddingInsert, EmbeddingRemovalReportInsert, EmbeddingReport,
-    EmbeddingReportInsert,
+    Embedding, EmbeddingInsert, EmbeddingRemovalReportBuilder, EmbeddingReport,
+    EmbeddingReportAddition, EmbeddingReportBuilder, EmbeddingReportRemoval,
 };
 use crate::core::model::{List, Pagination};
 use crate::core::provider::ProviderState;
-use crate::core::repo::Repository;
+use crate::core::repo::{Atomic, Repository};
 use crate::error::ChonkitError;
-use crate::{err, map_err};
-use serde::Serialize;
+use crate::{err, map_err, transaction};
+use chrono::Utc;
+use serde::Deserialize;
 use uuid::Uuid;
-use validify::{Validate, Validify};
+use validify::Validate;
 
 #[derive(Clone)]
-pub struct EmbeddingService {
+pub struct EmbeddingService<Cache> {
     repo: Repository,
     providers: ProviderState,
+    cache: Cache,
 }
 
-impl EmbeddingService {
-    pub fn new(repo: Repository, providers: ProviderState) -> Self {
-        Self { repo, providers }
+impl<Cache> EmbeddingService<Cache>
+where
+    Cache: EmbeddingCache,
+{
+    pub fn new(repo: Repository, providers: ProviderState, cache: Cache) -> Self {
+        Self {
+            repo,
+            providers,
+            cache,
+        }
     }
 
     pub async fn get_embeddings(
@@ -68,26 +80,42 @@ impl EmbeddingService {
     /// * `embedder`: The embedder to use.
     pub async fn create_embeddings(
         &self,
-        CreateEmbeddings {
-            document_id,
-            collection_id,
-            chunks,
-        }: CreateEmbeddings<'_>,
-    ) -> Result<CreatedEmbeddings, ChonkitError> {
-        // Make sure the collection exists.
-        let Some(collection) = self.repo.get_collection(collection_id).await? else {
-            return err!(DoesNotExist, "Collection with ID '{collection_id}'");
+        input: EmbedSingleInput,
+    ) -> Result<EmbeddingReportAddition, ChonkitError> {
+        // Make sure the collection and document exist.
+
+        let Some(document) = self.repo.get_document_by_id(input.document).await? else {
+            return err!(DoesNotExist, "Document with ID {}", input.document);
         };
 
-        let existing = self.repo.get_embeddings(document_id, collection.id).await?;
+        let Some(collection) = self.repo.get_collection_by_id(input.collection).await? else {
+            return err!(DoesNotExist, "Collection with ID '{}'", input.collection);
+        };
+
+        // Start the report so we get a sense of how long all of this takes
+
+        let report = EmbeddingReportBuilder::new(
+            document.id,
+            document.name.clone(),
+            collection.id,
+            collection.name.clone(),
+        );
+
+        // Make sure we are not duplicating embeddings.
+
+        let existing = self.repo.get_embeddings(document.id, collection.id).await?;
         if existing.is_some() {
-            let name = collection.name;
             return err!(
                 AlreadyExists,
-                "Embeddings for document '{document_id}' in collection '{name}'"
+                "Embeddings for document '{}' in collection '{}'",
+                document.id,
+                collection.name
             );
         }
 
+        // Load providers and check for state treachery
+
+        let storage = self.providers.storage.get_provider(&document.src)?;
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
         let embedder = self
             .providers
@@ -95,7 +123,6 @@ impl EmbeddingService {
             .get_provider(&collection.embedder)?;
 
         let v_collection = vector_db.get_collection(&collection.name).await?;
-
         let Some(size) = embedder.size(&collection.model).await? else {
             let (model, embedder) = (collection.model, embedder.id());
             return err!(
@@ -112,24 +139,129 @@ impl EmbeddingService {
             );
         }
 
-        let embeddings = embedder.embed(chunks, &collection.model).await?;
+        // Load parser and chunker
 
-        let tokens_used = embeddings.tokens_used;
+        let parse_cfg = match self.repo.get_document_parse_config(document.id).await? {
+            Some(cfg) => cfg.config,
+            None => ParseConfig::default(),
+        };
+
+        let chunk_cfg = match self.repo.get_document_chunk_config(document.id).await? {
+            Some(cfg) => cfg.config,
+            None => ChunkConfig::snapping_default(),
+        };
+
+        // Check embedding cache
+        let cache_key = EmbeddingCacheKey::new(&document.hash, &chunk_cfg, &parse_cfg)?;
+
+        if let Some(embeddings) = self.cache.get(&cache_key).await? {
+            // Assert we get the same chunks from the cache as we would when chunking
+            // regularly.
+            #[cfg(debug_assertions)]
+            {
+                let content_bytes = storage.read(&document.path).await?;
+                let content =
+                    Parser::new(parse_cfg).parse_bytes(document.ext.try_into()?, &content_bytes)?;
+                let chunks =
+                    crate::core::chunk::chunk(&self.providers, chunk_cfg, &content).await?;
+                let chunks = match chunks {
+                    ChunkedDocument::Ref(r) => r,
+                    ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
+                };
+                debug_assert_eq!(chunks, embeddings.chunks);
+            }
+
+            // If the embeddings exist in the cache, use those.
+
+            let collection_name = collection.name.clone();
+            return transaction!(self.repo, |tx| async move {
+                debug_assert_eq!(embeddings.chunks.len(), embeddings.embeddings.len());
+
+                self.repo
+                    .insert_embeddings(EmbeddingInsert::new(document.id, collection.id), Some(tx))
+                    .await?;
+
+                let report = report
+                    .model_used(collection.model)
+                    .embedding_provider(collection.embedder.clone())
+                    .tokens_used(Some(0))
+                    .total_vectors(embeddings.embeddings.len())
+                    .vector_db(collection.provider)
+                    .from_cache()
+                    .finished_at(Utc::now())
+                    .build();
+
+                self.store_embedding_report(&report).await?;
+
+                vector_db
+                    .insert_embeddings(
+                        document.id,
+                        &collection_name,
+                        &embeddings
+                            .chunks
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<&str>>(),
+                        embeddings.embeddings,
+                    )
+                    .await?;
+
+                Ok(report)
+            });
+        }
+
+        // Read, parse, chunk, embed
+
+        let content_bytes = storage.read(&document.path).await?;
+        let content =
+            Parser::new(parse_cfg).parse_bytes(document.ext.try_into()?, &content_bytes)?;
+        let chunks = crate::core::chunk::chunk(&self.providers, chunk_cfg, &content).await?;
+        let chunks = match chunks {
+            ChunkedDocument::Ref(r) => r,
+            ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
+        };
+
+        let embeddings = embedder.embed(&chunks, &collection.model).await?;
 
         debug_assert_eq!(chunks.len(), embeddings.embeddings.len());
 
-        vector_db
-            .insert_embeddings(document_id, &collection.name, chunks, embeddings.embeddings)
-            .await?;
+        transaction!(self.repo, |tx| async move {
+            self.repo
+                .insert_embeddings(EmbeddingInsert::new(document.id, collection.id), Some(tx))
+                .await?;
 
-        let embeddings = self
-            .repo
-            .insert_embeddings(EmbeddingInsert::new(document_id, collection.id))
-            .await?;
+            let report = report
+                .model_used(collection.model)
+                .embedding_provider(collection.embedder.clone())
+                .tokens_used(embeddings.tokens_used)
+                .total_vectors(chunks.len())
+                .vector_db(collection.provider)
+                .finished_at(Utc::now())
+                .build();
 
-        Ok(CreatedEmbeddings {
-            embeddings,
-            tokens_used,
+            self.store_embedding_report(&report).await?;
+
+            self.cache
+                .set(
+                    &cache_key,
+                    CachedEmbeddings::new(
+                        embeddings.embeddings.clone(),
+                        embeddings.tokens_used,
+                        chunks.iter().map(|s| s.to_string()).collect(),
+                    ),
+                )
+                .await?;
+
+            vector_db
+                .insert_embeddings(
+                    document.id,
+                    &collection.name,
+                    &chunks,
+                    embeddings.embeddings,
+                )
+                .await?;
+
+            Ok(report)
         })
     }
 
@@ -138,46 +270,93 @@ impl EmbeddingService {
         &self,
         collection_id: Uuid,
         document_id: Uuid,
-    ) -> Result<(u64, usize), ChonkitError> {
-        let Some(collection) = self.repo.get_collection(collection_id).await? else {
+    ) -> Result<EmbeddingReportRemoval, ChonkitError> {
+        let Some(document) = self.repo.get_document_by_id(document_id).await? else {
+            return err!(DoesNotExist, "Document with ID {document_id}");
+        };
+
+        let Some(collection) = self.repo.get_collection_by_id(collection_id).await? else {
             return err!(DoesNotExist, "Collection with ID '{collection_id}'");
         };
 
-        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
-
-        let amount = vector_db
-            .count_vectors(&collection.name, document_id)
-            .await?;
-
-        vector_db
-            .delete_embeddings(&collection.name, document_id)
-            .await?;
-
-        let amount_deleted_db = self
+        if self
             .repo
-            .delete_embeddings(document_id, collection_id)
-            .await?;
+            .get_embeddings(document.id, collection.id)
+            .await?
+            .is_none()
+        {
+            return err!(
+                DoesNotExist,
+                "Embeddings for document '{}' in collection '{}'",
+                document.id,
+                collection.name
+            );
+        };
 
-        tracing::info!(
-            "Deleted {amount} vectors in collection '{}' ({amount_deleted_db} from db)",
-            collection.name
+        let report = EmbeddingRemovalReportBuilder::new(
+            document.id,
+            document.name,
+            collection.id,
+            collection.name.clone(),
         );
 
-        Ok((amount_deleted_db, amount))
+        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
+
+        transaction!(self.repo, |tx| async move {
+            let amount_deleted_db = self
+                .repo
+                .delete_embeddings(document_id, collection_id, Some(tx))
+                .await?;
+
+            let amount = vector_db
+                .count_vectors(&collection.name, document_id)
+                .await?;
+
+            let report = report
+                .total_vectors_removed(amount)
+                .finished_at(Utc::now())
+                .build();
+
+            self.store_embedding_removal_report(&report).await?;
+
+            vector_db
+                .delete_embeddings(&collection.name, document_id)
+                .await?;
+
+            tracing::info!(
+                "Deleted {amount} vectors in collection '{}' ({amount_deleted_db} from db)",
+                collection.name
+            );
+
+            Ok(report)
+        })
     }
 
     pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<usize, ChonkitError> {
-        let mut total_deleted = 0;
-
         let collections = self
             .repo
-            .get_document_assigned_collection_names(document_id)
+            .get_document_assigned_collections(document_id)
             .await?;
 
-        for (collection, provider) in collections.iter() {
+        let mut total_deleted = 0;
+
+        for (collection_id, collection_name, provider) in collections.iter() {
             let vector_db = self.providers.vector.get_provider(provider)?;
-            let amount = vector_db.count_vectors(collection, document_id).await?;
-            vector_db.delete_embeddings(collection, document_id).await?;
+
+            let amount = transaction!(self.repo, |tx| async move {
+                self.repo
+                    .delete_embeddings(document_id, *collection_id, Some(tx))
+                    .await?;
+                let amount = vector_db
+                    .count_vectors(collection_name, document_id)
+                    .await?;
+                vector_db
+                    .delete_embeddings(collection_name, document_id)
+                    .await?;
+
+                Ok(amount)
+            })?;
+
             total_deleted += amount;
         }
 
@@ -194,7 +373,7 @@ impl EmbeddingService {
         collection_id: Uuid,
         document_id: Uuid,
     ) -> Result<usize, ChonkitError> {
-        let Some(collection) = self.repo.get_collection(collection_id).await? else {
+        let Some(collection) = self.repo.get_collection_by_id(collection_id).await? else {
             return err!(DoesNotExist, "Collection with ID '{collection_id}'");
         };
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
@@ -212,7 +391,7 @@ impl EmbeddingService {
 
     pub async fn store_embedding_report(
         &self,
-        report: &EmbeddingReportInsert,
+        report: &EmbeddingReportAddition,
     ) -> Result<(), ChonkitError> {
         tracing::debug!(
             "Storing embedding report for document '{}' in '{}'",
@@ -225,7 +404,7 @@ impl EmbeddingService {
 
     pub async fn store_embedding_removal_report(
         &self,
-        report: &EmbeddingRemovalReportInsert,
+        report: &EmbeddingReportRemoval,
     ) -> Result<(), ChonkitError> {
         tracing::debug!(
             "Storing embedding removal report for document '{}' in '{}'",
@@ -237,20 +416,23 @@ impl EmbeddingService {
     }
 }
 
-#[derive(Debug, Clone, Validify)]
-pub struct CreateEmbeddings<'a> {
-    /// Document ID.
-    pub document_id: Uuid,
+/// Used for embedding documents one by one.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[cfg_attr(test, derive(Clone))]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedSingleInput {
+    /// The ID of the document to embed.
+    pub document: Uuid,
 
-    /// Which collection these embeddings are for.
-    pub collection_id: Uuid,
-
-    /// The chunked document.
-    pub chunks: &'a [&'a str],
+    /// The ID of the collection in which to store the embeddings to.
+    pub collection: Uuid,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct CreatedEmbeddings {
-    pub embeddings: Embedding,
-    pub tokens_used: Option<usize>,
+impl EmbedSingleInput {
+    pub fn new(document: Uuid, collection: Uuid) -> Self {
+        Self {
+            document,
+            collection,
+        }
+    }
 }

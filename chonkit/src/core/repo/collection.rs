@@ -216,7 +216,7 @@ impl Repository {
         Ok(result.rows_affected())
     }
 
-    pub async fn get_collection(&self, id: Uuid) -> Result<Option<Collection>, ChonkitError> {
+    pub async fn get_collection_by_id(&self, id: Uuid) -> Result<Option<Collection>, ChonkitError> {
         Ok(map_err!(sqlx::query_as!(
             Collection,
             "SELECT id, name, model, embedder, provider, created_at, updated_at FROM collections WHERE id = $1",

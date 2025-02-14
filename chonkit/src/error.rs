@@ -117,8 +117,15 @@ pub enum ChonkitErr {
 
     #[error("excel: {0}")]
     Xlsx(#[from] calamine::XlsxError),
+
+    #[error("redis: {0}")]
+    Cache(#[from] deadpool_redis::redis::RedisError),
+
+    #[error("redis pool: {0}")]
+    CachePool(#[from] deadpool_redis::PoolError),
 }
 
+/// A wrapper around an error that includes the specific file, line and column it was created in.
 #[derive(Debug, Error)]
 #[error("{error}")]
 pub struct ChonkitError {
@@ -180,6 +187,9 @@ macro_rules! err {
     };
 }
 
+/// Helper macro used throughout the app to quickly map any `Result<T, E>` into a ChonkitError.
+/// `E` must implement `Into<ChonkitErr>` (not ChonkitError). All the other fields will be
+/// populated by this macro.
 #[macro_export]
 macro_rules! map_err {
     ($ex:expr) => {

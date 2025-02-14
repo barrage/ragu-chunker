@@ -3,7 +3,7 @@ use super::{
     ChunkerError,
 };
 
-const DEFAULT_SIZE: usize = 1000;
+const DEFAULT_SIZE: usize = 2000;
 const DEFAULT_OVERLAP: usize = 5;
 
 /// Heuristic chunker for texts intended for humans, e.g. documentation, books, blogs, etc.
@@ -18,7 +18,7 @@ const DEFAULT_OVERLAP: usize = 5;
 /// such as abbreviations (e.g., i.e., etc.) and urls.
 ///
 /// The default delimiter is `'.'`.
-/// The default `size` and `overlap` are 1000 and 5.
+/// The default `size` and `overlap` are [DEFAULT_SIZE] and [DEFAULT_OVERLAP].
 /// The default forward skips are [DEFAULT_SKIP_F].
 /// The default backward skips are [DEFAULT_SKIP_B].
 ///

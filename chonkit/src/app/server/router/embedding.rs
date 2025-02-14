@@ -1,18 +1,17 @@
 use crate::{
     app::{
         batch::{BatchJob, JobResult},
-        server::dto::{EmbeddingBatchPayload, EmbeddingSinglePayload, ListEmbeddingsPayload},
+        server::dto::{EmbedBatchInput, ListEmbeddingsPayload},
         state::AppState,
     },
     core::{
-        chunk::ChunkedDocument,
         model::{
             embedding::{
-                Embedding, EmbeddingRemovalReportBuilder, EmbeddingReport, EmbeddingReportBuilder,
+                Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
             },
             List,
         },
-        service::embedding::{CreateEmbeddings, CreatedEmbeddings},
+        service::embedding::EmbedSingleInput,
     },
     err,
     error::ChonkitError,
@@ -24,7 +23,6 @@ use axum::{
     response::{sse::Event, Sse},
     Json,
 };
-use chrono::Utc;
 use futures_util::Stream;
 use std::{collections::HashMap, time::Duration};
 use tokio_stream::StreamExt;
@@ -68,60 +66,10 @@ pub(super) async fn list_embedding_models(
 )]
 pub(super) async fn embed(
     State(state): State<AppState>,
-    Json(payload): Json<EmbeddingSinglePayload>,
-) -> Result<(StatusCode, Json<CreatedEmbeddings>), ChonkitError> {
-    let EmbeddingSinglePayload {
-        document: document_id,
-        collection,
-    } = payload;
-
-    let document = state.services.document.get_document(document_id).await?;
-    let collection = state.services.collection.get_collection(collection).await?;
-
-    let report = EmbeddingReportBuilder::new(
-        document.id,
-        document.name.clone(),
-        collection.id,
-        collection.name.clone(),
-    );
-
-    let content = state.services.document.get_content(document_id).await?;
-
-    let chunks = state
-        .services
-        .document
-        .get_chunks(&document, &content)
-        .await?;
-
-    let chunks = match chunks {
-        ChunkedDocument::Ref(r) => r,
-        ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
-    };
-
-    let create = CreateEmbeddings {
-        document_id: document.id,
-        collection_id: collection.id,
-        chunks: &chunks,
-    };
-
-    let embedding = state.services.embedding.create_embeddings(create).await?;
-
-    let report = report
-        .model_used(collection.model)
-        .embedding_provider(collection.embedder.clone())
-        .tokens_used(embedding.tokens_used)
-        .total_vectors(chunks.len())
-        .vector_db(collection.provider)
-        .finished_at(Utc::now())
-        .build();
-
-    state
-        .services
-        .embedding
-        .store_embedding_report(&report)
-        .await?;
-
-    Ok((StatusCode::CREATED, Json(embedding)))
+    Json(input): Json<EmbedSingleInput>,
+) -> Result<(StatusCode, Json<EmbeddingReportAddition>), ChonkitError> {
+    let report = state.services.embedding.create_embeddings(input).await?;
+    Ok((StatusCode::OK, Json(report)))
 }
 
 #[utoipa::path(
@@ -135,15 +83,15 @@ pub(super) async fn embed(
 )]
 pub(super) async fn batch_embed(
     State(state): State<AppState>,
-    Json(job): Json<EmbeddingBatchPayload>,
+    Json(input): Json<EmbedBatchInput>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, ChonkitError>>>, ChonkitError> {
-    map_err!(job.validate());
+    map_err!(input.validate());
 
-    let EmbeddingBatchPayload {
+    let EmbedBatchInput {
         collection,
         add,
         remove,
-    } = job;
+    } = input;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<JobResult>(add.len() + remove.len());
 
@@ -267,38 +215,14 @@ pub(super) async fn count_embeddings(
 pub(super) async fn delete_embeddings(
     State(state): State<AppState>,
     Path((collection_id, document_id)): Path<(Uuid, Uuid)>,
-) -> Result<StatusCode, ChonkitError> {
-    let collection = state
-        .services
-        .collection
-        .get_collection(collection_id)
-        .await?;
-    let document = state.services.document.get_document(document_id).await?;
-
-    let report = EmbeddingRemovalReportBuilder::new(
-        document.id,
-        document.name,
-        collection.id,
-        collection.name,
-    );
-    let (_, total_deleted) = state
+) -> Result<(StatusCode, Json<EmbeddingReportRemoval>), ChonkitError> {
+    let report = state
         .services
         .embedding
         .delete_embeddings(collection_id, document_id)
         .await?;
 
-    let report = report
-        .total_vectors_removed(total_deleted)
-        .finished_at(Utc::now())
-        .build();
-
-    state
-        .services
-        .embedding
-        .store_embedding_removal_report(&report)
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
+    Ok((StatusCode::OK, Json(report)))
 }
 
 #[utoipa::path(

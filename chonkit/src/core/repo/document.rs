@@ -677,13 +677,13 @@ impl Repository {
         Ok(document)
     }
 
-    pub async fn get_document_assigned_collection_names(
+    pub async fn get_document_assigned_collections(
         &self,
         document_id: Uuid,
-    ) -> Result<Vec<(String, String)>, ChonkitError> {
+    ) -> Result<Vec<(Uuid, String, String)>, ChonkitError> {
         let query = sqlx::query!(
             r#"
-            SELECT collections.name, collections.provider FROM collections
+            SELECT collections.id, collections.name, collections.provider FROM collections
                 WHERE collections.id IN (
                         SELECT collection_id FROM embeddings
                         WHERE embeddings.document_id = $1 
@@ -696,7 +696,7 @@ impl Repository {
 
         Ok(results
             .into_iter()
-            .map(|record| (record.name, record.provider))
+            .map(|record| (record.id, record.name, record.provider))
             .collect())
     }
 }

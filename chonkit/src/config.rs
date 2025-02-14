@@ -61,6 +61,9 @@ pub struct StartArgs {
     #[arg(long)]
     cors_allowed_headers: Option<String>,
 
+    /// Redis URL.
+    redis_url: Option<String>,
+
     /// Cookie domain used for setting chonkit-specific cookies.
     #[arg(long)]
     cookie_domain: Option<String>,
@@ -197,6 +200,7 @@ arg!(log,             "RUST_LOG",        default "info".to_string());
 arg!(upload_path,     "UPLOAD_PATH",     default DEFAULT_UPLOAD_PATH.to_string());
 arg!(address,         "ADDRESS",         default DEFAULT_ADDRESS.to_string());
 arg!(cookie_domain,   "COOKIE_DOMAIN",   panic   "Cookie domain not found; Pass --cookie-domain or set COOKIE_DOMAIN");
+arg!(redis_url,       "REDIS_URL",       panic   "Redis url not found; Pass --redis-url or set REDIS_URL");
 
 #[cfg(feature = "qdrant")]
 arg!(qdrant_url,      "QDRANT_URL",      panic   "Qdrant url not found; Pass --qdrant-url or set QDRANT_URL");

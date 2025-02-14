@@ -36,10 +36,7 @@ use super::router::{
         __path_list_embedding_reports,
     }
 };
-use super::dto::{
-    EmbeddingBatchPayload, EmbeddingSinglePayload, ListDocumentsPayload, ListEmbeddingsPayload,
-    UploadResult,
-};
+use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, UploadResult};
 use crate::{
     app::state::AppConfig,
     core::{
@@ -53,6 +50,7 @@ use crate::{
         },
         service::{
             document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
+            embedding::EmbedSingleInput,
             vector::dto::{CreateCollectionPayload, SearchPayload},
         },
         vector::VectorCollection,
@@ -116,8 +114,8 @@ use utoipa::OpenApi;
         Collection,
         VectorCollection,
         AppConfig,
-        EmbeddingBatchPayload,
-        EmbeddingSinglePayload,
+        EmbedBatchInput,
+        EmbedSingleInput,
         ListEmbeddingsPayload,
         ListDocumentsPayload,
         ChunkForPreview,

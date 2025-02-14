@@ -47,8 +47,7 @@ impl CollectionService {
     ///
     /// * `id`: Collection ID.
     pub async fn get_collection(&self, id: Uuid) -> Result<Collection, ChonkitError> {
-        let collection = self.repo.get_collection(id).await?;
-        match collection {
+        match self.repo.get_collection_by_id(id).await? {
             Some(collection) => Ok(collection),
             None => err!(DoesNotExist, "Collection with ID '{id}'"),
         }
@@ -137,7 +136,7 @@ impl CollectionService {
     ///
     /// * `id`: Collection ID.
     pub async fn delete_collection(&self, id: Uuid) -> Result<u64, ChonkitError> {
-        let Some(collection) = self.repo.get_collection(id).await? else {
+        let Some(collection) = self.repo.get_collection_by_id(id).await? else {
             return err!(DoesNotExist, "Collection with ID '{id}'");
         };
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;

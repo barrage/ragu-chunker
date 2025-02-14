@@ -38,30 +38,61 @@ impl EmbeddingInsert {
     }
 }
 
+/// Represents an addition or removal of embeddings from or to a vector collection, respectively.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EmbeddingReport {
+    /// The serial ID of the report.
     pub id: i32,
+
+    /// The type of report, can be one of 'addition' or 'removal'.
     pub ty: String,
+
+    /// The ID of the document.
     pub document_id: Option<Uuid>,
+
+    /// The name of the document.
     pub document_name: String,
+
+    /// The ID of the collection.
     pub collection_id: Option<Uuid>,
+
+    /// The name of the collection.
     pub collection_name: String,
-    /// Only Some if ty == addition
+
+    /// The model used for embedding generation.
+    /// Only present if ty == addition.
     pub model_used: Option<String>,
-    /// Only Some if ty == addition
+
+    /// The vector database used to store the embeddings.
+    /// Only present if ty == addition.
     pub vector_db: Option<String>,
-    /// Only Some if ty == addition
+
+    /// The embedding provider used to provide the embedding model.
+    /// Only present if ty == addition.
     pub embedding_provider: Option<String>,
-    /// Only Some if ty == addition
+
+    /// The total vectors created. Always 1:1 with the original chunks.
+    /// Only present if ty == addition.
     pub total_vectors: Option<i32>,
-    /// Only Some if ty == addition
+
+    /// Whether the embeddings were newly created (false) or were obtained from an embedding cache
+    /// (true).
+    /// Only present if ty == addition.
+    pub cache: Option<bool>,
+
+    /// The total tokens used to generate the embeddings, if applicable.
+    /// Only present if ty == addition.
     pub tokens_used: Option<i32>,
+
+    /// UTC datetime of when the embedding process started.
     pub started_at: chrono::DateTime<chrono::Utc>,
+
+    /// UTC datetime of when the embedding process finished.
     pub finished_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct EmbeddingReportInsert {
+pub struct EmbeddingReportAddition {
     pub document_id: Uuid,
     pub document_name: String,
     pub collection_id: Uuid,
@@ -71,12 +102,13 @@ pub struct EmbeddingReportInsert {
     pub vector_db: String,
     pub total_vectors: usize,
     pub tokens_used: Option<usize>,
+    pub cache: bool,
     pub started_at: chrono::DateTime<chrono::Utc>,
     pub finished_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct EmbeddingRemovalReportInsert {
+pub struct EmbeddingReportRemoval {
     pub document_id: Uuid,
     pub document_name: String,
     pub collection_id: Uuid,
@@ -96,6 +128,7 @@ pub struct EmbeddingReportBuilder {
     vector_db: Option<String>,
     total_vectors: Option<usize>,
     tokens_used: Option<usize>,
+    cache: bool,
     started_at: chrono::DateTime<chrono::Utc>,
     finished_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -118,6 +151,7 @@ impl EmbeddingReportBuilder {
             vector_db: None,
             total_vectors: None,
             tokens_used: None,
+            cache: false,
             finished_at: None,
         }
     }
@@ -152,8 +186,13 @@ impl EmbeddingReportBuilder {
         self
     }
 
-    pub fn build(self) -> EmbeddingReportInsert {
-        EmbeddingReportInsert {
+    pub fn from_cache(mut self) -> Self {
+        self.cache = true;
+        self
+    }
+
+    pub fn build(self) -> EmbeddingReportAddition {
+        EmbeddingReportAddition {
             document_id: self.document_id,
             document_name: self.document_name,
             collection_id: self.collection_id,
@@ -161,6 +200,7 @@ impl EmbeddingReportBuilder {
             model_used: self.model_used.unwrap(),
             embedding_provider: self.embedding_provider.unwrap(),
             vector_db: self.vector_db.unwrap(),
+            cache: self.cache,
             total_vectors: self.total_vectors.unwrap(),
             tokens_used: self.tokens_used,
             started_at: self.started_at,
@@ -208,8 +248,8 @@ impl EmbeddingRemovalReportBuilder {
         self
     }
 
-    pub fn build(self) -> EmbeddingRemovalReportInsert {
-        EmbeddingRemovalReportInsert {
+    pub fn build(self) -> EmbeddingReportRemoval {
+        EmbeddingReportRemoval {
             document_id: self.document_id,
             document_name: self.document_name,
             collection_id: self.collection_id,

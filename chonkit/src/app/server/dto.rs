@@ -30,33 +30,22 @@ pub(super) struct ConfigUpdatePayload {
     pub chunker: Option<ChunkConfig>,
 }
 
-/// Used for single embeddings.
-#[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct EmbeddingSinglePayload {
-    /// The ID of the document to embed.
-    pub document: Uuid,
-
-    /// The ID of the collection in which to store the embeddings to.
-    pub collection: Uuid,
-}
-
-/// Used for batch embeddings.
+/// Used for batch embedding of documents.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[validate(Self::validate_schema)]
-pub struct EmbeddingBatchPayload {
+pub struct EmbedBatchInput {
     /// The documents to embed and add to the collection.
     pub add: Vec<Uuid>,
 
     /// The documents to remove from the collection.
     pub remove: Vec<Uuid>,
 
-    /// The ID of the collection in which to store the embeddings to.
+    /// The ID of the collection in which to store/remove the embeddings to/from.
     pub collection: Uuid,
 }
 
-impl EmbeddingBatchPayload {
+impl EmbedBatchInput {
     #[schema_validation]
     fn validate_schema(&self) -> Result<(), ValidationErrors> {
         if self.add.is_empty() && self.remove.is_empty() {

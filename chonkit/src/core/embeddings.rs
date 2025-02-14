@@ -1,7 +1,6 @@
-use serde::Serialize;
-
 use super::provider::Identity;
 use crate::error::ChonkitError;
+use serde::{Deserialize, Serialize};
 
 /// Operations related to embeddings and their models.
 #[async_trait::async_trait]
@@ -34,30 +33,63 @@ pub trait Embedder: Identity {
     async fn embed(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError>;
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+/// The result of embedding chunks.
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Embeddings {
+    /// The actual embedding. Indices are 1:1 with the original chunk vector (chunk[n] = embeddings[n]).
     pub embeddings: Vec<Vec<f64>>,
+
+    /// Amount of tokens spent on the embedding, if applicable.
     pub tokens_used: Option<usize>,
+
+    /// The source of the embeddings. Necessary because embeddings can be cached.
+    pub source: EmbeddingSource,
 }
 
 impl Embeddings {
+    /// Create a new embeddings struct with the source set to [EmbeddingSource::Model].
     pub fn new(embeddings: Vec<Vec<f64>>, tokens_used: Option<usize>) -> Self {
         Embeddings {
             embeddings,
             tokens_used,
+            source: EmbeddingSource::Model,
         }
     }
+}
+
+/// Represents the origin of embeddings.
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub enum EmbeddingSource {
+    /// The embeddings were obtained via the model.
+    Model,
+
+    /// The embeddings were obtained from the cache.
+    Cache,
 }
 
 impl std::fmt::Display for Embeddings {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Embeddings {{ total embeddings: {}, tokens_used: {} }}",
+            "Embeddings {{ total embeddings: {}, tokens_used: {}, source: {} }}",
             self.embeddings.len(),
             self.tokens_used
                 .map(|t| t.to_string())
-                .unwrap_or(String::from("N/A"))
+                .unwrap_or(String::from("N/A")),
+            self.source
+        )
+    }
+}
+
+impl std::fmt::Display for EmbeddingSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                EmbeddingSource::Model => "model",
+                EmbeddingSource::Cache => "cache",
+            }
         )
     }
 }

@@ -1,5 +1,6 @@
 use super::{
     batch::{self, BatchEmbedderHandle},
+    cache::init_redis,
     server::HttpConfiguration,
 };
 use crate::{
@@ -26,7 +27,7 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 pub struct AppState {
     /// Chonkit services.
-    pub services: ServiceState,
+    pub services: ServiceState<deadpool_redis::Pool>,
 
     /// Handle for batch embedding documents.
     pub batch_embedder: BatchEmbedderHandle,
@@ -59,6 +60,7 @@ impl AppState {
             .init();
 
         let repository = crate::core::repo::Repository::new(&args.db_url()).await;
+        let cache = init_redis(&args.redis_url()).await;
 
         let providers = AppProviderState {
             database: repository.clone(),
@@ -75,7 +77,7 @@ impl AppState {
             ),
             collection: CollectionService::new(repository.clone(), providers.clone().into()),
             external: ServiceFactory::new(repository.clone(), providers.clone().into()),
-            embedding: EmbeddingService::new(repository, providers.clone().into()),
+            embedding: EmbeddingService::new(repository, providers.clone().into(), cache),
         };
 
         for provider in providers.storage.list_provider_ids() {
@@ -94,7 +96,6 @@ impl AppState {
 
             providers,
 
-            // tokenizer: Tokenizer::new(),
             http_client: reqwest::Client::new(),
 
             http_config: Self::server_config(args),

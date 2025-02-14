@@ -4,6 +4,7 @@ mod document;
 mod vector;
 
 use super::{
+    cache::init_redis,
     document::store::FsDocumentStore,
     state::{AppProviderState, AppState},
 };
@@ -18,10 +19,11 @@ use crate::core::{
 use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
 use std::sync::Arc;
 use testcontainers::{runners::AsyncRunner, ContainerAsync, GenericImage};
-use testcontainers_modules::postgres::Postgres;
+use testcontainers_modules::{postgres::Postgres, redis::Redis};
 
 pub type PostgresContainer = ContainerAsync<Postgres>;
 pub type AsyncContainer = ContainerAsync<GenericImage>;
+pub type RedisContainer = ContainerAsync<Redis>;
 
 struct TestState {
     /// Holds test containers so they don't get dropped.
@@ -42,6 +44,7 @@ impl TestState {
         // Set up test containers
 
         let (postgres, postgres_img) = init_repository().await;
+        let (redis, redis_img) = init_cache().await;
 
         #[cfg(feature = "qdrant")]
         let (qdrant, qdrant_img) = init_qdrant().await;
@@ -125,6 +128,7 @@ impl TestState {
 
         let _containers = TestContainers {
             _postgres: postgres_img,
+            _redis: redis_img,
             #[cfg(feature = "qdrant")]
             _qdrant: qdrant_img,
             #[cfg(feature = "weaviate")]
@@ -135,7 +139,7 @@ impl TestState {
             collection: CollectionService::new(postgres.clone(), providers.clone().into()),
             document: DocumentService::new(postgres.clone(), providers.clone().into(), tokenizer),
             external: ServiceFactory::new(postgres.clone(), providers.clone().into()),
-            embedding: EmbeddingService::new(postgres, providers.clone().into()),
+            embedding: EmbeddingService::new(postgres, providers.clone().into(), redis),
         };
 
         let app = AppState::new_test(
@@ -164,6 +168,8 @@ struct TestStateConfig {
 struct TestContainers {
     pub _postgres: PostgresContainer,
 
+    pub _redis: RedisContainer,
+
     #[cfg(feature = "qdrant")]
     pub _qdrant: ContainerAsync<GenericImage>,
 
@@ -174,7 +180,7 @@ struct TestContainers {
 impl AppState {
     #[cfg(test)]
     pub fn new_test(
-        services: ServiceState,
+        services: ServiceState<deadpool_redis::Pool>,
         providers: AppProviderState,
         #[cfg(feature = "auth-vault")] vault: super::auth::vault::VaultAuthenticator,
     ) -> Self {
@@ -209,6 +215,14 @@ pub async fn init_repository() -> (Repository, PostgresContainer) {
     let pg_port = pg_image.get_host_port_ipv4(5432).await.unwrap();
     let pg_url = format!("postgresql://postgres:postgres@{pg_host}:{pg_port}/postgres");
     (crate::core::repo::Repository::new(&pg_url).await, pg_image)
+}
+
+pub async fn init_cache() -> (deadpool_redis::Pool, RedisContainer) {
+    let redis_image = Redis::default().start().await.unwrap();
+    let redis_host = redis_image.get_host().await.unwrap();
+    let redis_port = redis_image.get_host_port_ipv4(6379).await.unwrap();
+    let redis_url = format!("redis://{redis_host}:{redis_port}");
+    (init_redis(&redis_url).await, redis_image)
 }
 
 /// Setup a qdrant test container and connect to it using QdrantDb.

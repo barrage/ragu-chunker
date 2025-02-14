@@ -12,6 +12,16 @@ services:
     volumes:
       - postgres_data:/var/lib/docker/chonkit/postgres/data
 
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command:
+      ["redis-server", "--requirepass", "password", "--appendonly", "yes"]
+
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
@@ -111,3 +121,4 @@ volumes:
   chonkit_data:
   weaviate_data:
   feserver_data:
+  redis_data:

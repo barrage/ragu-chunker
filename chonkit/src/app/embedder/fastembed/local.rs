@@ -1,9 +1,9 @@
 use crate::config::{
     DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE, FEMBED_EMBEDDER_ID,
 };
-use crate::core::embedder::Embeddings;
+use crate::core::embeddings::Embeddings;
 use crate::core::provider::Identity;
-use crate::{core::embedder::Embedder, error::ChonkitError, map_err};
+use crate::{core::embeddings::Embedder, error::ChonkitError, map_err};
 
 pub use chonkit_embedders::fastembed::local::LocalFastEmbedder;
 

@@ -10,7 +10,7 @@ mod document_service_integration_tests {
                 DocumentType, Docx, Pdf, Text, TextDocumentType,
             },
             service::{
-                document::dto::DocumentUpload, embedding::CreateEmbeddings,
+                document::dto::DocumentUpload, embedding::EmbedSingleInput,
                 vector::dto::CreateCollectionPayload,
             },
         },
@@ -249,21 +249,17 @@ mod document_service_integration_tests {
                     .await
                     .unwrap();
 
-                let content = String::from_utf8_lossy(content);
-
-                let embeddings_1 = CreateEmbeddings {
-                    document_id: document.id,
-                    collection_id: collection_1.id,
-                    chunks: &[&content],
+                let embeddings_1 = EmbedSingleInput {
+                    document: document.id,
+                    collection: collection_1.id,
                 };
 
-                let embeddings_2 = CreateEmbeddings {
-                    document_id: document.id,
-                    collection_id: collection_2.id,
-                    chunks: &[&content],
+                let embeddings_2 = EmbedSingleInput {
+                    document: document.id,
+                    collection: collection_2.id,
                 };
 
-                state
+                let report_1 = state
                     .app
                     .services
                     .embedding
@@ -271,13 +267,17 @@ mod document_service_integration_tests {
                     .await
                     .unwrap();
 
-                state
+                assert!(!report_1.cache);
+
+                let report_2 = state
                     .app
                     .services
                     .embedding
                     .create_embeddings(embeddings_2)
                     .await
                     .unwrap();
+
+                assert!(report_2.cache);
 
                 let count = state
                     .app
@@ -287,7 +287,7 @@ mod document_service_integration_tests {
                     .await
                     .unwrap();
 
-                assert_eq!(1, count);
+                assert!(count >= 1);
 
                 let count = state
                     .app
@@ -297,7 +297,7 @@ mod document_service_integration_tests {
                     .await
                     .unwrap();
 
-                assert_eq!(1, count);
+                assert!(count >= 1);
 
                 state
                     .app

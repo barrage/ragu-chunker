@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::{
     core::{
-        embedder::{Embedder, Embeddings},
+        embeddings::{Embedder, Embeddings},
         provider::Identity,
     },
     error::ChonkitError,

@@ -10,9 +10,9 @@ mod vector_service_integration_tests {
         config::{DEFAULT_COLLECTION_NAME, FEMBED_EMBEDDER_ID},
         core::{
             document::{DocumentType, TextDocumentType},
-            model::document::DocumentInsert,
             service::{
-                embedding::CreateEmbeddings,
+                document::dto::DocumentUpload,
+                embedding::EmbedSingleInput,
                 vector::dto::{CreateCollectionPayload, SearchPayload},
             },
         },
@@ -238,22 +238,24 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let create = DocumentInsert::new(
-                "test_document",
-                "test_path_1",
-                DocumentType::Text(TextDocumentType::Txt),
-                "SHA256_1",
-                "fs",
-            );
-
-            let document = postgres.insert_document(create).await.unwrap();
-
             let content = r#"Hello World!"#;
 
-            let embeddings = CreateEmbeddings {
-                document_id: document.id,
-                collection_id: default.id,
-                chunks: &[content],
+            let document = services
+                .document
+                .upload(
+                    DocumentUpload::new(
+                        "test_document".to_string(),
+                        DocumentType::Text(TextDocumentType::Txt),
+                        content.as_bytes(),
+                    ),
+                    false,
+                )
+                .await
+                .unwrap();
+
+            let embeddings = EmbedSingleInput {
+                document: document.id,
+                collection: default.id,
             };
 
             let collection = services
@@ -288,7 +290,7 @@ mod vector_service_integration_tests {
                 .unwrap();
 
             let collection = postgres
-                .get_collection(embeddings.collection_id)
+                .get_collection_by_id(embeddings.collection_id)
                 .await
                 .unwrap()
                 .unwrap();
@@ -321,31 +323,33 @@ mod vector_service_integration_tests {
 
             let collection_name = "Test_collection_delete_embeddings";
 
-            let create = CreateCollectionPayload {
-                name: collection_name.to_string(),
-                model: embedder.default_model().0,
-                vector_provider: vector_db.id().to_string(),
-                embedding_provider: embedder.id().to_string(),
-            };
+            let collection = services
+                .collection
+                .create_collection(CreateCollectionPayload {
+                    name: collection_name.to_string(),
+                    model: embedder.default_model().0,
+                    vector_provider: vector_db.id().to_string(),
+                    embedding_provider: embedder.id().to_string(),
+                })
+                .await
+                .unwrap();
 
-            let collection = services.collection.create_collection(create).await.unwrap();
+            let document = services
+                .document
+                .upload(
+                    DocumentUpload::new(
+                        "test_document_420".to_string(),
+                        DocumentType::Text(TextDocumentType::Txt),
+                        b"Hello, world! 420",
+                    ),
+                    false,
+                )
+                .await
+                .unwrap();
 
-            let create = DocumentInsert::new(
-                "test_document",
-                "test_path_2",
-                DocumentType::Text(TextDocumentType::Txt),
-                "SHA256_2",
-                "fs",
-            );
-
-            let document = postgres.insert_document(create).await.unwrap();
-
-            let content = r#"Hello World!"#;
-
-            let embeddings = CreateEmbeddings {
-                document_id: document.id,
-                collection_id: collection.id,
-                chunks: &[content],
+            let embeddings = EmbedSingleInput {
+                document: document.id,
+                collection: collection.id,
             };
 
             services
@@ -392,13 +396,18 @@ mod vector_service_integration_tests {
             let collection_name =
                 format!("{DEFAULT_COLLECTION_NAME}_{}_{}", provider, embedder.id());
 
-            let create = DocumentInsert::new(
-                "test_document",
-                "test_path_3",
-                DocumentType::Text(TextDocumentType::Txt),
-                "SHA256_3",
-                "fs",
-            );
+            let document = services
+                .document
+                .upload(
+                    DocumentUpload::new(
+                        "test_document_42069".to_string(),
+                        DocumentType::Text(TextDocumentType::Txt),
+                        b"Hello, world! 42069",
+                    ),
+                    false,
+                )
+                .await
+                .unwrap();
 
             let default = services
                 .collection
@@ -406,13 +415,9 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let document = postgres.insert_document(create).await.unwrap();
-
-            let content = r#"Hello World!"#;
-            let create = CreateEmbeddings {
-                document_id: document.id,
-                collection_id: default.id,
-                chunks: &[content],
+            let create = EmbedSingleInput {
+                document: document.id,
+                collection: default.id,
             };
 
             services

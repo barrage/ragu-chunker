@@ -9,6 +9,7 @@ CREATE TABLE embedding_reports (
     vector_db TEXT NOT NULL,
     total_vectors INTEGER NOT NULL,
     tokens_used INTEGER,
+    cache BOOLEAN NOT NULL,
     started_at TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ NOT NULL
 );

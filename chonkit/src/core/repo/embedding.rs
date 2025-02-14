@@ -2,8 +2,8 @@ use crate::{
     core::{
         model::{
             embedding::{
-                Embedding, EmbeddingInsert, EmbeddingRemovalReportInsert, EmbeddingReport,
-                EmbeddingReportInsert,
+                Embedding, EmbeddingInsert, EmbeddingReport, EmbeddingReportAddition,
+                EmbeddingReportRemoval,
             },
             List, Pagination,
         },
@@ -14,21 +14,26 @@ use crate::{
 };
 use uuid::Uuid;
 
+use super::Atomic;
+
 impl Repository {
     pub async fn insert_embeddings(
         &self,
         embeddings: EmbeddingInsert,
-    ) -> Result<Embedding, ChonkitError> {
+        tx: Option<&mut <Self as Atomic>::Tx>,
+    ) -> Result<Embedding, ChonkitError>
+    where
+        Self: Atomic,
+    {
         let EmbeddingInsert {
             id,
             document_id,
             collection_id,
         } = embeddings;
 
-        Ok(map_err!(
-            sqlx::query_as!(
-                Embedding,
-                r#"
+        let query = sqlx::query_as!(
+            Embedding,
+            r#"
                     INSERT INTO embeddings(id, document_id, collection_id)
                     VALUES ($1, $2, $3)
                     ON CONFLICT(id) DO UPDATE
@@ -36,13 +41,15 @@ impl Repository {
                     RETURNING 
                     id, document_id, collection_id, created_at, updated_at
                 "#,
-                id,
-                document_id,
-                collection_id,
-            )
-            .fetch_one(&self.client)
-            .await
-        ))
+            id,
+            document_id,
+            collection_id,
+        );
+
+        match tx {
+            Some(tx) => Ok(map_err!(query.fetch_one(&mut **tx).await)),
+            None => Ok(map_err!(query.fetch_one(&self.client).await)),
+        }
     }
 
     pub async fn get_all_embeddings(
@@ -139,17 +146,21 @@ impl Repository {
         &self,
         document_id: Uuid,
         collection_id: Uuid,
-    ) -> Result<u64, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query!(
-                "DELETE FROM embeddings WHERE document_id = $1 AND collection_id = $2",
-                document_id,
-                collection_id
-            )
-            .execute(&self.client)
-            .await
-        )
-        .rows_affected())
+        tx: Option<&mut <Self as Atomic>::Tx>,
+    ) -> Result<u64, ChonkitError>
+    where
+        Self: Atomic,
+    {
+        let query = sqlx::query!(
+            "DELETE FROM embeddings WHERE document_id = $1 AND collection_id = $2",
+            document_id,
+            collection_id
+        );
+
+        match tx {
+            Some(tx) => Ok(map_err!(query.execute(&mut **tx).await).rows_affected()),
+            None => Ok(map_err!(query.execute(&self.client).await).rows_affected()),
+        }
     }
 
     pub async fn delete_all_embeddings(&self, collection_id: Uuid) -> Result<u64, ChonkitError> {
@@ -187,7 +198,7 @@ impl Repository {
 
     pub async fn insert_embedding_report(
         &self,
-        report: &EmbeddingReportInsert,
+        report: &EmbeddingReportAddition,
     ) -> Result<(), ChonkitError> {
         map_err!(
             sqlx::query!(
@@ -197,25 +208,29 @@ impl Repository {
                     collection_name,
                     document_id,
                     document_name,
+                    embedding_provider,
                     model_used,
                     vector_db,
                     total_vectors,
                     tokens_used,
+                    cache,
                     started_at,
                     finished_at
                 ) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
                 report.collection_id,
                 report.collection_name,
                 report.document_id,
                 report.document_name,
+                report.embedding_provider,
                 report.model_used,
                 report.vector_db,
                 report.total_vectors as i32,
                 report.tokens_used.map(|t| t as i32),
+                report.cache,
                 report.started_at,
-                report.finished_at
+                report.finished_at,
             )
             .execute(&self.client)
             .await
@@ -225,7 +240,7 @@ impl Repository {
 
     pub async fn insert_embedding_removal_report(
         &self,
-        report: &EmbeddingRemovalReportInsert,
+        report: &EmbeddingReportRemoval,
     ) -> Result<(), ChonkitError> {
         map_err!(
             sqlx::query!(
@@ -273,6 +288,7 @@ impl Repository {
                     vector_db,
                     total_vectors,
                     tokens_used,
+                    cache,
                     started_at as "started_at!",
                     finished_at as "finished_at!"
                 FROM embedding_reports
@@ -290,6 +306,7 @@ impl Repository {
                     NULL as vector_db,
                     NULL as total_vectors,
                     NULL as tokens_used,
+                    NULL as cache,
                     started_at as "started_at!",
                     finished_at as "finished_at!"
                 FROM embedding_removal_reports
