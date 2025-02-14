@@ -35,7 +35,7 @@ impl ChonkitError {
             E::Qdrant(_) => SC::INTERNAL_SERVER_ERROR,
 
             #[cfg(feature = "weaviate")]
-            E::Weaviate(_) => SC::INTERNAL_SERVER_ERROR,
+            E::Weaviate(_) => SC::BAD_REQUEST,
             E::Uuid(_) => SC::BAD_REQUEST,
             E::Chunks(_) => SC::UNPROCESSABLE_ENTITY,
             E::ParseConfig(_) => SC::UNPROCESSABLE_ENTITY,
@@ -128,7 +128,7 @@ impl IntoResponse for ChonkitError {
             CE::AlreadyExists(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
 
             #[cfg(feature = "weaviate")]
-            CE::Weaviate(e) => (status, ResponseError::new(ET::Internal, e)).into_response(),
+            CE::Weaviate(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
 
             #[cfg(feature = "qdrant")]
             CE::Qdrant(qdrant_client::QdrantError::ResponseError { .. }) => (

@@ -105,7 +105,7 @@ impl VectorDb for WeaviateClient {
                 return err!(Weaviate, "{e}");
             };
 
-            if !err.error[0].message.contains("already exists") {
+            if !err.errors[0].message.contains("already exists") {
                 return err!(Weaviate, "{e}");
             }
         };
@@ -130,6 +130,21 @@ impl VectorDb for WeaviateClient {
             Ok(res) => res,
             Err(e) => return err!(Weaviate, "{}", e),
         };
+
+        if response["data"].is_null() {
+            tracing::warn!("Weaviate query is missing 'data' field; response: {response:?}");
+            let error = map_err!(serde_json::from_value::<WeaviateError>(response));
+            return err!(
+                Weaviate,
+                "{}",
+                error
+                    .errors
+                    .into_iter()
+                    .map(|e| e.message)
+                    .collect::<Vec<_>>()
+                    .join(";")
+            );
+        }
 
         let result: QueryResult = map_err!(serde_json::from_value(response));
 
@@ -235,6 +250,21 @@ impl VectorDb for WeaviateClient {
             Ok(res) => res,
             Err(e) => return err!(Weaviate, "{}", e),
         };
+
+        if response["data"].is_null() {
+            tracing::warn!("Weaviate query is missing 'data' field; response: {response:?}");
+            let error = map_err!(serde_json::from_value::<WeaviateError>(response));
+            return err!(
+                Weaviate,
+                "{}",
+                error
+                    .errors
+                    .into_iter()
+                    .map(|e| e.message)
+                    .collect::<Vec<_>>()
+                    .join(";")
+            );
+        }
 
         let result: QueryResult = map_err!(serde_json::from_value(response));
 
@@ -372,7 +402,7 @@ mod dto {
 
     #[derive(Debug, Deserialize)]
     pub struct WeaviateError {
-        pub error: Vec<ErrorMessage>,
+        pub errors: Vec<ErrorMessage>,
     }
 
     #[derive(Debug, Deserialize)]
