@@ -33,7 +33,7 @@ use validify::Validate;
     get,
     path = "/embeddings/{provider}/models", 
     responses(
-        (status = 200, description = "List available embedding models", body = HashMap<String, usize>),
+        (status = 200, description = "List available embedding models", body = inline(HashMap<String, usize>)),
         (status = 500, description = "Internal server error")
     ),
     params(
@@ -58,11 +58,11 @@ pub(super) async fn list_embedding_models(
     post,
     path = "/embeddings", 
     responses(
-        (status = 204, description = "Embeddings created successfully"),
+        (status = 200, description = "Embeddings created successfully", body = EmbeddingReportAddition),
         (status = 404, description = "Collection or document not found"),
         (status = 500, description = "Internal server error")
     ),
-    request_body = EmbeddingSinglePayload
+    request_body = EmbedSingleInput
 )]
 pub(super) async fn embed(
     State(state): State<AppState>,
@@ -79,7 +79,7 @@ pub(super) async fn embed(
         (status = 200, description = "Embeddings created successfully"),
         (status = 500, description = "Internal server error")
     ),
-    request_body = EmbeddingBatchPayload
+    request_body = EmbedBatchInput
 )]
 pub(super) async fn batch_embed(
     State(state): State<AppState>,
@@ -204,7 +204,7 @@ pub(super) async fn count_embeddings(
     delete,
     path = "/collections/{collection_id}/documents/{document_id}",
     responses(
-        (status = 204, description = "Delete embeddings for a given document in a given collection."),
+        (status = 200, description = "Delete embeddings for a given document in a given collection.", body = EmbeddingReportRemoval),
         (status = 500, description = "Internal server error")
     ),
     params(

@@ -45,12 +45,15 @@ use crate::{
         model::{
             collection::{Collection, CollectionDisplay, CollectionShort},
             document::{Document, DocumentConfig, DocumentDisplay, DocumentShort},
-            embedding::{Embedding, EmbeddingReport},
+            embedding::{
+                Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
+            },
             List, Pagination, PaginationSort, SortDirection,
         },
         service::{
             document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
             embedding::EmbedSingleInput,
+            token::TokenCount,
             vector::dto::{CreateCollectionPayload, SearchPayload},
         },
         vector::VectorCollection,
@@ -121,6 +124,9 @@ use utoipa::OpenApi;
         ChunkForPreview,
         ChunkPreview,
         EmbeddingReport,
+        EmbeddingReportAddition,
+        EmbeddingReportRemoval,
+        TokenCount,
 
         // Display
         DocumentDisplay,

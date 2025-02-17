@@ -91,7 +91,7 @@ pub struct EmbeddingReport {
     pub finished_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EmbeddingReportAddition {
     pub document_id: Uuid,
     pub document_name: String,
@@ -107,7 +107,7 @@ pub struct EmbeddingReportAddition {
     pub finished_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct EmbeddingReportRemoval {
     pub document_id: Uuid,
     pub document_name: String,
