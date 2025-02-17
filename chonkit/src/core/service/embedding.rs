@@ -152,9 +152,20 @@ where
         };
 
         // Check embedding cache
+
         let cache_key = EmbeddingCacheKey::new(&document.hash, &chunk_cfg, &parse_cfg)?;
 
-        if let Some(embeddings) = self.cache.get(&cache_key).await? {
+        // If the cache errors, we want to gracefully fail and continue as usual
+
+        let cached = match self.cache.get(&cache_key).await {
+            Ok(embeddings) => embeddings,
+            Err(e) => {
+                tracing::warn!("Failed to get embeddings from cache: {e}");
+                None
+            }
+        };
+
+        if let Some(embeddings) = cached {
             // Assert we get the same chunks from the cache as we would when chunking
             // regularly.
             #[cfg(debug_assertions)]
@@ -171,9 +182,8 @@ where
                 debug_assert_eq!(chunks, embeddings.chunks);
             }
 
-            // If the embeddings exist in the cache, use those.
-
             let collection_name = collection.name.clone();
+
             return transaction!(self.repo, |tx| async move {
                 debug_assert_eq!(embeddings.chunks.len(), embeddings.embeddings.len());
 
@@ -226,6 +236,8 @@ where
         debug_assert_eq!(chunks.len(), embeddings.embeddings.len());
 
         transaction!(self.repo, |tx| async move {
+            // Repository operations go first since we can revert those with the tx
+
             self.repo
                 .insert_embeddings(EmbeddingInsert::new(document.id, collection.id), Some(tx))
                 .await?;
@@ -241,7 +253,8 @@ where
 
             self.store_embedding_report(&report).await?;
 
-            self.cache
+            if let Err(e) = self
+                .cache
                 .set(
                     &cache_key,
                     CachedEmbeddings::new(
@@ -250,7 +263,10 @@ where
                         chunks.iter().map(|s| s.to_string()).collect(),
                     ),
                 )
-                .await?;
+                .await
+            {
+                tracing::warn!("Failed to cache embeddings: {}", e);
+            }
 
             vector_db
                 .insert_embeddings(
