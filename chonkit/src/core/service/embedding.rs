@@ -139,6 +139,8 @@ where
             );
         }
 
+        tracing::info!("{} - starting embedding process", document.id);
+
         // Load parser and chunker
 
         let parse_cfg = match self.repo.get_document_parse_config(document.id).await? {
@@ -160,7 +162,10 @@ where
         let cached = match self.cache.get(&cache_key).await {
             Ok(embeddings) => embeddings,
             Err(e) => {
-                tracing::warn!("Failed to get embeddings from cache: {e}");
+                tracing::warn!(
+                    "{} -  failed to get embeddings from cache: {e}",
+                    document.id
+                );
                 None
             }
         };
@@ -181,6 +186,8 @@ where
                 };
                 debug_assert_eq!(chunks, embeddings.chunks);
             }
+
+            tracing::info!("{} - using cached embeddings", document.id);
 
             let collection_name = collection.name.clone();
 
@@ -231,6 +238,8 @@ where
             ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
         };
 
+        tracing::info!("{} - generating embeddings", document.id);
+
         let embeddings = embedder.embed(&chunks, &collection.model).await?;
 
         debug_assert_eq!(chunks.len(), embeddings.embeddings.len());
@@ -253,6 +262,8 @@ where
 
             self.store_embedding_report(&report).await?;
 
+            tracing::info!("{} - caching embeddings", document.id);
+
             if let Err(e) = self
                 .cache
                 .set(
@@ -265,7 +276,7 @@ where
                 )
                 .await
             {
-                tracing::warn!("Failed to cache embeddings: {}", e);
+                tracing::warn!("{} - failed to cache embeddings: {}", document.id, e);
             }
 
             vector_db
