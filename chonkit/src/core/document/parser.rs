@@ -126,7 +126,7 @@ impl Parser {
             start, end, range, ..
         } = self.0;
 
-        if out.is_empty() {
+        if out.trim().is_empty() {
             tracing::error!("Parsing resulted in empty output. Config: {:?}", self.0);
 
             return crate::err!(
