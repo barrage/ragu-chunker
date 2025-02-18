@@ -80,13 +80,6 @@ impl AppState {
             embedding: EmbeddingService::new(repository, providers.clone().into(), cache),
         };
 
-        for provider in providers.storage.list_provider_ids() {
-            match services.document.sync(provider).await {
-                Ok(_) => tracing::info!("Synced document provider {provider}"),
-                Err(e) => e.print(),
-            }
-        }
-
         services.document.create_default_document().await;
 
         Self {
