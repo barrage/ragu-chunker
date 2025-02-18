@@ -132,18 +132,8 @@ impl Repository {
         src: Option<&str>,
         ready: Option<bool>,
     ) -> Result<List<Document>, ChonkitError> {
-        let mut query =
+        let mut count_query =
             sqlx::query_builder::QueryBuilder::<Postgres>::new("SELECT COUNT(id) FROM documents");
-
-        if let Some(src) = src {
-            query.push(" WHERE src = ").push_bind(src);
-        }
-
-        let total = map_err!(query
-            .build()
-            .fetch_one(&self.client)
-            .await
-            .map(|row| row.get::<i64, usize>(0)));
 
         let (limit, offset) = params.to_limit_offset();
         let (sort_by, sort_dir) = params.to_sort();
@@ -164,54 +154,178 @@ impl Repository {
             FROM documents"#,
         );
 
-        match (ready, src) {
-            (Some(ready), None) => {
+        let ready_join = r#"
+            INNER JOIN chunkers ON chunkers.document_id = documents.id
+            INNER JOIN parsers ON parsers.document_id = documents.id
+        "#;
+
+        // Needs to be prefixed with either WHERE or AND, depending on other conditions.
+
+        let ready_condition = r#"
+            EXISTS (
+                SELECT 1 FROM chunkers WHERE chunkers.document_id = documents.id
+            )
+            AND EXISTS (
+                SELECT 1 FROM parsers WHERE parsers.document_id = documents.id
+            )
+        "#;
+
+        let not_ready_condition = r#"
+            NOT EXISTS (
+                SELECT 1 FROM chunkers WHERE chunkers.document_id = documents.id
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM parsers WHERE parsers.document_id = documents.id
+            )
+        "#;
+
+        match (ready, src, &params.search) {
+            (Some(ready), Some(src), Some(search)) => {
+                let q = format!("%{}%", search.q);
                 if ready {
-                    query.push(
-                        r#"
-                        INNER JOIN chunkers ON chunkers.document_id = documents.id
-                        INNER JOIN parsers ON parsers.document_id = documents.id
-                        "#,
-                    );
+                    query
+                        .push(ready_join)
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q.clone());
+
+                    count_query
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q)
+                        .push(" AND ")
+                        .push(ready_condition);
                 } else {
-                    query.push(
-                        r#"
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM chunkers WHERE chunkers.document_id = documents.id
-                        )
-                        AND NOT EXISTS (
-                            SELECT 1 FROM parsers WHERE parsers.document_id = documents.id
-                        )
-                    "#,
-                    );
+                    query
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q.clone())
+                        .push(" AND ")
+                        .push(not_ready_condition);
+
+                    count_query
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q)
+                        .push(" AND ")
+                        .push(not_ready_condition);
                 }
             }
-            (Some(ready), Some(src)) => {
+            (Some(ready), Some(src), None) => {
                 if ready {
-                    query.push(
-                        r#"
-                        INNER JOIN chunkers ON chunkers.document_id = documents.id
-                        INNER JOIN parsers ON parsers.document_id = documents.id
-                        "#,
-                    );
-                    query.push(" WHERE src = ").push_bind(src);
+                    query.push(ready_join).push(" WHERE src = ").push_bind(src);
+                    count_query
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(ready_condition);
                 } else {
-                    query.push(" WHERE src = ").push_bind(src).push(
-                        r#"
-                        AND NOT EXISTS (
-                            SELECT 1 FROM chunkers WHERE chunkers.document_id = documents.id
-                        )
-                        AND NOT EXISTS (
-                            SELECT 1 FROM parsers WHERE parsers.document_id = documents.id
-                        )
-                        "#,
-                    );
+                    query
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(not_ready_condition);
+
+                    count_query
+                        .push(" WHERE src = ")
+                        .push_bind(src)
+                        .push(" AND ")
+                        .push(not_ready_condition);
                 }
             }
-            (None, Some(src)) => {
+            (Some(ready), None, None) => {
+                if ready {
+                    query.push(ready_join);
+                    count_query.push(" WHERE ").push(ready_condition);
+                } else {
+                    query.push(" WHERE ").push(not_ready_condition);
+                    count_query.push(" WHERE ").push(not_ready_condition);
+                }
+            }
+            (None, Some(src), Some(search)) => {
+                let q = format!("%{}%", search.q);
+                query
+                    .push(" WHERE src = ")
+                    .push_bind(src)
+                    .push(" AND ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q.clone());
+
+                count_query
+                    .push(" WHERE src = ")
+                    .push_bind(src)
+                    .push(" AND ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q);
+            }
+            (None, Some(src), None) => {
                 query.push(" WHERE src = ").push_bind(src);
+                count_query.push(" WHERE src = ").push_bind(src);
             }
-            (None, None) => {}
+            (Some(ready), None, Some(search)) => {
+                let q = format!("%{}%", search.q);
+                if ready {
+                    query
+                        .push(ready_join)
+                        .push(" WHERE ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q.clone());
+
+                    count_query
+                        .push(" WHERE ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q)
+                        .push(" AND ")
+                        .push(ready_condition);
+                } else {
+                    query
+                        .push(" WHERE ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q.clone())
+                        .push(" AND ")
+                        .push(not_ready_condition);
+
+                    count_query
+                        .push(" WHERE ")
+                        .push(&search.column)
+                        .push(" ILIKE ")
+                        .push_bind(q)
+                        .push(" AND ")
+                        .push(not_ready_condition);
+                }
+            }
+            (None, None, Some(search)) => {
+                let q = format!("%{}%", search.q);
+                query
+                    .push(" WHERE ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q.clone());
+
+                count_query
+                    .push(" WHERE ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q);
+            }
+            (None, None, None) => (),
         }
 
         query
@@ -220,6 +334,13 @@ impl Repository {
             .push_bind(limit)
             .push(" OFFSET ")
             .push_bind(offset);
+
+        let total: i64 = map_err!(
+            count_query
+                .build_query_scalar()
+                .fetch_one(&self.client)
+                .await
+        );
 
         let documents: Vec<Document> =
             map_err!(query.build_query_as().fetch_all(&self.client).await);
@@ -819,16 +940,18 @@ impl From<SelectConfig<ParseConfig>> for DocumentParseConfig {
 
 #[cfg(test)]
 #[suitest::suite(pg_document_repo_int)]
+#[suitest::suite_cfg(sequential = true)]
 mod tests {
-
     use crate::{
         app::test::{init_repository, PostgresContainer},
         core::{
             chunk::ChunkConfig,
-            document::{DocumentType, TextDocumentType},
-            model::document::DocumentInsert,
-            repo::Repository,
+            document::{parser::ParseConfig, DocumentType, TextDocumentType},
+            model::{document::DocumentInsert, PaginationSort, Search},
+            repo::{Atomic, Repository},
         },
+        error::ChonkitError,
+        transaction,
     };
     use suitest::before_all;
 
@@ -842,7 +965,7 @@ mod tests {
     async fn inserting_document_works(repo: Repository) {
         let doc = DocumentInsert::new(
             "My file",
-            "path/to/file",
+            "/path/to/file",
             DocumentType::Text(TextDocumentType::Txt),
             "SHA256",
             "fs",
@@ -851,13 +974,11 @@ mod tests {
         let doc = repo.get_document_by_id(doc.id).await.unwrap().unwrap();
 
         assert_eq!("My file", doc.name);
-        assert_eq!("path/to/file", doc.path);
+        assert_eq!("/path/to/file", doc.path);
         assert_eq!("txt", doc.ext);
 
         repo.remove_document_by_id(doc.id, None).await.unwrap();
-
         let doc = repo.get_document_by_id(doc.id).await.unwrap();
-
         assert!(doc.is_none());
     }
 
@@ -865,7 +986,7 @@ mod tests {
     async fn inserting_chunk_config_works(repo: Repository) {
         let doc = DocumentInsert::new(
             "My file",
-            "path/to/file/2",
+            "/path/to/file/2",
             DocumentType::Text(TextDocumentType::Txt),
             "Other hash",
             "fs",
@@ -889,5 +1010,206 @@ mod tests {
         assert_eq!(chunker.size, sliding.size);
         assert_eq!(chunker.overlap, sliding.overlap);
         repo.remove_document_by_id(doc.id, None).await.unwrap();
+        let doc = repo.get_document_by_id(doc.id).await.unwrap();
+        assert!(doc.is_none());
+    }
+
+    #[test]
+    async fn listing_documents_works(repo: Repository) {
+        repo.insert_document(DocumentInsert::new(
+            "My file 1",
+            "/path/to/file/1",
+            DocumentType::Text(TextDocumentType::Txt),
+            "Hash1",
+            "fs",
+        ))
+        .await
+        .unwrap();
+
+        repo.insert_document(DocumentInsert::new(
+            "My file 2",
+            "/path/to/file/2",
+            DocumentType::Text(TextDocumentType::Txt),
+            "Hash2",
+            "other",
+        ))
+        .await
+        .unwrap();
+
+        transaction!(infallible repo, |tx| async move {
+            repo.insert_document_with_configs(
+                DocumentInsert::new(
+                    "My file 1r",
+                    "/path/to/file/1/ready",
+                    DocumentType::Text(TextDocumentType::Txt),
+                    "Hash1r",
+                    "fs",
+                ),
+                ParseConfig::default(),
+                ChunkConfig::snapping_default(),
+                tx,
+            )
+            .await.unwrap();
+
+            Result::<(), ChonkitError>::Ok(())
+        });
+
+        transaction!(infallible repo, |tx| async move {
+            repo.insert_document_with_configs(
+                DocumentInsert::new(
+                    "My file 2r",
+                    "/path/to/file/2/ready",
+                    DocumentType::Text(TextDocumentType::Txt),
+                    "Hash2r",
+                    "other",
+                ),
+                ParseConfig::default(),
+                ChunkConfig::snapping_default(),
+                tx,
+            )
+            .await.unwrap();
+
+            Result::<(), ChonkitError>::Ok(())
+        });
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(4, docs.items.len());
+        assert_eq!(4, docs.total.unwrap());
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), None, Some(true))
+            .await
+            .unwrap();
+
+        assert_eq!(2, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
+        assert_eq!("/path/to/file/2/ready", docs.items[0].path);
+        assert_eq!("/path/to/file/1/ready", docs.items[1].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), None, Some(false))
+            .await
+            .unwrap();
+
+        assert_eq!(2, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
+        assert_eq!("/path/to/file/2", docs.items[0].path);
+        assert_eq!("/path/to/file/1", docs.items[1].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), Some("fs"), Some(true))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), Some("fs"), Some(false))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), Some("other"), Some(true))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/2/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), Some("other"), Some(false))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/2", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), Some("fs"), None)
+            .await
+            .unwrap();
+
+        assert_eq!(2, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
+        assert_eq!("/path/to/file/1/ready", docs.items[0].path);
+        assert_eq!("/path/to/file/1", docs.items[1].path);
+
+        let docs = repo
+            .list_documents(PaginationSort::default(), Some("other"), None)
+            .await
+            .unwrap();
+
+        assert_eq!(2, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
+        assert_eq!("/path/to/file/2/ready", docs.items[0].path);
+        assert_eq!("/path/to/file/2", docs.items[1].path);
+
+        let pag = PaginationSort {
+            search: Some(Search {
+                q: "1/ready".to_string(),
+                column: "path".to_string(),
+            }),
+            ..Default::default()
+        };
+
+        let docs = repo.list_documents(pag.clone(), None, None).await.unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(pag.clone(), None, Some(true))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(pag.clone(), None, Some(false))
+            .await
+            .unwrap();
+
+        assert!(docs.items.is_empty());
+        assert_eq!(0, docs.total.unwrap());
+
+        let docs = repo
+            .list_documents(pag.clone(), Some("fs"), Some(true))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(pag.clone(), Some("other"), Some(true))
+            .await
+            .unwrap();
+
+        assert!(docs.items.is_empty());
+        assert_eq!(0, docs.total.unwrap());
+
+        let docs = repo
+            .list_documents(pag.clone(), Some("other"), Some(false))
+            .await
+            .unwrap();
+
+        assert!(docs.items.is_empty());
+        assert_eq!(0, docs.total.unwrap());
     }
 }

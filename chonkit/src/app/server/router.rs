@@ -108,7 +108,7 @@ pub fn router(state: AppState) -> Router {
         .route("/search", post(collection::search))
         .route("/display/documents", get(document::list_documents_display))
         .route(
-            "/display/collections",
+            "/collections/display",
             get(collection::list_collections_display),
         )
         .route(

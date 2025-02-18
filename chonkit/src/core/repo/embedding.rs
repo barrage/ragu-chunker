@@ -351,13 +351,14 @@ impl Repository {
             (None, None) => {}
         }
 
-        query.push(" UNION ");
-        query.push(removal_query.sql());
-        query.push(" ORDER BY finished_at DESC");
-        query.push(" LIMIT ");
-        query.push_bind(limit);
-        query.push(" OFFSET ");
-        query.push_bind(offset);
+        query
+            .push(" UNION ")
+            .push(removal_query.sql())
+            .push(" ORDER BY finished_at DESC")
+            .push(" LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
 
         Ok(map_err!(
             query.build_query_as().fetch_all(&self.client).await
