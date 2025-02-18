@@ -39,7 +39,7 @@ impl EmbeddingInsert {
 }
 
 /// Represents an addition or removal of embeddings from or to a vector collection, respectively.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, sqlx::FromRow, utoipa::ToSchema)]
 pub struct EmbeddingReport {
     /// The serial ID of the report.
     pub id: i32,

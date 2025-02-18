@@ -11,7 +11,7 @@ use crate::{
             },
             List,
         },
-        service::embedding::EmbedSingleInput,
+        service::embedding::{EmbedSingleInput, ListEmbeddingReportsParams},
     },
     err,
     error::ChonkitError,
@@ -227,23 +227,24 @@ pub(super) async fn delete_embeddings(
 
 #[utoipa::path(
     get,
-    path = "/collections/{collection_id}/embeddings/reports",
+    path = "/embeddings/reports",
     responses(
-        (status = 200, description = "List of embedding reports for a given collection.", body = inline(Vec<EmbeddingReport>)),
+        (status = 200, description = "List of embedding reports", body = inline(Vec<EmbeddingReport>)),
         (status = 500, description = "Internal server error")
     ),
     params(
-        ("collection_id" = Uuid, Path, description = "Collection ID"),
+        ("parameters" = Option<ListEmbeddingReportsParams>, Query, description = "Parameters to filter and limit results by"),
     ),
 )]
 pub(super) async fn list_embedding_reports(
     State(state): State<AppState>,
-    Path(collection_id): Path<Uuid>,
+    params: Option<Query<ListEmbeddingReportsParams>>,
 ) -> Result<Json<Vec<EmbeddingReport>>, ChonkitError> {
+    let params = params.map(|params| params.0).unwrap_or_default();
     let embeddings = state
         .services
         .embedding
-        .list_collection_embedding_reports(collection_id)
+        .list_collection_embedding_reports(params)
         .await?;
     Ok(Json(embeddings))
 }

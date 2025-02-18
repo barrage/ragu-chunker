@@ -409,14 +409,13 @@ where
 
     pub async fn list_collection_embedding_reports(
         &self,
-        collection_id: Uuid,
+        params: ListEmbeddingReportsParams,
     ) -> Result<Vec<EmbeddingReport>, ChonkitError> {
-        self.repo
-            .list_collection_embedding_reports(collection_id)
-            .await
+        map_err!(params.validate());
+        self.repo.list_collection_embedding_reports(params).await
     }
 
-    pub async fn store_embedding_report(
+    async fn store_embedding_report(
         &self,
         report: &EmbeddingReportAddition,
     ) -> Result<(), ChonkitError> {
@@ -429,7 +428,7 @@ where
         Ok(())
     }
 
-    pub async fn store_embedding_removal_report(
+    async fn store_embedding_removal_report(
         &self,
         report: &EmbeddingReportRemoval,
     ) -> Result<(), ChonkitError> {
@@ -462,4 +461,13 @@ impl EmbedSingleInput {
             collection,
         }
     }
+}
+
+#[derive(Debug, Default, Deserialize, Validate, utoipa::ToSchema)]
+pub struct ListEmbeddingReportsParams {
+    pub collection: Option<Uuid>,
+    pub document: Option<Uuid>,
+    #[validate]
+    #[serde(flatten)]
+    pub options: Option<Pagination>,
 }

@@ -15,8 +15,9 @@ use crate::{
         repo::Repository,
         service::{
             document::DocumentService, embedding::EmbeddingService, external::ServiceFactory,
-            token::Tokenizer, vector::CollectionService, ServiceState,
+            vector::CollectionService, ServiceState,
         },
+        token::Tokenizer,
     },
     error::ChonkitError,
 };

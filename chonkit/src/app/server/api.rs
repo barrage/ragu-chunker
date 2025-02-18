@@ -52,10 +52,10 @@ use crate::{
         },
         service::{
             document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
-            embedding::EmbedSingleInput,
-            token::TokenCount,
+            embedding::{EmbedSingleInput, ListEmbeddingReportsParams},
             vector::dto::{CreateCollectionPayload, SearchPayload},
         },
+        token::TokenCount,
         vector::VectorCollection,
     },
 };
@@ -127,6 +127,7 @@ use utoipa::OpenApi;
         EmbeddingReportAddition,
         EmbeddingReportRemoval,
         TokenCount,
+        ListEmbeddingReportsParams,
 
         // Display
         DocumentDisplay,

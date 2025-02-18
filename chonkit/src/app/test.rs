@@ -13,8 +13,9 @@ use crate::core::{
     repo::Repository,
     service::{
         document::DocumentService, embedding::EmbeddingService, external::ServiceFactory,
-        token::Tokenizer, vector::CollectionService, ServiceState,
+        vector::CollectionService, ServiceState,
     },
+    token::Tokenizer,
 };
 use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
 use std::sync::Arc;

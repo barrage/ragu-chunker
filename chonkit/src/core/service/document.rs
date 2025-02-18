@@ -1,3 +1,4 @@
+use crate::core::token::{TokenCount, Tokenizer};
 use crate::{
     config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
     core::{
@@ -14,7 +15,6 @@ use crate::{
         },
         provider::ProviderState,
         repo::{Atomic, Repository},
-        service::token::TokenCount,
     },
     err,
     error::ChonkitError,
@@ -24,8 +24,6 @@ use dto::{ChunkForPreview, ChunkPreview, DocumentUpload};
 use std::time::Instant;
 use uuid::Uuid;
 use validify::{Validate, Validify};
-
-use super::token::Tokenizer;
 
 /// High level operations for document management.
 #[derive(Clone)]
@@ -426,7 +424,7 @@ pub mod dto {
     use crate::core::{
         chunk::ChunkConfig,
         document::{parser::ParseConfig, DocumentType},
-        service::token::TokenCount,
+        token::TokenCount,
     };
     use serde::{Deserialize, Serialize};
     use validify::{Validate, Validify};

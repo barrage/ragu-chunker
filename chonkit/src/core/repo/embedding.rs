@@ -8,10 +8,12 @@ use crate::{
             List, Pagination,
         },
         repo::Repository,
+        service::embedding::ListEmbeddingReportsParams,
     },
     error::ChonkitError,
     map_err,
 };
+use sqlx::Postgres;
 use uuid::Uuid;
 
 use super::Atomic;
@@ -265,60 +267,100 @@ impl Repository {
             .execute(&self.client)
             .await
         );
+
         Ok(())
     }
 
     pub async fn list_collection_embedding_reports(
         &self,
-        collection_id: Uuid,
+        params: ListEmbeddingReportsParams,
     ) -> Result<Vec<EmbeddingReport>, ChonkitError> {
-        let rows = map_err!(
-            sqlx::query_as!(
-                EmbeddingReport,
-                r#"
+        let (limit, offset) = params
+            .options
+            .map(|p| p.to_limit_offset())
+            .unwrap_or_else(|| Pagination::default().to_limit_offset());
+
+        let mut query = sqlx::query_builder::QueryBuilder::<Postgres>::new(
+            r#"
                 SELECT 
-                    id as "id!", 
-                    'addition' as "ty!",
+                    id, 
+                    'addition' as "ty",
                     collection_id,
-                    collection_name as "collection_name!", 
+                    collection_name, 
                     document_id,
-                    document_name as "document_name!",
+                    document_name,
                     model_used,
                     embedding_provider,
                     vector_db,
                     total_vectors,
                     tokens_used,
                     cache,
-                    started_at as "started_at!",
-                    finished_at as "finished_at!"
-                FROM embedding_reports
-                WHERE collection_id = $1
-                UNION
+                    started_at,
+                    finished_at
+                FROM embedding_reports"#,
+        );
+
+        let mut removal_query = sqlx::query_builder::QueryBuilder::<Postgres>::new(
+            r#"
                 SELECT 
-                    id as "id!", 
-                    'removal' as "ty!",
+                    id, 
+                    'removal' as "ty",
                     collection_id,
-                    collection_name as "collection_name!", 
+                    collection_name, 
                     document_id,
-                    document_name as "document_name!",
+                    document_name,
                     NULL as model_used,
                     NULL as embedding_provider,
                     NULL as vector_db,
                     NULL as total_vectors,
                     NULL as tokens_used,
                     NULL as cache,
-                    started_at as "started_at!",
-                    finished_at as "finished_at!"
+                    started_at,
+                    finished_at
                 FROM embedding_removal_reports
-                WHERE collection_id = $1
-                ORDER BY "finished_at!" DESC
-                "#,
-                collection_id
-            )
-            .fetch_all(&self.client)
-            .await
+            "#,
         );
 
-        Ok(rows)
+        match (params.collection, params.document) {
+            (Some(collection_id), Some(document_id)) => {
+                query
+                    .push(" WHERE collection_id = ")
+                    .push_bind(collection_id)
+                    .push(" AND document_id = ")
+                    .push_bind(document_id);
+                removal_query
+                    .push(" WHERE collection_id = ")
+                    .push_bind(collection_id)
+                    .push(" AND document_id = ")
+                    .push_bind(document_id);
+            }
+            (Some(collection_id), None) => {
+                query
+                    .push(" WHERE collection_id = ")
+                    .push_bind(collection_id);
+                removal_query
+                    .push(" WHERE collection_id = ")
+                    .push_bind(collection_id);
+            }
+            (None, Some(document_id)) => {
+                query.push(" WHERE document_id = ").push_bind(document_id);
+                removal_query
+                    .push(" WHERE document_id = ")
+                    .push_bind(document_id);
+            }
+            (None, None) => {}
+        }
+
+        query.push(" UNION ");
+        query.push(removal_query.sql());
+        query.push(" ORDER BY finished_at DESC");
+        query.push(" LIMIT ");
+        query.push_bind(limit);
+        query.push(" OFFSET ");
+        query.push_bind(offset);
+
+        Ok(map_err!(
+            query.build_query_as().fetch_all(&self.client).await
+        ))
     }
 }

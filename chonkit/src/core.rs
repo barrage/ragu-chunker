@@ -30,3 +30,6 @@ pub mod service;
 
 /// Vector DB interfaces.
 pub mod vector;
+
+/// Tokenizer utilities.
+pub mod token;

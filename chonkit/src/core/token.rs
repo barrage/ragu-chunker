@@ -1,6 +1,5 @@
-use std::{ops::AddAssign, sync::Arc};
-
 use serde::Serialize;
+use std::{ops::AddAssign, sync::Arc};
 
 /// Holds tokenizers so we don't have to load them every time.
 #[derive(Clone)]

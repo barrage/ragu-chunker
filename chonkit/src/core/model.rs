@@ -1,5 +1,7 @@
 //! Defines application business models.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use validify::{field_err, Validate, ValidationError};
@@ -120,18 +122,23 @@ pub struct PaginationSort {
     pub pagination: Option<Pagination>,
 
     /// The column to sort by.
-    /// Default: `updated_at`
-    // # WARNING
-    // Highly important to validate this field since it can be used for SQL injection.
+    ///
+    // WARNING
+    // Validating this field is paramount since it can be used for SQL injection.
     // Prepared statements do not support placeholders in ORDER BY clauses because they
     // they use column names and not values.
+    //
+    /// Default: `updated_at`
     #[validate(length(min = 1, max = 64))]
     #[validate(custom(ascii_alphanumeric_underscored))]
     pub sort_by: Option<String>,
 
     /// The direction to sort in.
+    ///
     /// Default: `DESC`
     pub sort_dir: Option<SortDirection>,
+
+    pub search: Option<HashMap<String, String>>,
 }
 
 impl PaginationSort {
@@ -140,6 +147,7 @@ impl PaginationSort {
             pagination: Some(pagination),
             sort_by: Some(sort_by),
             sort_dir: Some(sort_dir),
+            search: None,
         }
     }
 
@@ -148,6 +156,7 @@ impl PaginationSort {
             pagination: Some(pagination),
             sort_by: Some("updated_at".to_string()),
             sort_dir: Some(SortDirection::Desc),
+            search: None,
         }
     }
 
@@ -176,12 +185,12 @@ impl Default for PaginationSort {
             pagination: Some(Pagination::default()),
             sort_by: Some("updated_at".to_string()),
             sort_dir: Some(SortDirection::Desc),
+            search: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, utoipa::ToSchema)]
-//#[serde(untagged)]
 pub enum SortDirection {
     #[serde(rename = "asc")]
     Asc,

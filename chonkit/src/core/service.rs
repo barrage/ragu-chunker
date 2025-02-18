@@ -3,7 +3,6 @@
 pub mod document;
 pub mod embedding;
 pub mod external;
-pub mod token;
 pub mod vector;
 
 #[derive(Clone)]

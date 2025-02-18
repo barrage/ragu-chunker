@@ -13,6 +13,8 @@ pub async fn init_redis(url: &str) -> deadpool_redis::Pool {
 
 impl EmbeddingCache for deadpool_redis::Pool {
     async fn get(&self, key: &EmbeddingCacheKey) -> Result<Option<CachedEmbeddings>, ChonkitError> {
+        let __start = std::time::Instant::now();
+
         let mut conn = map_err!(self.get().await);
         let data: Option<String> = map_err!(
             redis::cmd("GET")
@@ -26,6 +28,12 @@ impl EmbeddingCache for deadpool_redis::Pool {
         };
 
         let data = map_err!(serde_json::from_str::<CachedEmbeddings>(&data));
+
+        tracing::debug!(
+            "embedding retrieval took {}ms ({} vectors)",
+            __start.elapsed().as_millis(),
+            data.embeddings.len()
+        );
 
         Ok(Some(data))
     }
