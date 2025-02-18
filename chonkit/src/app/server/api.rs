@@ -48,7 +48,7 @@ use crate::{
             embedding::{
                 Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
             },
-            List, Pagination, PaginationSort, SortDirection,
+            List, Pagination, PaginationSort, Search, SortDirection,
         },
         service::{
             document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
@@ -128,6 +128,7 @@ use utoipa::OpenApi;
         EmbeddingReportRemoval,
         TokenCount,
         ListEmbeddingReportsParams,
+        Search,
 
         // Display
         DocumentDisplay,

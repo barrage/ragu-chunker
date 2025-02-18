@@ -18,28 +18,28 @@ use uuid::Uuid;
         (status = 500, description = "Internal server error")
     ),
     params(
-        ("pagination" = PaginationSort, Query, description = "Pagination parameters")
+        ("pagination" = Option<PaginationSort>, Query, description = "Pagination parameters")
     )
 )]
 pub(super) async fn list_collections(
     State(state): State<AppState>,
-    payload: Option<Query<PaginationSort>>,
+    params: Option<Query<PaginationSort>>,
 ) -> Result<Json<List<Collection>>, ChonkitError> {
-    let Query(pagination) = payload.unwrap_or_default();
-    let collections = state.services.collection.list_collections(pagination).await?;
+    let Query(params) = params.unwrap_or_default();
+    let collections = state.services.collection.list_collections(params).await?;
     Ok(Json(collections))
 }
 
 #[utoipa::path(
     get,
-    path = "/display/collections",
+    path = "/collections/display",
     responses(
         (status = 200, description = "List collections with additional info for display purposes.", body = inline(List<CollectionDisplay>)),
         (status = 400, description = "Invalid pagination parameters"),
         (status = 500, description = "Internal server error")
     ),
     params(
-        ("pagination" = PaginationSort, Query, description = "Query parameters"),
+        ("pagination" = Option<PaginationSort>, Query, description = "Query parameters"),
     ),
 )]
 pub(super) async fn list_collections_display(
@@ -53,7 +53,7 @@ pub(super) async fn list_collections_display(
 
 #[utoipa::path(
     get,
-    path = "/display/collections/{id}",
+    path = "/collections/{id}/display",
     responses(
         (status = 200, description = "Get collection by id", body = CollectionDisplay),
         (status = 404, description = "Collection not found"),

@@ -1,7 +1,5 @@
 //! Defines application business models.
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use validify::{field_err, Validate, ValidationError};
@@ -138,7 +136,9 @@ pub struct PaginationSort {
     /// Default: `DESC`
     pub sort_dir: Option<SortDirection>,
 
-    pub search: Option<HashMap<String, String>>,
+    #[validate]
+    #[serde(flatten)]
+    pub search: Option<Search>,
 }
 
 impl PaginationSort {
@@ -196,6 +196,21 @@ pub enum SortDirection {
     Asc,
     #[serde(rename = "desc")]
     Desc,
+}
+
+/// Struct used for search functionality when querying various models.
+#[derive(Debug, Clone, Validate, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Search {
+    #[validate(length(min = 1, max = 64))]
+    #[validate(custom(ascii_alphanumeric_underscored))]
+    #[serde(alias = "search.q")]
+    pub q: String,
+
+    #[validate(length(min = 1, max = 64))]
+    #[validate(custom(ascii_alphanumeric_underscored))]
+    #[serde(alias = "search.column")]
+    pub column: String,
 }
 
 fn ascii_alphanumeric_underscored(s: &str) -> Result<(), ValidationError> {

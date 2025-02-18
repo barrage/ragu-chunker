@@ -21,10 +21,8 @@ impl Repository {
         &self,
         params: PaginationSort,
     ) -> Result<List<Collection>, ChonkitError> {
-        let total = map_err!(sqlx::query!("SELECT COUNT(id) FROM collections")
-            .fetch_one(&self.client)
-            .await
-            .map(|row| row.count.map(|count| count as usize)));
+        let mut count =
+            sqlx::query_builder::QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM collections");
 
         let (limit, offset) = params.to_limit_offset();
         let (sort_by, sort_dir) = params.to_sort();
@@ -33,6 +31,21 @@ impl Repository {
             "SELECT id, name, model, embedder, provider, created_at, updated_at FROM collections",
         );
 
+        if let Some(ref search) = params.search {
+            let q = format!("%{}%", search.q);
+            count
+                .push(" WHERE ")
+                .push(&search.column)
+                .push(" ILIKE ")
+                .push_bind(q.clone());
+
+            query
+                .push(" WHERE ")
+                .push(&search.column)
+                .push(" ILIKE ")
+                .push_bind(q);
+        }
+
         query
             .push(format!(" ORDER BY {sort_by} {sort_dir} "))
             .push(" LIMIT ")
@@ -40,12 +53,14 @@ impl Repository {
             .push(" OFFSET ")
             .push_bind(offset);
 
+        let total: i64 = map_err!(count.build_query_scalar().fetch_one(&self.client).await);
+
         let collections: Vec<Collection> =
             map_err!(query.build_query_as().fetch_all(&self.client).await)
                 .into_iter()
                 .collect();
 
-        Ok(List::new(total, collections))
+        Ok(List::new(Some(total as usize), collections))
     }
 
     pub async fn list_collections_display(
