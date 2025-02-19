@@ -7,6 +7,7 @@ use axum::{
     routing::{delete, get, post, put},
     Json, Router,
 };
+use reqwest::StatusCode;
 use serde::Deserialize;
 use std::{str::FromStr, time::Duration};
 use tower_http::{
@@ -195,7 +196,7 @@ pub fn router(state: AppState) -> Router {
 }
 
 async fn health_check() -> impl IntoResponse {
-    "OK"
+    StatusCode::OK
 }
 
 #[derive(Deserialize, utoipa::ToSchema)]
