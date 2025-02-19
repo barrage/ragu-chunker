@@ -219,7 +219,7 @@ pub async fn init_repository() -> (Repository, PostgresContainer) {
 }
 
 pub async fn init_cache() -> (deadpool_redis::Pool, RedisContainer) {
-    let redis_image = Redis::default().start().await.unwrap();
+    let redis_image = Redis.start().await.unwrap();
     let redis_host = redis_image.get_host().await.unwrap();
     let redis_port = redis_image.get_host_port_ipv4(6379).await.unwrap();
     let redis_url = format!("redis://{redis_host}:{redis_port}");

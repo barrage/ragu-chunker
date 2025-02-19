@@ -124,11 +124,11 @@ pub struct PaginationSort {
     // WARNING
     // Validating this field is paramount since it can be used for SQL injection.
     // Prepared statements do not support placeholders in ORDER BY clauses because they
-    // they use column names and not values.
+    // use column names and not values.
     //
     /// Default: `updated_at`
     #[validate(length(min = 1, max = 64))]
-    #[validate(custom(ascii_alphanumeric_underscored))]
+    #[validate(custom(ascii_alphanumeric_column))]
     pub sort_by: Option<String>,
 
     /// The direction to sort in.
@@ -203,21 +203,44 @@ pub enum SortDirection {
 #[serde(rename_all = "camelCase")]
 pub struct Search {
     #[validate(length(min = 1, max = 64))]
-    #[validate(custom(ascii_alphanumeric_underscored))]
+    #[validate(custom(ascii_alphanumeric_clean))]
     #[serde(alias = "search.q")]
     pub q: String,
 
+    // WARNING
+    // Validating this field is paramount since it can be used for SQL injection.
+    // Prepared statements do not support placeholders in ORDER BY clauses because they
+    // use column names and not values.
     #[validate(length(min = 1, max = 64))]
-    #[validate(custom(ascii_alphanumeric_underscored))]
+    #[validate(custom(ascii_alphanumeric_column))]
     #[serde(alias = "search.column")]
     pub column: String,
 }
 
-fn ascii_alphanumeric_underscored(s: &str) -> Result<(), ValidationError> {
-    if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+/// Allows for strings that consist of `a-z A-Z 0-9 _-.`.
+fn ascii_alphanumeric_clean(s: &str) -> Result<(), ValidationError> {
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ' ')
+    {
         return Err(field_err!(
             "ascii_alphanumeric_underscored",
-            "parameter must be alphanumeric with underscores [a-z A-Z 0-9 _]"
+            "parameter must be alphanumeric [a-z A-Z 0-9 _-. ]"
+        ));
+    }
+    Ok(())
+}
+
+/// A stricter version of [ascii_alphanumeric_clean] which allows only underscored as special
+/// chars.
+fn ascii_alphanumeric_column(s: &str) -> Result<(), ValidationError> {
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    {
+        return Err(field_err!(
+            "ascii_alphanumeric_underscored",
+            "parameter must be alphanumeric with underscores [a-z A-Z 0-9 _ .]"
         ));
     }
     Ok(())

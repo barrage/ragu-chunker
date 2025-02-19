@@ -400,21 +400,9 @@ impl Repository {
         &self,
         params: PaginationSort,
         src: Option<&str>,
-        document_id: Option<Uuid>,
     ) -> Result<List<DocumentDisplay>, ChonkitError> {
-        let mut query =
+        let mut count_query =
             sqlx::query_builder::QueryBuilder::<Postgres>::new("SELECT COUNT(id) FROM documents");
-
-        if let Some(src) = src {
-            query.push(" WHERE src = ").push_bind(src);
-        }
-
-        let total = map_err!(query
-            .build()
-            .fetch_one(&self.client)
-            .await
-            .map(|row| row.get::<i64, usize>(0)));
-
         let (limit, offset) = params.to_limit_offset();
         let (sort_by, sort_dir) = params.to_sort();
 
@@ -443,19 +431,42 @@ impl Repository {
             "#,
         );
 
-        match (src, document_id) {
+        match (src, &params.search) {
             (Some(src), None) => {
                 query.push(" WHERE src = ").push_bind(src);
+                count_query.push(" WHERE src = ").push_bind(src);
             }
-            (None, Some(document_id)) => {
-                query.push(" WHERE documents.id = ").push_bind(document_id);
-            }
-            (Some(src), Some(document_id)) => {
+            (None, Some(search)) => {
+                let q = format!("%{}%", search.q);
                 query
-                    .push(" WHERE documents.id = ")
-                    .push_bind(document_id)
-                    .push(" AND src = ")
-                    .push_bind(src);
+                    .push(" WHERE ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q.clone());
+
+                count_query
+                    .push(" WHERE ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q);
+            }
+            (Some(src), Some(search)) => {
+                let q = format!("%{}%", search.q);
+                query
+                    .push(" WHERE documents.src = ")
+                    .push_bind(src)
+                    .push(" AND ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q.clone());
+
+                count_query
+                    .push(" WHERE documents.src = ")
+                    .push_bind(src)
+                    .push(" AND ")
+                    .push(&search.column)
+                    .push(" ILIKE ")
+                    .push_bind(q);
             }
             (None, None) => (),
         }
@@ -466,6 +477,12 @@ impl Repository {
             .push_bind(limit)
             .push(" OFFSET ")
             .push_bind(offset);
+
+        let total = map_err!(count_query
+            .build()
+            .fetch_one(&self.client)
+            .await
+            .map(|row| row.get::<i64, usize>(0)));
 
         let rows: Vec<DocumentCollectionJoin> =
             map_err!(query.build_query_as().fetch_all(&self.client).await);
@@ -947,7 +964,7 @@ mod tests {
         core::{
             chunk::ChunkConfig,
             document::{parser::ParseConfig, DocumentType, TextDocumentType},
-            model::{document::DocumentInsert, PaginationSort, Search},
+            model::{document::DocumentInsert, Pagination, PaginationSort, Search},
             repo::{Atomic, Repository},
         },
         error::ChonkitError,
@@ -1156,9 +1173,11 @@ mod tests {
         assert_eq!("/path/to/file/2/ready", docs.items[0].path);
         assert_eq!("/path/to/file/2", docs.items[1].path);
 
+        // search check
+
         let pag = PaginationSort {
             search: Some(Search {
-                q: "1/ready".to_string(),
+                q: "/1".to_string(),
                 column: "path".to_string(),
             }),
             ..Default::default()
@@ -1166,8 +1185,8 @@ mod tests {
 
         let docs = repo.list_documents(pag.clone(), None, None).await.unwrap();
 
-        assert_eq!(1, docs.items.len());
-        assert_eq!(1, docs.total.unwrap());
+        assert_eq!(2, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
         assert_eq!("/path/to/file/1/ready", docs.items[0].path);
 
         let docs = repo
@@ -1184,8 +1203,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(docs.items.is_empty());
-        assert_eq!(0, docs.total.unwrap());
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1", docs.items[0].path);
+
+        // src + search check
 
         let docs = repo
             .list_documents(pag.clone(), Some("fs"), Some(true))
@@ -1195,6 +1217,15 @@ mod tests {
         assert_eq!(1, docs.items.len());
         assert_eq!(1, docs.total.unwrap());
         assert_eq!("/path/to/file/1/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(pag.clone(), Some("fs"), Some(false))
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(1, docs.total.unwrap());
+        assert_eq!("/path/to/file/1", docs.items[0].path);
 
         let docs = repo
             .list_documents(pag.clone(), Some("other"), Some(true))
@@ -1211,5 +1242,37 @@ mod tests {
 
         assert!(docs.items.is_empty());
         assert_eq!(0, docs.total.unwrap());
+
+        let docs = repo
+            .list_documents(
+                PaginationSort {
+                    pagination: Some(Pagination::new(1, 1)),
+                    ..Default::default()
+                },
+                None,
+                Some(true),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
+        assert_eq!("/path/to/file/2/ready", docs.items[0].path);
+
+        let docs = repo
+            .list_documents(
+                PaginationSort {
+                    pagination: Some(Pagination::new(1, 2)),
+                    ..Default::default()
+                },
+                None,
+                Some(true),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(1, docs.items.len());
+        assert_eq!(2, docs.total.unwrap());
+        assert_eq!("/path/to/file/1/ready", docs.items[0].path);
     }
 }

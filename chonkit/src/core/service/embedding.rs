@@ -463,11 +463,12 @@ impl EmbedSingleInput {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Validate, utoipa::ToSchema)]
+#[derive(Debug, Default, Deserialize, Validate, utoipa::IntoParams, utoipa::ToSchema)]
 pub struct ListEmbeddingReportsParams {
     pub collection: Option<Uuid>,
     pub document: Option<Uuid>,
     #[validate]
     #[serde(flatten)]
+    #[param(inline)]
     pub options: Option<Pagination>,
 }

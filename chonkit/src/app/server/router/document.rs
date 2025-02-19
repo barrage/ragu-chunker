@@ -52,7 +52,7 @@ pub(super) async fn list_documents(
 
 #[utoipa::path(
     get,
-    path = "/display/documents",
+    path = "/documents/display",
     responses(
         (status = 200, description = "List documents with additional info for display purposes.", body = inline(List<DocumentDisplay>)),
         (status = 400, description = "Invalid pagination parameters"),
@@ -71,11 +71,7 @@ pub(super) async fn list_documents_display(
     let documents = state
         .services
         .document
-        .list_documents_display(
-            payload.pagination,
-            payload.src.as_deref(),
-            payload.document_id,
-        )
+        .list_documents_display(payload.pagination, payload.src.as_deref())
         .await?;
 
     Ok(Json(documents))

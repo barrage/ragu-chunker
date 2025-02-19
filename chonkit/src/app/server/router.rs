@@ -106,7 +106,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/embeddings/batch", post(embedding::batch_embed))
         .route("/search", post(collection::search))
-        .route("/display/documents", get(document::list_documents_display))
+        .route("/documents/display", get(document::list_documents_display))
         .route(
             "/collections/display",
             get(collection::list_collections_display),

@@ -64,12 +64,9 @@ impl DocumentService {
         &self,
         p: PaginationSort,
         src: Option<&str>,
-        document_id: Option<Uuid>,
     ) -> Result<List<DocumentDisplay>, ChonkitError> {
         map_err!(p.validate());
-        self.repo
-            .list_documents_with_collections(p, src, document_id)
-            .await
+        self.repo.list_documents_with_collections(p, src).await
     }
 
     /// Get a document from the repository.

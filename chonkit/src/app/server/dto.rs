@@ -82,9 +82,6 @@ pub(super) struct ListDocumentsPayload {
     /// Filter by file source.
     pub src: Option<String>,
 
-    /// Filter by document ID.
-    pub document_id: Option<Uuid>,
-
     /// If given and `true`, only return documents that are ready for processing, i.e. that have
     /// their parser and chunker configured.
     pub ready: Option<bool>,
