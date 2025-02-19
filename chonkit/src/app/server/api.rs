@@ -103,12 +103,21 @@ use utoipa::OpenApi;
         List<Document>,
         List<DocumentDisplay>,
         Pagination,
+
+        // Search 
+
+        DocumentSearchColumn,
+        CollectionSearchColumn,
+        EmbeddingReportSearchColumn,
+
         PaginationSort<DocumentSearchColumn>,
         PaginationSort<CollectionSearchColumn>,
         PaginationSort<EmbeddingReportSearchColumn>,
+
         Search<DocumentSearchColumn>,
         Search<CollectionSearchColumn>,
         Search<EmbeddingReportSearchColumn>,
+
         Document,
         DocumentConfig,
         UploadResult,
@@ -136,6 +145,7 @@ use utoipa::OpenApi;
         EmbeddingReportRemoval,
         TokenCount,
         ListEmbeddingReportsParams,
+        
 
         // Display
         DocumentDisplay,
