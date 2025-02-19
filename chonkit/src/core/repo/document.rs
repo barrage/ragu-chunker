@@ -1,4 +1,5 @@
-use crate::core::model::document::DocumentParameterUpdate;
+use crate::core::model::document::{DocumentParameterUpdate, DocumentSearchColumn};
+use crate::core::model::ToSearchColumn;
 use crate::core::repo::Repository;
 use crate::error::ChonkitError;
 use crate::{
@@ -8,8 +9,8 @@ use crate::{
         model::{
             collection::CollectionShort,
             document::{
-                config::{DocumentChunkConfig, DocumentParseConfig},
-                Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentMetadataUpdate,
+                Document, DocumentChunkConfig, DocumentConfig, DocumentDisplay, DocumentInsert,
+                DocumentMetadataUpdate, DocumentParseConfig,
             },
             List, PaginationSort,
         },
@@ -128,7 +129,7 @@ impl Repository {
 
     pub async fn list_documents(
         &self,
-        params: PaginationSort,
+        params: PaginationSort<DocumentSearchColumn>,
         src: Option<&str>,
         ready: Option<bool>,
     ) -> Result<List<Document>, ChonkitError> {
@@ -188,7 +189,7 @@ impl Repository {
                         .push(" WHERE src = ")
                         .push_bind(src)
                         .push(" AND ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q.clone());
 
@@ -196,7 +197,7 @@ impl Repository {
                         .push(" WHERE src = ")
                         .push_bind(src)
                         .push(" AND ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q)
                         .push(" AND ")
@@ -206,7 +207,7 @@ impl Repository {
                         .push(" WHERE src = ")
                         .push_bind(src)
                         .push(" AND ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q.clone())
                         .push(" AND ")
@@ -216,7 +217,7 @@ impl Repository {
                         .push(" WHERE src = ")
                         .push_bind(src)
                         .push(" AND ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q)
                         .push(" AND ")
@@ -260,7 +261,7 @@ impl Repository {
                     .push(" WHERE src = ")
                     .push_bind(src)
                     .push(" AND ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column())
                     .push(" ILIKE ")
                     .push_bind(q.clone());
 
@@ -268,7 +269,7 @@ impl Repository {
                     .push(" WHERE src = ")
                     .push_bind(src)
                     .push(" AND ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column())
                     .push(" ILIKE ")
                     .push_bind(q);
             }
@@ -282,13 +283,13 @@ impl Repository {
                     query
                         .push(ready_join)
                         .push(" WHERE ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q.clone());
 
                     count_query
                         .push(" WHERE ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q)
                         .push(" AND ")
@@ -296,7 +297,7 @@ impl Repository {
                 } else {
                     query
                         .push(" WHERE ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q.clone())
                         .push(" AND ")
@@ -304,7 +305,7 @@ impl Repository {
 
                     count_query
                         .push(" WHERE ")
-                        .push(&search.column)
+                        .push(search.column.to_search_column())
                         .push(" ILIKE ")
                         .push_bind(q)
                         .push(" AND ")
@@ -315,13 +316,13 @@ impl Repository {
                 let q = format!("%{}%", search.q);
                 query
                     .push(" WHERE ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column())
                     .push(" ILIKE ")
                     .push_bind(q.clone());
 
                 count_query
                     .push(" WHERE ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column())
                     .push(" ILIKE ")
                     .push_bind(q);
             }
@@ -398,7 +399,7 @@ impl Repository {
 
     pub async fn list_documents_with_collections(
         &self,
-        params: PaginationSort,
+        params: PaginationSort<DocumentSearchColumn>,
         src: Option<&str>,
     ) -> Result<List<DocumentDisplay>, ChonkitError> {
         let mut count_query =
@@ -440,13 +441,13 @@ impl Repository {
                 let q = format!("%{}%", search.q);
                 query
                     .push(" WHERE ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column_prefixed("documents"))
                     .push(" ILIKE ")
                     .push_bind(q.clone());
 
                 count_query
                     .push(" WHERE ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column_prefixed("documents"))
                     .push(" ILIKE ")
                     .push_bind(q);
             }
@@ -456,7 +457,7 @@ impl Repository {
                     .push(" WHERE documents.src = ")
                     .push_bind(src)
                     .push(" AND ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column_prefixed("documents"))
                     .push(" ILIKE ")
                     .push_bind(q.clone());
 
@@ -464,7 +465,7 @@ impl Repository {
                     .push(" WHERE documents.src = ")
                     .push_bind(src)
                     .push(" AND ")
-                    .push(&search.column)
+                    .push(search.column.to_search_column_prefixed("documents"))
                     .push(" ILIKE ")
                     .push_bind(q);
             }
@@ -964,7 +965,10 @@ mod tests {
         core::{
             chunk::ChunkConfig,
             document::{parser::ParseConfig, DocumentType, TextDocumentType},
-            model::{document::DocumentInsert, Pagination, PaginationSort, Search},
+            model::{
+                document::{DocumentInsert, DocumentSearchColumn},
+                Pagination, PaginationSort, Search,
+            },
             repo::{Atomic, Repository},
         },
         error::ChonkitError,
@@ -1178,7 +1182,7 @@ mod tests {
         let pag = PaginationSort {
             search: Some(Search {
                 q: "/1".to_string(),
-                column: "path".to_string(),
+                column: DocumentSearchColumn::Path,
             }),
             ..Default::default()
         };

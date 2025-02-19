@@ -3,7 +3,10 @@
 use crate::core::{
     chunk::ChunkConfig,
     document::parser::ParseConfig,
-    model::{document::Document, Pagination, PaginationSort},
+    model::{
+        document::{Document, DocumentSearchColumn},
+        Pagination, PaginationSort,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -77,7 +80,7 @@ pub(super) struct ListDocumentsPayload {
     #[validate]
     #[serde(flatten)]
     #[param(inline)]
-    pub pagination: PaginationSort,
+    pub pagination: PaginationSort<DocumentSearchColumn>,
 
     /// Filter by file source.
     pub src: Option<String>,

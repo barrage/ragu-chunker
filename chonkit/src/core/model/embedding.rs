@@ -1,3 +1,4 @@
+use crate::search_column;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use uuid::Uuid;
@@ -50,13 +51,15 @@ pub struct EmbeddingReport {
     /// The ID of the document.
     pub document_id: Option<Uuid>,
 
-    /// The name of the document.
+    /// The name of the document at the time of embedding. This is not updated if
+    /// the original document name changes.
     pub document_name: String,
 
     /// The ID of the collection.
     pub collection_id: Option<Uuid>,
 
-    /// The name of the collection.
+    /// The name of the collection at the time of embedding. This is not updated if
+    /// the original collection name changes.
     pub collection_name: String,
 
     /// The model used for embedding generation.
@@ -89,6 +92,18 @@ pub struct EmbeddingReport {
 
     /// UTC datetime of when the embedding process finished.
     pub finished_at: chrono::DateTime<chrono::Utc>,
+}
+
+search_column! {
+    EmbeddingReportSearchColumn,
+    Type => "ty",
+    DocumentId => "document_id",
+    DocumentName => "document_name",
+    CollectionId => "collection_id",
+    CollectionName => "collection_name",
+    ModelUsed => "model_used",
+    VectorDb => "vector_db",
+    EmbeddingProvider => "embedding_provider",
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]

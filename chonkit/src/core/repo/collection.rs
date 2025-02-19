@@ -1,9 +1,9 @@
 use crate::{
     core::{
         model::{
-            collection::{Collection, CollectionDisplay, CollectionInsert},
+            collection::{Collection, CollectionDisplay, CollectionInsert, CollectionSearchColumn},
             document::DocumentShort,
-            List, PaginationSort,
+            List, PaginationSort, ToSearchColumn,
         },
         repo::{Atomic, Repository},
     },
@@ -19,7 +19,7 @@ use uuid::Uuid;
 impl Repository {
     pub async fn list_collections(
         &self,
-        params: PaginationSort,
+        params: PaginationSort<CollectionSearchColumn>,
     ) -> Result<List<Collection>, ChonkitError> {
         let mut count =
             sqlx::query_builder::QueryBuilder::<Postgres>::new("SELECT COUNT(*) FROM collections");
@@ -35,13 +35,13 @@ impl Repository {
             let q = format!("%{}%", search.q);
             count
                 .push(" WHERE ")
-                .push(&search.column)
+                .push(search.column.to_search_column())
                 .push(" ILIKE ")
                 .push_bind(q.clone());
 
             query
                 .push(" WHERE ")
-                .push(&search.column)
+                .push(search.column.to_search_column())
                 .push(" ILIKE ")
                 .push_bind(q);
         }
@@ -65,7 +65,7 @@ impl Repository {
 
     pub async fn list_collections_display(
         &self,
-        p: PaginationSort,
+        p: PaginationSort<CollectionSearchColumn>,
     ) -> Result<List<CollectionDisplay>, ChonkitError> {
         let (limit, offset) = p.to_limit_offset();
         let (sort_by, sort_dir) = p.to_sort();

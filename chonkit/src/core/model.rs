@@ -113,7 +113,7 @@ impl Default for Pagination {
 /// Used to paginate queries and sort the rows.
 #[derive(Debug, Clone, Deserialize, Validate, utoipa::ToSchema, utoipa::IntoParams)]
 #[serde(rename_all = "camelCase")]
-pub struct PaginationSort {
+pub struct PaginationSort<T> {
     /// See [Pagination].
     #[validate]
     #[serde(flatten)]
@@ -138,10 +138,10 @@ pub struct PaginationSort {
 
     #[validate]
     #[serde(flatten)]
-    pub search: Option<Search>,
+    pub search: Option<Search<T>>,
 }
 
-impl PaginationSort {
+impl<T> PaginationSort<T> {
     pub fn new(pagination: Pagination, sort_by: String, sort_dir: SortDirection) -> Self {
         Self {
             pagination: Some(pagination),
@@ -179,7 +179,7 @@ impl PaginationSort {
     }
 }
 
-impl Default for PaginationSort {
+impl<T> Default for PaginationSort<T> {
     fn default() -> Self {
         Self {
             pagination: Some(Pagination::default()),
@@ -201,20 +201,26 @@ pub enum SortDirection {
 /// Struct used for search functionality when querying various models.
 #[derive(Debug, Clone, Validate, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct Search {
+pub struct Search<T> {
     #[validate(length(min = 1, max = 64))]
     #[validate(custom(ascii_alphanumeric_clean))]
     #[serde(alias = "search.q")]
     pub q: String,
 
-    // WARNING
-    // Validating this field is paramount since it can be used for SQL injection.
-    // Prepared statements do not support placeholders in ORDER BY clauses because they
-    // use column names and not values.
-    #[validate(length(min = 1, max = 64))]
-    #[validate(custom(ascii_alphanumeric_column))]
+    /// The column to search by when performing the query. This is intended to be an enum of all
+    /// the possible search values for a given query.
     #[serde(alias = "search.column")]
-    pub column: String,
+    pub column: T,
+}
+
+/// Intended to be implemented on enums that serve as search columns.
+pub trait ToSearchColumn {
+    fn to_search_column(&self) -> &'static str;
+
+    /// Useful when performing joins for prefixing the column with the desired table.
+    fn to_search_column_prefixed(&self, prefix: &str) -> String {
+        format!("{}.{}", prefix, self.to_search_column())
+    }
 }
 
 /// Allows for strings that consist of `a-z A-Z 0-9 _-.`.
@@ -244,4 +250,24 @@ fn ascii_alphanumeric_column(s: &str) -> Result<(), ValidationError> {
         ));
     }
     Ok(())
+}
+
+#[macro_export]
+macro_rules! search_column {
+    ($name:ident, $($variant:ident => $column:literal),+ $(,)?) => {
+        #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
+        #[cfg_attr(test, derive(Clone))]
+        #[serde(rename_all = "snake_case")]
+        pub enum $name {
+            $($variant),+
+        }
+
+        impl $crate::core::model::ToSearchColumn for $name {
+            fn to_search_column(&self) -> &'static str {
+                match self {
+                    $($name::$variant => $column),+
+                }
+            }
+        }
+    };
 }

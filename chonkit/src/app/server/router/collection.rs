@@ -1,7 +1,7 @@
 use crate::{
     app::  state::AppState , core::{
          model::{
-            collection::{Collection, CollectionDisplay},  List, PaginationSort
+            collection::{Collection, CollectionDisplay, CollectionSearchColumn},  List, PaginationSort
         }, service:: vector::dto::{CreateCollectionPayload, SearchPayload }
     },  error::ChonkitError, map_err
 };
@@ -23,7 +23,7 @@ use uuid::Uuid;
 )]
 pub(super) async fn list_collections(
     State(state): State<AppState>,
-    params: Option<Query<PaginationSort>>,
+    params: Option<Query<PaginationSort<CollectionSearchColumn>>>,
 ) -> Result<Json<List<Collection>>, ChonkitError> {
     let Query(params) = params.unwrap_or_default();
     let collections = state.services.collection.list_collections(params).await?;
@@ -44,7 +44,7 @@ pub(super) async fn list_collections(
 )]
 pub(super) async fn list_collections_display(
     State(state): State<AppState>,
-    payload: Option<Query<PaginationSort>>,
+    payload: Option<Query<PaginationSort<CollectionSearchColumn>>>,
 ) -> Result<Json<List<CollectionDisplay>>, ChonkitError> {
     let Query(pagination) = payload.unwrap_or_default();
     let collections = state.services.collection.list_collections_display(pagination).await?;

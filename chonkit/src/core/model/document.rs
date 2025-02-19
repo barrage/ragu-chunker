@@ -1,42 +1,14 @@
 use super::collection::CollectionShort;
-use crate::core::{
-    chunk::ChunkConfig,
-    document::{parser::ParseConfig, DocumentType},
+use crate::{
+    core::{
+        chunk::ChunkConfig,
+        document::{parser::ParseConfig, DocumentType},
+    },
+    search_column,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::prelude::FromRow;
-
-pub mod config;
-
-/// Holds relevant data for parsing and chunking.
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DocumentConfig {
-    pub id: uuid::Uuid,
-    pub name: String,
-    pub path: String,
-    pub ext: String,
-    pub hash: String,
-    pub src: String,
-    pub chunk_config: Option<ChunkConfig>,
-    pub parse_config: Option<ParseConfig>,
-}
-
-impl DocumentConfig {
-    pub fn new(document: Document, chunk_config: ChunkConfig, parse_config: ParseConfig) -> Self {
-        Self {
-            id: document.id,
-            name: document.name,
-            path: document.path,
-            ext: document.ext,
-            hash: document.hash,
-            src: document.src,
-            chunk_config: Some(chunk_config),
-            parse_config: Some(parse_config),
-        }
-    }
-}
 
 /// Holds document metadata.
 /// Main document model for the `documents` table.
@@ -71,6 +43,13 @@ pub struct Document {
     pub updated_at: DateTime<Utc>,
 }
 
+search_column! {
+    DocumentSearchColumn,
+    Name => "name",
+    Path => "path",
+    Label => "label",
+}
+
 /// Document struct for display purposes when listing collections.
 #[derive(Debug, Serialize, Default, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -98,6 +77,35 @@ impl DocumentDisplay {
         Self {
             document,
             collections,
+        }
+    }
+}
+
+/// Holds relevant data for parsing and chunking.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentConfig {
+    pub id: uuid::Uuid,
+    pub name: String,
+    pub path: String,
+    pub ext: String,
+    pub hash: String,
+    pub src: String,
+    pub chunk_config: Option<ChunkConfig>,
+    pub parse_config: Option<ParseConfig>,
+}
+
+impl DocumentConfig {
+    pub fn new(document: Document, chunk_config: ChunkConfig, parse_config: ParseConfig) -> Self {
+        Self {
+            id: document.id,
+            name: document.name,
+            path: document.path,
+            ext: document.ext,
+            hash: document.hash,
+            src: document.src,
+            chunk_config: Some(chunk_config),
+            parse_config: Some(parse_config),
         }
     }
 }
@@ -164,4 +172,32 @@ impl<'a> DocumentParameterUpdate<'a> {
     pub fn new(path: &'a str, hash: &'a str) -> Self {
         Self { path, hash }
     }
+}
+
+/// Main config model for the `chunkers` table.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentChunkConfig {
+    /// Primary key.
+    pub id: uuid::Uuid,
+    /// References the document which this config belongs to.
+    pub document_id: uuid::Uuid,
+    /// JSON string of the chunking configuration.
+    pub config: ChunkConfig,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Main config model for the `parsers` table.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentParseConfig {
+    /// Primary key.
+    pub id: uuid::Uuid,
+    /// References the document which this config belongs to.
+    pub document_id: uuid::Uuid,
+    /// JSON string of the parsing configuration.
+    pub config: ParseConfig,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

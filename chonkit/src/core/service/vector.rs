@@ -1,4 +1,6 @@
-use crate::core::model::collection::{Collection, CollectionDisplay, CollectionInsert};
+use crate::core::model::collection::{
+    Collection, CollectionDisplay, CollectionInsert, CollectionSearchColumn,
+};
 use crate::core::model::{List, PaginationSort};
 use crate::core::provider::ProviderState;
 use crate::core::repo::{Atomic, Repository};
@@ -29,7 +31,7 @@ impl CollectionService {
     /// * `p`: Pagination params.
     pub async fn list_collections(
         &self,
-        p: PaginationSort,
+        p: PaginationSort<CollectionSearchColumn>,
     ) -> Result<List<Collection>, ChonkitError> {
         map_err!(p.validate());
         self.repo.list_collections(p).await
@@ -37,7 +39,7 @@ impl CollectionService {
 
     pub async fn list_collections_display(
         &self,
-        p: PaginationSort,
+        p: PaginationSort<CollectionSearchColumn>,
     ) -> Result<List<CollectionDisplay>, ChonkitError> {
         map_err!(p.validate());
         self.repo.list_collections_display(p).await

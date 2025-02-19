@@ -43,10 +43,13 @@ use crate::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig},
         document::parser::ParseConfig,
         model::{
-            collection::{Collection, CollectionDisplay, CollectionShort},
-            document::{Document, DocumentConfig, DocumentDisplay, DocumentShort},
+            collection::{Collection, CollectionDisplay, CollectionSearchColumn, CollectionShort},
+            document::{
+                Document, DocumentConfig, DocumentDisplay, DocumentSearchColumn, DocumentShort,
+            },
             embedding::{
                 Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
+                EmbeddingReportSearchColumn,
             },
             List, Pagination, PaginationSort, Search, SortDirection,
         },
@@ -100,7 +103,12 @@ use utoipa::OpenApi;
         List<Document>,
         List<DocumentDisplay>,
         Pagination,
-        PaginationSort,
+        PaginationSort<DocumentSearchColumn>,
+        PaginationSort<CollectionSearchColumn>,
+        PaginationSort<EmbeddingReportSearchColumn>,
+        Search<DocumentSearchColumn>,
+        Search<CollectionSearchColumn>,
+        Search<EmbeddingReportSearchColumn>,
         Document,
         DocumentConfig,
         UploadResult,
@@ -128,7 +136,6 @@ use utoipa::OpenApi;
         EmbeddingReportRemoval,
         TokenCount,
         ListEmbeddingReportsParams,
-        Search,
 
         // Display
         DocumentDisplay,

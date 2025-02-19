@@ -1,3 +1,4 @@
+use crate::core::model::document::DocumentSearchColumn;
 use crate::core::token::{TokenCount, Tokenizer};
 use crate::{
     config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
@@ -49,7 +50,7 @@ impl DocumentService {
     /// * `ready`: If given and `true`, return only documents that are ready for processing.
     pub async fn list_documents(
         &self,
-        p: PaginationSort,
+        p: PaginationSort<DocumentSearchColumn>,
         src: Option<&str>,
         ready: Option<bool>,
     ) -> Result<List<Document>, ChonkitError> {
@@ -62,7 +63,7 @@ impl DocumentService {
     /// * `p`: Pagination.
     pub async fn list_documents_display(
         &self,
-        p: PaginationSort,
+        p: PaginationSort<DocumentSearchColumn>,
         src: Option<&str>,
     ) -> Result<List<DocumentDisplay>, ChonkitError> {
         map_err!(p.validate());

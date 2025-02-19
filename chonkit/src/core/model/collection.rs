@@ -1,3 +1,5 @@
+use crate::search_column;
+
 use super::document::DocumentShort;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -20,6 +22,14 @@ pub struct Collection {
     pub provider: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+search_column! {
+    CollectionSearchColumn,
+    Name => "name",
+    Model => "model",
+    Embedder => "embedder",
+    Provider => "provider",
 }
 
 pub struct CollectionInsert<'a> {
