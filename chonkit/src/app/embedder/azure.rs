@@ -1,19 +1,19 @@
-use crate::config::OPENAI_EMBEDDER_ID;
+use crate::config::AZURE_EMBEDDER_ID;
 use crate::core::embeddings::{Embedder, Embeddings};
 use crate::core::provider::Identity;
 use crate::error::ChonkitError;
 use crate::map_err;
 
-pub use chonkit_embedders::openai::OpenAiEmbeddings;
+pub use chonkit_embedders::azure::AzureEmbeddings;
 
-impl Identity for OpenAiEmbeddings {
+impl Identity for AzureEmbeddings {
     fn id(&self) -> &'static str {
-        OPENAI_EMBEDDER_ID
+        AZURE_EMBEDDER_ID
     }
 }
 
 #[async_trait::async_trait]
-impl Embedder for OpenAiEmbeddings {
+impl Embedder for AzureEmbeddings {
     fn default_model(&self) -> (String, usize) {
         (String::from("text-embedding-ada-002"), 1536)
     }
@@ -21,6 +21,7 @@ impl Embedder for OpenAiEmbeddings {
     async fn list_embedding_models(&self) -> Result<Vec<(String, usize)>, ChonkitError> {
         Ok(self
             .list_embedding_models()
+            .await
             .iter()
             .map(|(m, s)| (m.to_string(), *s))
             .collect())

@@ -3,3 +3,6 @@ pub mod fastembed;
 
 #[cfg(feature = "openai")]
 pub mod openai;
+
+#[cfg(feature = "azure")]
+pub mod azure;

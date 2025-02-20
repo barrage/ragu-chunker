@@ -329,11 +329,11 @@ fn minkowski_distance(vec1: &[f64], vec2: &[f64], p: i32) -> f64 {
 #[suitest::suite(semantic_window_tests)]
 mod tests {
     use super::*;
-    use chonkit_embedders::fastembed::local::LocalFastEmbedder;
+    use chonkit_embedders::fembed::local::LocalFastEmbedder;
     use suitest::before_all;
 
     impl Embedder for LocalFastEmbedder {
-        type Error = chonkit_embedders::error::EmbeddingError;
+        type Error = chonkit_embedders::EmbeddingError;
 
         async fn embed(&self, text: &[&str], model: &str) -> Result<Vec<Vec<f64>>, Self::Error> {
             self.embed(text, model)
@@ -342,7 +342,7 @@ mod tests {
 
     #[before_all]
     fn setup() -> LocalFastEmbedder {
-        let embedder = chonkit_embedders::fastembed::local::LocalFastEmbedder::new_with_model(
+        let embedder = chonkit_embedders::fembed::local::LocalFastEmbedder::new_with_model(
             "Xenova/bge-base-en-v1.5",
         );
         embedder

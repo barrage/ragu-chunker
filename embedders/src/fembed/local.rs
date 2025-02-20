@@ -1,4 +1,4 @@
-use crate::error::EmbeddingError;
+use crate::EmbeddingError;
 use fastembed::{EmbeddingModel, ModelInfo};
 use ort::execution_providers::CPUExecutionProvider;
 #[cfg(feature = "cuda")]

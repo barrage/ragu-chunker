@@ -5,7 +5,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chonkit_embedders::fastembed::local::LocalFastEmbedder as FastEmbedder;
+use chonkit_embedders::fembed::local::LocalFastEmbedder as FastEmbedder;
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::json;

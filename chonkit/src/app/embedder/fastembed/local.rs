@@ -5,7 +5,7 @@ use crate::core::embeddings::Embeddings;
 use crate::core::provider::Identity;
 use crate::{core::embeddings::Embedder, error::ChonkitError, map_err};
 
-pub use chonkit_embedders::fastembed::local::LocalFastEmbedder;
+pub use chonkit_embedders::fembed::local::LocalFastEmbedder;
 
 impl Identity for LocalFastEmbedder {
     fn id(&self) -> &'static str {

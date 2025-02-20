@@ -1,4 +1,4 @@
-use crate::error::EmbeddingError;
+use crate::EmbeddingError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

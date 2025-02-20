@@ -20,8 +20,8 @@ pub fn start_batch_embedder(state: ServiceState<deadpool_redis::Pool>) -> BatchE
 }
 
 pub struct BatchEmbedder {
-    /// Job queue.
-    q: HashMap<Uuid, mpsc::Sender<JobResult>>,
+    /// Maps job IDs to the sending end of the job result channel.
+    q: HashMap<Uuid, mpsc::Sender<BatchJobResult>>,
 
     /// Job receiver.
     job_rx: mpsc::Receiver<BatchJob>,
@@ -66,9 +66,9 @@ impl BatchEmbedder {
                         let state = self.state.clone();
                         let result_tx = self.result_tx.clone();
 
-                        let BatchJob { collection, add, remove, finished_tx } = job;
+                        let BatchJob { collection, add, remove, result_tx: job_result_tx } = job;
 
-                        self.q.insert(job_id, finished_tx);
+                        self.q.insert(job_id, job_result_tx);
 
                         tracing::info!("Starting job '{job_id}' | Adding {} | Removing {}", add.len(), remove.len());
 
@@ -83,24 +83,28 @@ impl BatchEmbedder {
                             break;
                         };
 
-                        let result = match result {
-                            BatchJobResult::Event(result) => result,
+                         match result {
+                            BatchJobResult::Event(ref r) => {
+                                let Some(result_sender) = self.q.get(&r.job_id) else {
+                                    continue;
+                                };
+
+                                let send_result = result_sender.send(result).await;
+                                tracing::debug!("Sent result to channel ({send_result:?})");
+                            },
                             BatchJobResult::Done(id) => {
-                                self.q.remove(&id);
+                                let Some(sender) = self.q.remove(&id) else {
+                                    continue;
+                                };
+                                let _ = sender.send(result).await;
+                                // Wait for all the messages to be sent, when the receiver drops,
+                                // this will complete
+                                sender.closed().await;
                                 tracing::debug!("Job '{id}' finished, removing from queue");
                                 continue;
                             }
                         };
 
-                        let JobEvent { job_id, result } = result;
-
-                        let Some(finished_tx) = self.q.get(&job_id) else {
-                            continue;
-                        };
-
-                        let result = finished_tx.send(result).await;
-
-                        tracing::debug!("Sent result to channel ({result:?})");
                     }
                 }
             }
@@ -164,7 +168,7 @@ impl BatchEmbedder {
                 result: JobResult::Ok(JobReport::Addition(report)),
             };
 
-            let _ = result_tx.send(BatchJobResult::Event(result)).await;
+            result_tx.send(BatchJobResult::Event(result)).await.unwrap();
         }
 
         for document_id in remove.into_iter() {
@@ -180,7 +184,7 @@ impl BatchEmbedder {
                 result: JobResult::Ok(JobReport::Removal(report)),
             };
 
-            let _ = result_tx.send(BatchJobResult::Event(result)).await;
+            result_tx.send(BatchJobResult::Event(result)).await.unwrap();
         }
 
         let _ = result_tx.send(BatchJobResult::Done(job_id)).await;
@@ -202,7 +206,7 @@ pub struct BatchJob {
     remove: Vec<Uuid>,
 
     /// Sends finished document embeddings back to whatever sent the job.
-    finished_tx: mpsc::Sender<JobResult>,
+    result_tx: mpsc::Sender<BatchJobResult>,
 }
 
 impl BatchJob {
@@ -210,13 +214,13 @@ impl BatchJob {
         collection: Uuid,
         add: Vec<Uuid>,
         remove: Vec<Uuid>,
-        finished_tx: mpsc::Sender<JobResult>,
+        result_tx: mpsc::Sender<BatchJobResult>,
     ) -> Self {
         Self {
             collection,
             add,
             remove,
-            finished_tx,
+            result_tx,
         }
     }
 }
@@ -224,7 +228,7 @@ impl BatchJob {
 /// Used internally to track the status of an embedding job.
 /// If a `Done` is received, the job is removed from the executor's queue.
 #[derive(Debug)]
-enum BatchJobResult {
+pub enum BatchJobResult {
     /// Represents a finished removal or addition job with respect to the document.
     Event(JobEvent),
 
@@ -234,12 +238,12 @@ enum BatchJobResult {
 
 /// Represents a single document embedding result in a job.
 #[derive(Debug)]
-struct JobEvent {
+pub struct JobEvent {
     /// ID of the job the embedding happened in.
     job_id: Uuid,
 
     /// Result of the embedding process.
-    result: Result<JobReport, ChonkitError>,
+    pub result: Result<JobReport, ChonkitError>,
 }
 
 #[derive(Debug, Serialize)]

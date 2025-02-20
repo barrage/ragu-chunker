@@ -1,6 +1,6 @@
 use crate::{
     app::{
-        batch::{BatchJob, JobResult},
+        batch::{BatchJob, BatchJobResult, JobResult},
         server::dto::{EmbedBatchInput, ListEmbeddingsPayload},
         state::AppState,
     },
@@ -93,7 +93,7 @@ pub(super) async fn batch_embed(
         remove,
     } = input;
 
-    let (tx, rx) = tokio::sync::mpsc::channel::<JobResult>(add.len() + remove.len());
+    let (tx, rx) = tokio::sync::mpsc::channel::<BatchJobResult>(add.len() + remove.len() + 1);
 
     let job = BatchJob::new(collection, add, remove, tx);
 
@@ -102,24 +102,30 @@ pub(super) async fn batch_embed(
         return err!(Batch);
     };
 
-    let stream = tokio_stream::wrappers::ReceiverStream::new(rx).map(|result| {
-        let event = match result {
-            JobResult::Ok(report) => match Event::default().json_data(report) {
-                Ok(event) => event,
-                Err(err) => {
-                    tracing::error!("Error serializing embedding report: {err}");
-                    let err = format!("error: {err}");
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx)
+        .take_while(|result| matches!(result, BatchJobResult::Event(_)))
+        .map(|result| {
+            let BatchJobResult::Event(result) = result else {
+                unreachable!()
+            };
+            tracing::debug!("sse received event");
+            let event = match result.result {
+                JobResult::Ok(report) => match Event::default().json_data(report) {
+                    Ok(event) => event,
+                    Err(err) => {
+                        tracing::error!("Error serializing embedding report: {err}");
+                        let err = format!("error: {err}").replace('\n', " ");
+                        Event::default().data(err)
+                    }
+                },
+                JobResult::Err(err) => {
+                    tracing::error!("Received error in batch embedder: {err}");
+                    let err = format!("error: {err}").replace('\n', " ");
                     Event::default().data(err)
                 }
-            },
-            JobResult::Err(err) => {
-                tracing::error!("Received error in batch embedder: {err}");
-                let err = format!("error: {err}");
-                Event::default().data(err)
-            }
-        };
-        Ok(event)
-    });
+            };
+            Ok(event)
+        });
 
     Ok(Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()

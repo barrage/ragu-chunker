@@ -13,6 +13,8 @@ pub const GOOGLE_STORE_ID: &str = "google";
 pub const FEMBED_EMBEDDER_ID: &str = "fembed";
 #[cfg(feature = "openai")]
 pub const OPENAI_EMBEDDER_ID: &str = "openai";
+#[cfg(feature = "azure")]
+pub const AZURE_EMBEDDER_ID: &str = "azure";
 
 /// The ID for the default collection created on application startup.
 pub const DEFAULT_COLLECTION_ID: uuid::Uuid = uuid::Uuid::nil();
@@ -37,21 +39,21 @@ const DEFAULT_GOOGLE_DRIVE_DOWNLOAD_PATH: &str = "data/gdrive";
 #[derive(Debug, Parser)]
 #[command(name = "chonkit", author = "biblius", version = "0.1", about = "Chunk documents", long_about = None)]
 pub struct StartArgs {
-    /// Database URL.
-    #[arg(short, long)]
-    db_url: Option<String>,
+    /// Address to listen on.
+    #[arg(long, short)]
+    address: Option<String>,
 
     /// RUST_LOG string to use as the env filter.
-    #[arg(short, long)]
+    #[arg(long, short)]
     log: Option<String>,
 
-    /// Set the upload path for `FsDocumentStore`.
-    #[arg(short, long)]
-    upload_path: Option<String>,
+    /// Database URL.
+    #[arg(long)]
+    db_url: Option<String>,
 
-    /// Address to listen on.
-    #[arg(short, long)]
-    address: Option<String>,
+    /// Set the upload path for `FsDocumentStore`.
+    #[arg(long)]
+    upload_path: Option<String>,
 
     /// CORS allowed origins.
     #[arg(long)]
@@ -62,6 +64,7 @@ pub struct StartArgs {
     cors_allowed_headers: Option<String>,
 
     /// Redis URL.
+    #[arg(long)]
     redis_url: Option<String>,
 
     /// Cookie domain used for setting chonkit-specific cookies.
@@ -70,18 +73,23 @@ pub struct StartArgs {
 
     /// Qdrant URL.
     #[cfg(feature = "qdrant")]
-    #[arg(short, long)]
+    #[arg(long)]
     qdrant_url: Option<String>,
 
     /// Weaviate URL.
     #[cfg(feature = "weaviate")]
-    #[arg(short, long)]
+    #[arg(long)]
     weaviate_url: Option<String>,
 
-    /// If using the [OpenAiEmbeddings][crate::app::embedder::openai::OpenAiEmbeddings] module, set its endpoint.
-    #[cfg(feature = "openai")]
-    #[arg(short, long)]
-    openai_endpoint: Option<String>,
+    /// If using the [AzureEmbeddings][crate::app::embedder::azure::AzureEmbeddings] module, set its endpoint.
+    #[cfg(feature = "azure")]
+    #[arg(long)]
+    azure_endpoint: Option<String>,
+
+    /// If using the [AzureEmbeddings][crate::app::embedder::azure::AzureEmbeddings] module, set its API version.
+    #[cfg(feature = "azure")]
+    #[arg(long)]
+    azure_api_version: Option<String>,
 
     /// If using the fastembedder remote embedding module, set its endpoint.
     #[cfg(feature = "fe-remote")]
@@ -193,6 +201,11 @@ impl StartArgs {
     pub fn open_ai_key(&self) -> String {
         std::env::var("OPENAI_KEY").expect("Missing OPENAI_KEY in env")
     }
+
+    #[cfg(feature = "azure")]
+    pub fn azure_key(&self) -> String {
+        std::env::var("AZURE_KEY").expect("Missing AZURE_KEY in env")
+    }
 }
 
 arg!(db_url,          "DATABASE_URL",    panic   "Database url not found; Pass --db-url or set DATABASE_URL");
@@ -202,27 +215,50 @@ arg!(address,         "ADDRESS",         default DEFAULT_ADDRESS.to_string());
 arg!(cookie_domain,   "COOKIE_DOMAIN",   panic   "Cookie domain not found; Pass --cookie-domain or set COOKIE_DOMAIN");
 arg!(redis_url,       "REDIS_URL",       panic   "Redis url not found; Pass --redis-url or set REDIS_URL");
 
+// qdrant
+
 #[cfg(feature = "qdrant")]
 arg!(qdrant_url,      "QDRANT_URL",      panic   "Qdrant url not found; Pass --qdrant-url or set QDRANT_URL");
+
+// weaviate
 
 #[cfg(feature = "weaviate")]
 arg!(weaviate_url,    "WEAVIATE_URL",    panic   "Weaviate url not found; Pass --weaviate-url or set WEAVIATE_URL");
 
+// azure
+
+#[cfg(feature = "azure")]
+arg!(azure_endpoint,  "AZURE_ENDPOINT",  panic   "Azure endpoint not found; Pass --azure-endpoint or set AZURE_ENDPOINT");
+
+#[cfg(feature = "azure")]
+arg!(azure_api_version,  "AZURE_API_VERSION",  panic   "Azure api version not found; Pass --azure-api-version or set AZURE_API_VERSION");
+
+// fe-remote
+
 #[cfg(feature = "fe-remote")]
 arg!(fembed_url,      "FEMBED_URL",      panic   "Fembed url not found; Pass --fembed-url or set FEMBED_URL");
 
+// auth-vault
+
 #[cfg(feature = "auth-vault")]
 arg!(vault_url,  "VAULT_URL",   panic "Vault url not found; Pass --vault-url or set VAULT_URL");
+
 #[cfg(feature = "auth-vault")]
 arg!(vault_role_id,   "VAULT_ROLE_ID",     panic "Vault role id not found; Pass --vault-role-id or set VAULT_ROLE_ID");
+
 #[cfg(feature = "auth-vault")]
 arg!(vault_secret_id, "VAULT_SECRET_ID", panic "Vault secret id not found; Pass --vault-secret-id or set VAULT_SECRET_ID");
+
 #[cfg(feature = "auth-vault")]
 arg!(vault_key_name, "VAULT_KEY_NAME", panic "Vault key name not found; Pass --vault-key-name or set VAULT_KEY_NAME");
 
+// gdrive
+
 #[cfg(feature = "gdrive")]
 arg!(google_drive_download_path, "GOOGLE_DRIVE_DOWNLOAD_PATH", default DEFAULT_GOOGLE_DRIVE_DOWNLOAD_PATH.to_string());
+
 #[cfg(feature = "gdrive")]
 arg!(google_oauth_client_id, "GOOGLE_OAUTH_CLIENT_ID", panic "Google OAuth client ID not found; Pass --google-oauth-client-id or set GOOGLE_OAUTH_CLIENT_ID");
+
 #[cfg(feature = "gdrive")]
 arg!(google_oauth_client_secret, "GOOGLE_OAUTH_CLIENT_SECRET", panic "Google OAuth client secret not found; Pass --google-oauth-client-secret or set GOOGLE_OAUTH_CLIENT_SECRET");

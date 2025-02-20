@@ -41,7 +41,7 @@ pub enum ChonkitErr {
     Chunks(String),
 
     #[error("embedding error; {0}")]
-    Embedding(#[from] chonkit_embedders::error::EmbeddingError),
+    Embedding(#[from] chonkit_embedders::EmbeddingError),
 
     #[error("Invalid provider; {0}")]
     InvalidProvider(String),

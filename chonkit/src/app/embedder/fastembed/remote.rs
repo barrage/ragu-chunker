@@ -9,7 +9,7 @@ use crate::{
     error::ChonkitError,
     map_err,
 };
-pub use chonkit_embedders::fastembed::remote::RemoteFastEmbedder;
+pub use chonkit_embedders::fembed::remote::RemoteFastEmbedder;
 
 impl Identity for RemoteFastEmbedder {
     fn id(&self) -> &'static str {

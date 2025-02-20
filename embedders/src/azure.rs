@@ -1,57 +1,59 @@
-use crate::{
-    openai_common::{EmbeddingResponse, OpenAIEmbeddingResponse, OpenAIError, EMBEDDING_MODELS},
-    EmbeddingError,
-};
 use serde::Serialize;
 use std::error::Error;
 use tracing::debug;
 
-const DEFAULT_OPENAI_ENDPOINT: &str = "https://api.openai.com";
+use crate::{
+    openai_common::{
+        EmbeddingResponse, OpenAIEmbeddingResponse, OpenAIError, TEXT_EMBEDDING_ADA_002,
+        TEXT_EMBEDDING_ADA_002_SIZE,
+    },
+    EmbeddingError,
+};
 
-pub struct OpenAiEmbeddings {
+pub struct AzureEmbeddings {
     endpoint: String,
     key: String,
+    api_version: String,
     client: reqwest::Client,
 }
 
-impl OpenAiEmbeddings {
-    pub fn new(api_key: &str) -> Self {
+impl AzureEmbeddings {
+    pub fn new(endpoint: &str, api_key: &str, api_version: &str) -> Self {
         Self {
-            endpoint: DEFAULT_OPENAI_ENDPOINT.to_string(),
+            endpoint: endpoint.to_string(),
             key: api_key.to_string(),
+            api_version: api_version.to_string(),
             client: reqwest::Client::new(),
         }
     }
 
-    pub fn list_embedding_models(&self) -> &[(&str, usize)] {
-        EMBEDDING_MODELS
+    pub async fn list_embedding_models(&self) -> &[(&str, usize)] {
+        &[(TEXT_EMBEDDING_ADA_002, TEXT_EMBEDDING_ADA_002_SIZE)]
     }
 
     pub async fn embed(
         &self,
         input: &[&str],
-        model: &str,
+        deployment: &str,
     ) -> Result<EmbeddingResponse, EmbeddingError> {
-        let request = EmbeddingRequest { model, input };
-
-        if input.is_empty() {
-            return Err(EmbeddingError::InvalidInput(format!(
-                "cannot be empty (len = {})",
-                input.len()
-            )));
-        }
+        let request = EmbeddingRequest { input };
+        let url = format!(
+            "{}/openai/deployments/{deployment}/embeddings",
+            self.endpoint
+        );
 
         let response = match self
             .client
-            .post(format!("{}/v1/embeddings", self.endpoint))
-            .bearer_auth(&self.key)
+            .post(url)
+            .header("api-key", &self.key)
+            .query(&[("api-version", &self.api_version)])
             .json(&request)
             .send()
             .await
         {
             Ok(res) => res,
             Err(e) => {
-                tracing::error!("Error in OpenAI request: {e}");
+                tracing::error!("Error in Azure response: {e}");
                 return Err(EmbeddingError::Reqwest(e));
             }
         };
@@ -90,7 +92,7 @@ impl OpenAiEmbeddings {
             let response = match response.json::<OpenAIError>().await {
                 Ok(res) => res,
                 Err(e) => {
-                    tracing::error!("Error reading OpenAI response: {}", e);
+                    tracing::error!("Error reading Azure response: {}", e);
                     tracing::error!("Source: {:?}", e.source());
                     return Err(EmbeddingError::Reqwest(e));
                 }
@@ -128,6 +130,5 @@ impl OpenAiEmbeddings {
 
 #[derive(Debug, Serialize)]
 struct EmbeddingRequest<'i> {
-    model: &'i str,
     input: &'i [&'i str],
 }

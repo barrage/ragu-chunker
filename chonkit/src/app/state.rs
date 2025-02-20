@@ -153,8 +153,8 @@ impl AppState {
         {
             let fastembed =
                 Arc::new(crate::app::embedder::fastembed::local::LocalFastEmbedder::new());
+            tracing::info!("Registered embedding provider: {} (local)", fastembed.id());
             provider.register(fastembed);
-            tracing::info!("Registered local Fastembed embedding provider");
         }
 
         // Remote implementations take precedence. This will override the local implementation
@@ -166,8 +166,8 @@ impl AppState {
                     _args.fembed_url(),
                 ),
             );
+            tracing::info!("Registered embedding provider: {} (remote)", fastembed.id());
             provider.register(fastembed);
-            tracing::info!("Registered remote Fastembed embedding provider");
         }
 
         #[cfg(feature = "openai")]
@@ -175,8 +175,19 @@ impl AppState {
             let openai = Arc::new(crate::app::embedder::openai::OpenAiEmbeddings::new(
                 &_args.open_ai_key(),
             ));
+            tracing::info!("Registered embedding provider: {}", openai.id());
             provider.register(openai);
-            tracing::info!("Registered OpenAI embedding provider");
+        }
+
+        #[cfg(feature = "azure")]
+        {
+            let azure = Arc::new(crate::app::embedder::azure::AzureEmbeddings::new(
+                &_args.azure_endpoint(),
+                &_args.azure_key(),
+                &_args.azure_api_version(),
+            ));
+            tracing::info!("Registered embedding provider: {}", azure.id());
+            provider.register(azure);
         }
 
         provider
@@ -186,7 +197,7 @@ impl AppState {
         let mut storage = DocumentStorageProvider::default();
 
         let fs = Arc::new(FsDocumentStore::new(&args.upload_path()).await);
-        tracing::info!("Registering storage provider {}", fs.id());
+        tracing::info!("Registered storage provider: {}", fs.id());
         storage.register(fs);
 
         #[cfg(feature = "gdrive")]
@@ -197,7 +208,7 @@ impl AppState {
                 )
                 .await,
             );
-            tracing::info!("Registering storage provider {}", drive.id());
+            tracing::info!("Registered storage provider: {}", drive.id());
             storage.register(drive);
         };
 
