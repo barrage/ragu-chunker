@@ -5,7 +5,7 @@ FROM rust:latest AS builder
 
 ARG ONX_VERSION
 ARG PDFIUM_VERSION
-ARG FEATURES="weaviate openai gdrive"
+ARG FEATURES="weaviate openai gdrive azure"
 
 WORKDIR /app
 
