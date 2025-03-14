@@ -1,8 +1,8 @@
 /// Middleware used for authorizing requests when Vault authentication
 /// is enabled.
-#[cfg(feature = "auth-vault")]
-pub async fn vault_verify_token(
-    vault: axum::extract::State<crate::app::auth::vault::VaultAuthenticator>,
+#[cfg(feature = "auth-jwt")]
+pub async fn verify_jwt(
+    verifier: axum::extract::State<crate::app::auth::JwtVerifier>,
     cookies: axum_extra::extract::cookie::CookieJar,
     request: axum::extract::Request,
     next: axum::middleware::Next,
@@ -12,38 +12,48 @@ pub async fn vault_verify_token(
     // The access token is either in a cookie or in the authorization header.
     // If in cookie, we expect only the token itself.
     // If in header, we expect the header to be "Bearer <token>"
-    let access_token = match cookies.get("chonkit_access_token") {
+    let access_token = match cookies.get("access_token") {
         Some(token) => token.value(),
         None => {
-            tracing::info!("No access token found in cookie, checking authorization header");
-
             let Some(header) = request.headers().get("Authorization") else {
                 tracing::error!("No authorization header found");
-                return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+                return (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Missing authorization header",
+                )
+                    .into_response();
             };
 
             let header = match header.to_str() {
                 Ok(header) => header,
                 Err(e) => {
                     tracing::error!("Invalid header: {e}");
-                    return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+                    return (
+                        axum::http::StatusCode::UNAUTHORIZED,
+                        "Malformed authorization header",
+                    )
+                        .into_response();
                 }
             };
 
             let Some(token) = header.strip_prefix("Bearer ") else {
                 tracing::error!("Invalid authorization header");
-                return (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+                return (
+                    axum::http::StatusCode::UNAUTHORIZED,
+                    "Malformed access token",
+                )
+                    .into_response();
             };
 
             token
         }
     };
 
-    if let Err(e) = vault.verify_token(access_token).await {
-        return e.into_response();
-    };
-
-    next.run(request).await
+    if verifier.verify(access_token).await {
+        next.run(request).await
+    } else {
+        (axum::http::StatusCode::UNAUTHORIZED, "Invalid access token").into_response()
+    }
 }
 
 #[cfg(feature = "gdrive")]

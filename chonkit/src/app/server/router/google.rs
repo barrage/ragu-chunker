@@ -1,63 +1,22 @@
 use super::Force;
 use crate::{
     app::{
-        external::google::{
-            auth::{GoogleAccessToken, GoogleOAuth},
-            drive::GoogleDriveApi,
-            GOOGLE_ACCESS_TOKEN_COOKIE,
-        },
+        external::google::{auth::GoogleAccessToken, drive::GoogleDriveApi},
         state::AppState,
     },
     core::{
-        auth::{OAuth, OAuthExchangeRequest, OAuthToken},
         model::document::Document,
         service::external::file::{ImportFailure, ImportResult, OutdatedDocument},
     },
     error::ChonkitError,
-    map_err,
 };
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, HeaderValue},
-    Form, Json,
+    Json,
 };
-use cookie::CookieBuilder;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use validify::Validate;
-
-#[utoipa::path(
-    post,
-    path = "/external/google/auth",
-    request_body(content = OAuthExchangeRequest, content_type = "x-www-form-urlencoded"),
-    responses(
-        (status = 200, description = "Exchange code for access token", body = OAuthToken),
-        (status = 400, description = "Bad request"),
-        (status = 500, description = "Internal server error")
-    ),
-)]
-pub(super) async fn authorize(
-    State(state): State<AppState>,
-    Form(request): axum::extract::Form<OAuthExchangeRequest>,
-) -> Result<(HeaderMap, Json<OAuthToken>), ChonkitError> {
-    let service = GoogleOAuth::new(state.http_client.clone(), state.google_oauth_config.clone());
-
-    let access_token = service.exchange_code(request).await?;
-
-    let cookie = CookieBuilder::new(GOOGLE_ACCESS_TOKEN_COOKIE, &access_token.access_token)
-        .secure(true)
-        .http_only(true)
-        .domain(&*state.http_config.cookie_domain)
-        .build();
-
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        axum::http::header::SET_COOKIE,
-        map_err!(cookie.to_string().parse::<HeaderValue>()),
-    );
-
-    Ok((headers, Json(access_token)))
-}
 
 #[utoipa::path(
     post,
@@ -145,15 +104,7 @@ pub(super) struct SingleImportPayload {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(
-    paths(authorize, import_files, import_file, list_outdated_documents),
-    components(schemas(
-        OAuthExchangeRequest,
-        OAuthToken,
-        ImportPayload,
-        ImportResult,
-        ImportFailure,
-        Force,
-        OutdatedDocument,
-    ))
+    paths(import_files, import_file, list_outdated_documents),
+    components(schemas(ImportPayload, ImportResult, ImportFailure, Force, OutdatedDocument,))
 )]
 pub(super) struct GDriveApiDoc;

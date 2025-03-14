@@ -97,36 +97,18 @@ pub struct StartArgs {
     fembed_url: Option<String>,
 
     /// Vault endpoint.
-    #[cfg(feature = "auth-vault")]
+    #[cfg(feature = "auth-jwt")]
     #[arg(long)]
-    vault_url: Option<String>,
+    jwks_endpoint: Option<String>,
 
     /// Vault approle role ID.
-    #[cfg(feature = "auth-vault")]
+    #[cfg(feature = "auth-jwt")]
     #[arg(long)]
-    vault_role_id: Option<String>,
-
-    /// Vault approle secret ID.
-    #[cfg(feature = "auth-vault")]
-    #[arg(long)]
-    vault_secret_id: Option<String>,
-
-    /// Vault transit engine key name to use for signature verification.
-    #[cfg(feature = "auth-vault")]
-    #[arg(long)]
-    vault_key_name: Option<String>,
+    jwt_issuer: Option<String>,
 
     #[cfg(feature = "gdrive")]
     #[arg(long)]
     google_drive_download_path: Option<String>,
-
-    #[cfg(feature = "gdrive")]
-    #[arg(long)]
-    google_oauth_client_id: Option<String>,
-
-    #[cfg(feature = "gdrive")]
-    #[arg(long)]
-    google_oauth_client_secret: Option<String>,
 }
 
 /// Implement a getter method on [StartArgs], using the `$var` environment variable as a fallback
@@ -238,27 +220,15 @@ arg!(azure_api_version,  "AZURE_API_VERSION",  panic   "Azure api version not fo
 #[cfg(feature = "fe-remote")]
 arg!(fembed_url,      "FEMBED_URL",      panic   "Fembed url not found; Pass --fembed-url or set FEMBED_URL");
 
-// auth-vault
+// auth-jwt
 
-#[cfg(feature = "auth-vault")]
-arg!(vault_url,  "VAULT_URL",   panic "Vault url not found; Pass --vault-url or set VAULT_URL");
+#[cfg(feature = "auth-jwt")]
+arg!(jwks_endpoint,  "JWKS_ENDPOINT",   panic "JWKs endpoint not found; Pass --jwks-endpoint or set JWKS_ENDPOINT");
 
-#[cfg(feature = "auth-vault")]
-arg!(vault_role_id,   "VAULT_ROLE_ID",     panic "Vault role id not found; Pass --vault-role-id or set VAULT_ROLE_ID");
-
-#[cfg(feature = "auth-vault")]
-arg!(vault_secret_id, "VAULT_SECRET_ID", panic "Vault secret id not found; Pass --vault-secret-id or set VAULT_SECRET_ID");
-
-#[cfg(feature = "auth-vault")]
-arg!(vault_key_name, "VAULT_KEY_NAME", panic "Vault key name not found; Pass --vault-key-name or set VAULT_KEY_NAME");
+#[cfg(feature = "auth-jwt")]
+arg!(jwt_issuer,  "JWT_ISSUER",   panic "JWT issuer not found; Pass --jwt-issuer or set JWT_ISSUER");
 
 // gdrive
 
 #[cfg(feature = "gdrive")]
 arg!(google_drive_download_path, "GOOGLE_DRIVE_DOWNLOAD_PATH", default DEFAULT_GOOGLE_DRIVE_DOWNLOAD_PATH.to_string());
-
-#[cfg(feature = "gdrive")]
-arg!(google_oauth_client_id, "GOOGLE_OAUTH_CLIENT_ID", panic "Google OAuth client ID not found; Pass --google-oauth-client-id or set GOOGLE_OAUTH_CLIENT_ID");
-
-#[cfg(feature = "gdrive")]
-arg!(google_oauth_client_secret, "GOOGLE_OAUTH_CLIENT_SECRET", panic "Google OAuth client secret not found; Pass --google-oauth-client-secret or set GOOGLE_OAUTH_CLIENT_SECRET");

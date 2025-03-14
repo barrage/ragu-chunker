@@ -66,16 +66,13 @@ utoipa-swagger-ui = { version = "7.1.0", features = ["axum"] }
 serde_with = "3.11.0"
 anyhow = { version = "1.0.93", features = ["backtrace"] }
 
-# vault-auth
-vaultrs = { version = "0.7.3", optional = true }
-base64 = "0.22.1"
-
+jwtk = { version = "0.4.0", features = ["remote-jwks"], optional = true }
 reqwest = { version = "0.12.7", features = ["json"] }
 tiktoken-rs = { version = "0.6.0" }
 deadpool-redis = { version = "0.19.0" }
 
 [features]
-default = ["weaviate", "qdrant", "fe-local", "openai", "azure", "auth-vault", "gdrive"]
+default = ["weaviate", "qdrant", "fe-local", "openai", "azure", "gdrive", "auth-jwt"]
 fe-local = ["chonkit-embedders", "chonkit-embedders?/fe-local"]
 fe-remote = ["chonkit-embedders", "chonkit-embedders?/fe-remote"]
 cuda = ["chonkit-embedders?/cuda"]
@@ -83,5 +80,5 @@ openai = ["chonkit-embedders", "chonkit-embedders?/openai"]
 azure = ["chonkit-embedders", "chonkit-embedders?/azure"]
 weaviate = ["weaviate-community"]
 qdrant = ["qdrant-client"]
-auth-vault = ["vaultrs"]
 gdrive = []
+auth-jwt = ["jwtk"]

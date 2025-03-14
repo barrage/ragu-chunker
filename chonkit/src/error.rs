@@ -99,9 +99,6 @@ pub enum ChonkitErr {
     #[error("uuid: {0}")]
     Uuid(#[from] uuid::Error),
 
-    #[error("encoding: {0}")]
-    Encoding(#[from] base64::DecodeError),
-
     #[error("reqwest: {0}")]
     Reqwest(#[from] reqwest::Error),
 

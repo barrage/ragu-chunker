@@ -40,7 +40,6 @@ impl ChonkitError {
             E::Chunks(_) => SC::UNPROCESSABLE_ENTITY,
             E::ParseConfig(_) => SC::UNPROCESSABLE_ENTITY,
             E::Unauthorized => SC::UNAUTHORIZED,
-            E::Encoding(_) => SC::UNPROCESSABLE_ENTITY,
             E::Reqwest(ref e) => e.status().unwrap_or(SC::INTERNAL_SERVER_ERROR),
             E::InvalidParameter(_) => SC::BAD_REQUEST,
             #[cfg(feature = "gdrive")]
@@ -148,7 +147,6 @@ impl IntoResponse for ChonkitError {
             CE::Chunker(e) => (status, e.to_string()).into_response(),
             CE::ParseConfig(e) => (status, e.to_string()).into_response(),
             CE::Unauthorized => (status, "Unauthorized".to_string()).into_response(),
-            CE::Encoding(e) => (status, e.to_string()).into_response(),
             CE::Reqwest(e) => (status, e.to_string()).into_response(),
             CE::InvalidParameter(e) => (status, e).into_response(),
             #[cfg(feature = "gdrive")]

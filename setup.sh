@@ -14,17 +14,13 @@ if [[ " $@ " == *" -c "* ]]; then
     unset WEAVIATE_URL
     unset OPENAI_KEY
     unset FEMBED_URL
-    unset VAULT_URL
-    unset VAULT_ROLE_ID
-    unset VAULT_SECRET_ID
-    unset VAULT_KEY_NAME
+    unset JWKS_ENDPOINT
+    unset JWT_ISSUER
     unset ADDRESS
     unset UPLOAD_PATH
     unset CORS_ALLOWED_ORIGINS
     unset CORS_ALLOWED_HEADERS
     unset GOOGLE_DRIVE_DOWNLOAD_PATH
-    unset GOOGLE_OAUTH_CLIENT_ID
-    unset GOOGLE_OAUTH_CLIENT_SECRET
     echo "Cleaned up environment variables."
     return 0
 fi

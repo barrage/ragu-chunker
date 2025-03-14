@@ -133,16 +133,15 @@ pub fn router(state: AppState) -> Router {
             .layer(axum::middleware::from_fn(
                 crate::app::server::middleware::extract_google_access_token,
             ))
-            .route("/google/auth", post(google::authorize))
             .with_state(state.clone());
 
         router.merge(Router::new().nest("/external", gdrive_router))
     };
 
-    #[cfg(feature = "auth-vault")]
+    #[cfg(feature = "auth-jwt")]
     let router = router.layer(axum::middleware::from_fn_with_state(
-        state.vault.clone(),
-        crate::app::server::middleware::vault_verify_token,
+        state.jwt_verifier.clone(),
+        crate::app::server::middleware::verify_jwt,
     ));
 
     router

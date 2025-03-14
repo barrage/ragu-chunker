@@ -43,11 +43,8 @@ pub struct AppState {
     /// The http configuration for the server for CORS and cookies.
     pub http_config: HttpConfiguration,
 
-    #[cfg(feature = "auth-vault")]
-    pub vault: crate::app::auth::vault::VaultAuthenticator,
-
-    #[cfg(feature = "gdrive")]
-    pub google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig,
+    #[cfg(feature = "auth-jwt")]
+    pub jwt_verifier: super::auth::JwtVerifier,
 }
 
 impl AppState {
@@ -83,6 +80,21 @@ impl AppState {
 
         services.document.create_default_document().await;
 
+        let http_client = reqwest::Client::new();
+
+        #[cfg(feature = "auth-jwt")]
+        let jwt_verifier = {
+            let mut verifier = jwtk::jwk::RemoteJwksVerifier::new(
+                args.jwks_endpoint(),
+                Some(http_client.clone()),
+                std::time::Duration::from_secs(300),
+            );
+
+            verifier.set_require_kid(true);
+
+            super::auth::JwtVerifier::new(verifier, &args.jwt_issuer())
+        };
+
         Self {
             services: services.clone(),
 
@@ -90,24 +102,12 @@ impl AppState {
 
             providers,
 
-            http_client: reqwest::Client::new(),
+            http_client,
 
             http_config: Self::server_config(args),
 
-            #[cfg(feature = "auth-vault")]
-            vault: crate::app::auth::vault::VaultAuthenticator::new(
-                args.vault_url(),
-                args.vault_role_id(),
-                args.vault_secret_id(),
-                args.vault_key_name(),
-            )
-            .await,
-
-            #[cfg(feature = "gdrive")]
-            google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig::new(
-                &args.google_oauth_client_id(),
-                &args.google_oauth_client_secret(),
-            ),
+            #[cfg(feature = "auth-jwt")]
+            jwt_verifier,
         }
     }
 

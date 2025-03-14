@@ -143,12 +143,7 @@ impl TestState {
             embedding: EmbeddingService::new(postgres, providers.clone().into(), redis),
         };
 
-        let app = AppState::new_test(
-            services,
-            providers,
-            #[cfg(feature = "auth-vault")]
-            todo!(),
-        );
+        let app = AppState::new_test(services, providers);
 
         TestState {
             _containers,
@@ -183,7 +178,6 @@ impl AppState {
     pub fn new_test(
         services: ServiceState<deadpool_redis::Pool>,
         providers: AppProviderState,
-        #[cfg(feature = "auth-vault")] vault: super::auth::vault::VaultAuthenticator,
     ) -> Self {
         use super::server::HttpConfiguration;
         use crate::app::batch;
@@ -194,10 +188,15 @@ impl AppState {
             batch_embedder: batch::start_batch_embedder(services.clone()),
             http_client: reqwest::Client::new(),
             http_config: HttpConfiguration::default(),
-            #[cfg(feature = "auth-vault")]
-            vault,
-            #[cfg(feature = "gdrive")]
-            google_oauth_config: crate::app::external::google::auth::GoogleOAuthConfig::new("", ""),
+            #[cfg(feature = "auth-jwt")]
+            jwt_verifier: super::auth::JwtVerifier::new(
+                jwtk::jwk::RemoteJwksVerifier::new(
+                    "".to_string(),
+                    None,
+                    std::time::Duration::default(),
+                ),
+                "",
+            ),
         }
     }
 }
