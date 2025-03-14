@@ -86,12 +86,45 @@ This section lists the available providers and their corresponding feature flags
 | Qdrant   | `qdrant`   | Enable qdrant as one of the vector database providers.   |
 | Weaviate | `weaviate` | Enable weaviate as one of the vector database providers. |
 
+#### Qdrant
+
+| Arg            | Env          | Default | Description |
+| -------------- | ------------ | ------- | ----------- |
+| `--qdrant-url` | `QDRANT_URL` | -       | Qdrant URL. |
+
+#### Weaviate
+
+| Arg              | Env            | Default | Description   |
+| ---------------- | -------------- | ------- | ------------- |
+| `--weaviate-url` | `WEAVIATE_URL` | -       | Weaviate URL. |
+
 ### Embedding providers
 
-| Provider  | Feature                  | Description                                                                                                                                                                                                                                                                                                                             |
-| --------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI    | `openai`                 | Enable OpenAI as one of the embedding providers.                                                                                                                                                                                                                                                                                        |
-| Fastembed | `fe-local` / `fe-remote` | Enable Fastembed as one of the embedding providers. The local implementation uses the current machine to embed, the remote implementation uses a remote server and needs a URL to connect to. When running locally the `cuda` feature flag will enable CUDA support and will fallback to the CPU if a CUDA capable device is not found. |
+| Provider     | Feature                  | Description                                                                                                                                                                                                                                                                                                                             |
+| ------------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI       | `openai`                 | Enable OpenAI as one of the embedding providers.                                                                                                                                                                                                                                                                                        |
+| Azure OpenAI | `azure`                  | Enable Azure OpenAI as one of the embedding providers.                                                                                                                                                                                                                                                                                  |
+| Fastembed    | `fe-local` / `fe-remote` | Enable Fastembed as one of the embedding providers. The local implementation uses the current machine to embed, the remote implementation uses a remote server and needs a URL to connect to. When running locally the `cuda` feature flag will enable CUDA support and will fallback to the CPU if a CUDA capable device is not found. |
+
+#### Required arguments
+
+#### OpenAI
+
+\-
+
+#### Azure
+
+| Arg                   | Env                 | Default | Description                                                                                                       |
+| --------------------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--azure-key`         | `AZURE_KEY`         | -       | Azure OpenAI API key.                                                                                             |
+| `--azure-endpoint`    | `AZURE_ENDPOINT`    | -       | Azure OpenAI endpoint, including the resource, but not the deployment; e.g. `https://<resource>.openai.azure.com` |
+| `--azure-api-version` | `AZURE_API_VERSION` | -       | Azure OpenAI API version.                                                                                         |
+
+#### Remote Fastembed
+
+| Arg            | Env          | Default | Description                                 |
+| -------------- | ------------ | ------- | ------------------------------------------- |
+| `--fembed-url` | `FEMBED_URL` | -       | The URL to connect to the Fastembed server. |
 
 ### Document storage providers
 
@@ -111,9 +144,8 @@ When enabled, allows files to be imported from Google Drive.
 Google Drive only accepts tokens generated by OAuth clients,
 therefore you need to set one up with a Google project.
 
-To use any of the routes for importing files, authorization with
-Google is required beforehand. A code exchange route is exposed for
-obtaining an access token with read permissions for Drive.
+To use any of the routes for importing files, an access token from
+Google is required.
 
 When accessing any of this provider's routes, the access token must either be
 in the `google_drive_access_token` cookie, or in the `X-Google-Drive-Acess-Token`
@@ -126,11 +158,9 @@ lists all files imported from Drive and compares the local modification time
 with the current modification time of the file. If the external modification time
 is newer, the file will be re-downloaded.
 
-| Argument                       | Environment variable         | Description                                                   | Default           |
-| ------------------------------ | ---------------------------- | ------------------------------------------------------------- | ----------------- |
-| `--google-drive-download-path` | `GOOGLE_DRIVE_DOWNLOAD_PATH` | The directory to download files to when importing from Drive. | `./upload/gdrive` |
-| `--google-oauth-client-id`     | `GOOGLE_OAUTH_CLIENT_ID`     | The client ID of the OAuth client.                            | -                 |
-| `--google-oauth-client-secret` | `GOOGLE_OAUTH_CLIENT_SECRET` | The client secret of the OAuth.                               | -                 |
+| Arg                            | Env                          | Default           | Description                                                   |
+| ------------------------------ | ---------------------------- | ----------------- | ------------------------------------------------------------- |
+| `--google-drive-download-path` | `GOOGLE_DRIVE_DOWNLOAD_PATH` | `./upload/gdrive` | The directory to download files to when importing from Drive. |
 
 ## Binaries
 
@@ -215,13 +245,15 @@ The following is a table of the supported build features.
 | `fe-local`  | Embedder provider  | Use the implementation of `Embedder` with `LocalFastEmbedder`. Mutually exclusive with `fe-remote`. |
 | `fe-remote` | Embedder provider  | Use the implementation of `Embedder` with `RemoteFastEmbedder`. Mutually exclusive with `fe-local`. |
 | `openai`    | Embedder provider  | Enable openai as one of the embedding providers.                                                    |
+| `azure`     | Embedder provider  | Enable azure as one of the embedding providers.                                                     |
 | `cuda`      | Execution provider | Available when using `fe-local`. When enabled, uses the CUDAExecutionProvider for the onnxruntime.  |
 | `gdrive`    | Storage provider   | Enable Google Drive as one of the document storage providers.                                       |
+| `auth-jwt`  | Authorization      | Enable JWT authorization.                                                                           |
 
 #### Full build command example
 
 ```bash
-cargo build -F "qdrant weaviate fe-local" --release
+cargo build -F "qdrant weaviate fe-local openai azure" --release
 ```
 
 ### Sqlx 'offline' compilation
@@ -264,21 +296,18 @@ to see all the available options for the setup script.
 
 ## Running
 
-Chonkit accepts the following arguments:
+Along with provider specific arguments, Chonkit accepts the following:
 
-| Arg                      | Env                    | Feature     | Default         | Description                                           |
-| ------------------------ | ---------------------- | ----------- | --------------- | ----------------------------------------------------- |
-| `--db-url`               | `DATABASE_URL`         | \*          | -               | The database URL.                                     |
-| `--log`                  | `RUST_LOG`             | \*          | `info`          | The `RUST_LOG` env filter string to use.              |
-| `--upload-path`          | `UPLOAD_PATH`          | \*          | `./upload`      | If using the `FsDocumentStore`, sets its upload path. |
-| `--address`              | `ADDRESS`              | \*          | `0.0.0.0:42069` | The address (host:port) to bind the server to.        |
-| `--cors-allowed-origins` | `CORS_ALLOWED_ORIGINS` | \*          | -               | Comma separated list of origins allowed to connect.   |
-| `--cors-allowed-headers` | `CORS_ALLOWED_HEADERS` | \*          | -               | Comma separated list of accepted headers.             |
-| `--cookie-domain`        | `COOKIE_DOMAIN`        | \*          | `localhost`     | Which domain to set on cookies.                       |
-| `--qdrant-url`           | `QDRANT_URL`           | `qdrant`    | -               | Qdrant vector database URL.                           |
-| `--weaviate-url`         | `WEAVIATE_URL`         | `weaviate`  | -               | Weaviate vector database URL.                         |
-| `--fembed-url`           | `FEMBED_URL`           | `fe-remote` | -               | Remote fastembed URL.                                 |
-| -                        | `OPENAI_KEY`           | `openai`    | -               | OpenAI API key.                                       |
+| Arg                      | Env                    | Feature  | Default         | Description                                         |
+| ------------------------ | ---------------------- | -------- | --------------- | --------------------------------------------------- |
+| `--db-url`               | `DATABASE_URL`         | \*       | -               | The database URL.                                   |
+| `--log`                  | `RUST_LOG`             | \*       | `info`          | The `RUST_LOG` env filter string to use.            |
+| `--upload-path`          | `UPLOAD_PATH`          | \*       | `./upload`      | Sets the upload path of the local storage.          |
+| `--address`              | `ADDRESS`              | \*       | `0.0.0.0:42069` | The address (host:port) to bind the server to.      |
+| `--cors-allowed-origins` | `CORS_ALLOWED_ORIGINS` | \*       | -               | Comma separated list of origins allowed to connect. |
+| `--cors-allowed-headers` | `CORS_ALLOWED_HEADERS` | \*       | -               | Comma separated list of accepted headers.           |
+| `--cookie-domain`        | `COOKIE_DOMAIN`        | \*       | `localhost`     | Which domain to set on cookies.                     |
+| -                        | `OPENAI_KEY`           | `openai` | -               | OpenAI API key.                                     |
 
 The arguments have priority over the environment variables.
 See `RUST_LOG` syntax [here](https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html#configure-logging).
@@ -286,62 +315,29 @@ See [Authorization](#authorization) for more information about authz specific ar
 
 ## Authorization
 
-By default, Chonkit does not use any authentication mechanisms. This is
-fine for local deployments, but is problematic when chonkit is exposed to
-the outside world. The following is a list of supported authorization mechanisms.
+### JWT authorization
 
-### Vault JWT authorization
+#### Feature
 
-**Feature**: `auth-vault`
+`auth-jwt`
 
-### Required variables
+#### Required args
 
-| Arg                 | Env               | Description                                                               |
-| ------------------- | ----------------- | ------------------------------------------------------------------------- |
-| `--vault-url`       | `VAULT_URL`       | The endpoint of the vault server.                                         |
-| `--vault-role-id`   | `VAULT_ROLE_ID`   | Role ID for the application. Used to log in and obtain an access token.   |
-| `--vault-secret-id` | `VAULT_SECRET_ID` | Secret ID for the application. Used to log in and obtain an access token. |
-| `--vault-key-name`  | `VAULT_KEY_NAME`  | Name of the key to use for verifying signatures.                          |
+| Arg               | Env             | Default | Description            |
+| ----------------- | --------------- | ------- | ---------------------- |
+| `--jwt-issuer`    | `JWT_ISSUER`    | -       | The issuer of the JWT. |
+| `--jwks-endpoint` | `JWKS_ENDPOINT` | -       | The JWKs endpoint.     |
 
-### Description
+#### Description
 
-Chonkit can be configured to hook up to Hashicorp's [Vault](https://www.vaultproject.io/)
-with [approle](https://developer.hashicorp.com/vault/docs/auth/approle) authentication.
-If enabled, at the start of the application Chonkit will log in to the vault and
-middleware will be registered on all routes. The middleware will check for the
-existence of a token in the following request parameters:
+Chonkit supports standard OAuth 2.0 + OIDC authorization. It uses [jwtk](https://github.com/blckngm/jwtk) to verify tokens with their associated public keys via the
+JWKs endpoint.
 
-- A cookie with the name `chonkit_access_token` (for web clients).
-  If using this, the web frontend must be deployed on the same domain as Chonkit.
-- `Authorization` request header (Bearer) (for API clients).
+Along with the signature, the following claims are validated:
 
-The token is expected to be a valid JWT signed by Vault's
-[transit engine](https://developer.hashicorp.com/vault/docs/secrets/transit).
-The JWT must contain the version of the key used to sign it, specified by the
-`version` claim.
-
-**The signature must have the `vault:vN:` prefix stripped,
-Chonkit will add it when verifying using the `version` claim.**
-
-If the signature is valid, additional claims are checked to ensure the
-validity of the token ( expiration, audience, etc.).
-Specifically, it checks for the following claims:
-
-- `aud == chonkit`
-- `exp > now`
-
-To summarize:
-
-1. An authorization server, i.e. an endpoint that generates JWTs intended to be used
-   by Chonkit is set up on the same Vault as Chonkit.
-
-2. An application that intends to use Chonkit obtains the access token.
-
-3. The authorization server uses the [sign](https://developer.hashicorp.com/vault/api-docs/secret/transit#sign-data) endpoint
-   to generate a signature for a JWT payload and constructs the JWT with it.
-
-4. Chonkit uses the [verify](https://developer.hashicorp.com/vault/api-docs/secret/transit#verify-signed-data) endpoint
-   to verify the token signature on the same Vault mount the data was signed.
+- `iss`: Has to be equal to the `JWT_ISSUER` starting argument.
+- `entitlements`: Must contain the `admin` application entitlement.
+- `groups`: Must contain the `ragu_admins` group.
 
 ## OpenAPI documentation
 
