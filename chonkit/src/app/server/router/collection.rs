@@ -2,7 +2,7 @@ use crate::{
     app::  state::AppState , core::{
          model::{
             collection::{Collection, CollectionDisplay, CollectionSearchColumn},  List, PaginationSort
-        }, service:: vector::dto::{CreateCollectionPayload, SearchPayload }
+        }, service:: vector::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload }
     },  error::ChonkitError, map_err
 };
 use axum::{
@@ -149,7 +149,7 @@ pub(super) async fn delete_collection(
 pub(super) async fn search(
     State(state): State<AppState>,
     Json(search): Json<SearchPayload>,
-) -> Result<Json<Vec<String>>, ChonkitError> {
+) -> Result<Json<CollectionSearchResult>, ChonkitError> {
     let chunks = state.services.collection.search(search).await?;
     Ok(Json(chunks))
 }

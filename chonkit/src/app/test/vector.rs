@@ -272,16 +272,15 @@ mod vector_service_integration_tests {
 
             let search = SearchPayload {
                 query: content.to_string(),
-                collection_id: Some(collection.id),
+                collection_id: collection.id,
                 limit: Some(1),
-                collection_name: None,
-                provider: None,
+                max_distance: None,
             };
 
             let results = services.collection.search(search).await.unwrap();
 
-            assert_eq!(1, results.len());
-            assert_eq!(content, results[0]);
+            assert_eq!(1, results.items.len());
+            assert_eq!(content, results.items[0].content);
 
             let embeddings = postgres
                 .get_embeddings_by_name(document.id, &collection_name, vector_db.id())

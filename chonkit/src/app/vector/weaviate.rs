@@ -1,15 +1,15 @@
 use crate::config::WEAVIATE_ID;
 use crate::core::provider::Identity;
 use crate::core::vector::{
-    CreateVectorCollection, VectorCollection, VectorDb, COLLECTION_EMBEDDING_MODEL_PROPERTY,
-    COLLECTION_EMBEDDING_PROVIDER_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
-    COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
+    CollectionSearchItem, CreateVectorCollection, VectorCollection, VectorDb,
+    COLLECTION_EMBEDDING_MODEL_PROPERTY, COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
+    COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY, COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY,
+    DOCUMENT_ID_PROPERTY,
 };
 use crate::{err, error::ChonkitError, map_err};
 use dto::{QueryResult, WeaviateError};
 use serde_json::json;
 use std::sync::Arc;
-use tracing::info;
 use uuid::Uuid;
 use weaviate_community::{
     collections::{
@@ -26,7 +26,7 @@ use weaviate_community::{
 pub type WeaviateDb = Arc<WeaviateClient>;
 
 pub fn init(url: &str) -> WeaviateDb {
-    info!("Connecting to weaviate at {url}");
+    tracing::info!("Connecting to weaviate at {url}");
     Arc::new(WeaviateClient::new(url, None, None).expect("error initialising weaviate"))
 }
 
@@ -118,12 +118,14 @@ impl VectorDb for WeaviateClient {
         search: Vec<f64>,
         collection: &str,
         limit: u32,
-    ) -> Result<Vec<String>, ChonkitError> {
-        // God help us all
+        max_distance: Option<f64>,
+    ) -> Result<Vec<CollectionSearchItem>, ChonkitError> {
+        tracing::debug!("weaviate - querying collection '{collection}' (limit: {limit}, max_distance: {max_distance:?})");
         let near_vector = &format!("{{ vector: {search:?} }}");
         let query = GetQuery::builder(collection, vec![CONTENT_PROPERTY])
             .with_near_vector(near_vector)
             .with_limit(limit)
+            .with_additional(vec!["distance"])
             .build();
 
         let response = match self.query.get(query).await {
@@ -132,7 +134,7 @@ impl VectorDb for WeaviateClient {
         };
 
         if response["data"].is_null() {
-            tracing::warn!("Weaviate query is missing 'data' field; response: {response:?}");
+            tracing::warn!("weaviate - query is missing 'data' field; response: {response:?}");
             let error = map_err!(serde_json::from_value::<WeaviateError>(response));
             return err!(
                 Weaviate,
@@ -158,14 +160,49 @@ impl VectorDb for WeaviateClient {
 
         let results = map_err!(serde_json::from_value::<Vec<serde_json::Value>>(
             results.clone()
-        ))
-        .into_iter()
-        .filter_map(|obj| obj.get(CONTENT_PROPERTY).cloned())
-        .map(serde_json::from_value::<String>)
-        .filter_map(Result::ok)
-        .collect();
+        ));
 
-        Ok(results)
+        tracing::debug!("weaviate - successful query ({} results)", results.len());
+
+        Ok(results
+            .into_iter()
+            .filter_map(|obj| {
+                let content = obj.get(CONTENT_PROPERTY).cloned()?.to_string();
+
+                let Some(max_distance) = max_distance else {
+                    return Some(CollectionSearchItem {
+                        content,
+                        distance: None,
+                    });
+                };
+
+                let Some(distance) = obj.get("_additional") else {
+                    return Some(CollectionSearchItem {
+                        content,
+                        distance: None,
+                    });
+                };
+
+                // If the max_distance is specified, but there is no distance in the result,
+                // return None
+
+                let distance = distance.get("distance")?.as_f64()?;
+
+                if distance <= max_distance {
+                    Some(CollectionSearchItem {
+                        content,
+                        distance: Some(distance),
+                    })
+                } else {
+                    tracing::debug!(
+                        "weaviate - skipping chunk due to distance ({} > {})",
+                        distance,
+                        max_distance
+                    );
+                    None
+                }
+            })
+            .collect())
     }
 
     async fn insert_embeddings(

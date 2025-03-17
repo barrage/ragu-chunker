@@ -56,10 +56,10 @@ use crate::{
         service::{
             document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
             embedding::{EmbedSingleInput, ListEmbeddingReportsParams},
-            vector::dto::{CreateCollectionPayload, SearchPayload},
+            vector::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload},
         },
         token::TokenCount,
-        vector::VectorCollection,
+        vector::{CollectionSearchItem, VectorCollection},
     },
 };
 use utoipa::OpenApi;
@@ -129,6 +129,8 @@ use utoipa::OpenApi;
         ChunkPreviewPayload,
         ParseConfig,
         CreateCollectionPayload,
+        CollectionSearchResult,
+        CollectionSearchItem,
         SearchPayload,
         Embedding,
         Collection,

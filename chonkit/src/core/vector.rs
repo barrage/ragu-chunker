@@ -109,6 +109,12 @@ impl<'a> CreateVectorCollection<'a> {
     }
 }
 
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct CollectionSearchItem {
+    pub content: String,
+    pub distance: Option<f64>,
+}
+
 /// Vector database operations.
 #[async_trait::async_trait]
 pub trait VectorDb: Identity {
@@ -158,7 +164,8 @@ pub trait VectorDb: Identity {
         search: Vec<f64>,
         collection: &str,
         limit: u32,
-    ) -> Result<Vec<String>, ChonkitError>;
+        max_distance: Option<f64>,
+    ) -> Result<Vec<CollectionSearchItem>, ChonkitError>;
 
     /// Store the contents and their vectors to the vector storage.
     /// The `contents` and `vectors` inputs are expected to

@@ -151,19 +151,13 @@ impl CollectionService {
     /// Limit defaults to 5.
     ///
     /// * `input`: Search params.
-    pub async fn search(&self, mut search: SearchPayload) -> Result<Vec<String>, ChonkitError> {
-        map_err!(search.validify());
+    pub async fn search(
+        &self,
+        search: SearchPayload,
+    ) -> Result<dto::CollectionSearchResult, ChonkitError> {
+        map_err!(search.validate());
 
-        let collection = if let Some(collection_id) = search.collection_id {
-            self.get_collection(collection_id).await?
-        } else {
-            let (Some(name), Some(provider)) = (&search.collection_name, &search.provider) else {
-                // Cannot happen because of above validify
-                unreachable!("not properly validated");
-            };
-
-            self.get_collection_by_name(name, provider).await?
-        };
+        let collection = self.get_collection(search.collection_id).await?;
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
         let embedder = self
@@ -175,23 +169,31 @@ impl CollectionService {
 
         debug_assert_eq!(1, embeddings.embeddings.len());
 
-        vector_db
+        let chunks = vector_db
             .query(
                 std::mem::take(&mut embeddings.embeddings[0]),
                 &collection.name,
                 search.limit.unwrap_or(5),
+                search.max_distance,
             )
-            .await
+            .await?;
+
+        tracing::debug!("search - successful query ({} results)", chunks.len());
+
+        Ok(dto::CollectionSearchResult {
+            query: search.query,
+            items: chunks,
+        })
     }
 }
 
 pub mod dto {
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use utoipa::ToSchema;
     use uuid::Uuid;
-    use validify::{
-        field_err, schema_err, schema_validation, ValidationError, ValidationErrors, Validify,
-    };
+    use validify::{field_err, Validate, ValidationError, Validify};
+
+    use crate::core::vector::CollectionSearchItem;
 
     fn ascii_alphanumeric_underscored(s: &str) -> Result<(), ValidationError> {
         if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
@@ -238,55 +240,33 @@ pub mod dto {
     }
 
     /// Params for semantic search.
-    #[derive(Debug, Deserialize, Validify, ToSchema)]
+    #[derive(Debug, Deserialize, Validate, ToSchema)]
     #[serde(rename_all = "camelCase")]
-    #[validate(Self::validate_schema)]
     pub struct SearchPayload {
         /// The text to search by.
-        #[modify(trim)]
+        #[validate(length(min = 1))]
         pub query: String,
 
         /// The collection to search in. Has priority over
         /// everything else.
-        pub collection_id: Option<Uuid>,
-
-        /// If given search via the name and provider combo.
-        #[validate(length(min = 1))]
-        #[modify(trim)]
-        pub collection_name: Option<String>,
-
-        /// Vector provider.
-        pub provider: Option<String>,
+        pub collection_id: Uuid,
 
         /// Amount of results to return.
         #[validate(range(min = 1.))]
         pub limit: Option<u32>,
+
+        /// The similarity threshold for vector retrieval, between 0 and 2. Any similiarity
+        /// below this value will be excluded.
+        /// A similarity of 0 means the vectors are identical, a similarity of 2 means they are
+        /// opposite.
+        #[validate(range(min = 0., max = 2.))]
+        pub max_distance: Option<f64>,
     }
 
-    impl SearchPayload {
-        #[schema_validation]
-        fn validate_schema(&self) -> Result<(), ValidationErrors> {
-            let SearchPayload {
-                collection_id,
-                collection_name,
-                provider,
-                ..
-            } = self;
-            match (collection_id, collection_name, provider) {
-                (None, None, None) => {
-                    schema_err!(
-                        "either_id_or_name_and_provider",
-                        "one of either `collection_id`, or `provider` and `collection_name` combination must be set"
-                    );
-                }
-                (None, Some(_), None) | (None, None, Some(_)) => {
-                    schema_err!(
-                    "name_and_provider",
-                    "both 'collection_name'and 'provider' must be set if `collection_id` is not set"
-                );
-                }
-                _ => {}
-            }
-        }
+    #[derive(Debug, Serialize, ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct CollectionSearchResult {
+        pub query: String,
+        pub items: Vec<CollectionSearchItem>,
     }
 }

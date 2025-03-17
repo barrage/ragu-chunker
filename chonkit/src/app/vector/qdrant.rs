@@ -1,9 +1,10 @@
 use crate::config::QDRANT_ID;
 use crate::core::provider::Identity;
 use crate::core::vector::{
-    CreateVectorCollection, VectorCollection, VectorDb, COLLECTION_EMBEDDING_MODEL_PROPERTY,
-    COLLECTION_EMBEDDING_PROVIDER_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
-    COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
+    CollectionSearchItem, CreateVectorCollection, VectorCollection, VectorDb,
+    COLLECTION_EMBEDDING_MODEL_PROPERTY, COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
+    COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY, COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY,
+    DOCUMENT_ID_PROPERTY,
 };
 use crate::error::{ChonkitErr, ChonkitError};
 use crate::{err, map_err};
@@ -144,7 +145,8 @@ impl VectorDb for Qdrant {
         search: Vec<f64>,
         collection: &str,
         limit: u32,
-    ) -> Result<Vec<String>, ChonkitError> {
+        max_distance: Option<f64>,
+    ) -> Result<Vec<CollectionSearchItem>, ChonkitError> {
         let search_points = SearchPoints {
             collection_name: collection.to_string(),
             vector: search.into_iter().map(|x| x as f32).collect(),
@@ -154,6 +156,7 @@ impl VectorDb for Qdrant {
                 selector_options: Some(SelectorOptions::Enable(true)),
             }),
             params: Some(SearchParams::default()),
+            score_threshold: max_distance.map(|x| x as f32),
             ..Default::default()
         };
 
@@ -162,12 +165,17 @@ impl VectorDb for Qdrant {
         let results = search_result
             .result
             .into_iter()
-            .filter_map(|mut point| point.payload.remove(CONTENT_PROPERTY)?.kind)
-            .filter_map(|value| match value {
-                value::Kind::StringValue(s) => Some(s),
-                v => {
-                    warn!("Found unsupported value kind: {v:?}");
-                    None
+            .filter_map(|mut point| {
+                let content = point.payload.remove(CONTENT_PROPERTY)?.kind?;
+                match content {
+                    value::Kind::StringValue(s) => Some(CollectionSearchItem {
+                        content: s,
+                        distance: None,
+                    }),
+                    v => {
+                        warn!("Found unsupported value kind: {v:?}");
+                        None
+                    }
                 }
             })
             .collect();
