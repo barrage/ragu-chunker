@@ -224,6 +224,7 @@ mod document_service_integration_tests {
                     model: embedder.default_model().0,
                     vector_provider: vector_db.id().to_string(),
                     embedding_provider: embedder.id().to_string(),
+                    groups: None,
                 };
 
                 let collection_2 = CreateCollectionPayload {
@@ -231,6 +232,7 @@ mod document_service_integration_tests {
                     model: embedder.default_model().0,
                     vector_provider: vector_db.id().to_string(),
                     embedding_provider: embedder.id().to_string(),
+                    groups: None,
                 };
 
                 let collection_1 = state

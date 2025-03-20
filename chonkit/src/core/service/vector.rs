@@ -99,6 +99,7 @@ impl CollectionService {
             model,
             vector_provider,
             embedding_provider,
+            groups,
         } = data;
 
         let vector_db = self.providers.vector.get_provider(&vector_provider)?;
@@ -124,6 +125,7 @@ impl CollectionService {
                 size,
                 &embedding_provider,
                 &model,
+                groups,
             );
 
             vector_db.create_vector_collection(data).await?;
@@ -237,6 +239,10 @@ pub mod dto {
 
         /// Embeddings provider.
         pub embedding_provider: String,
+
+        /// Optional collection groups that indicate which user groups can use it.
+        #[validate(length(min = 1))]
+        pub groups: Option<Vec<String>>,
     }
 
     /// Params for semantic search.

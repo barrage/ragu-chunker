@@ -14,6 +14,7 @@ impl Default for CreateVectorCollection<'static> {
             size: DEFAULT_COLLECTION_SIZE,
             embedding_provider: DEFAULT_COLLECTION_EMBEDDING_PROVIDER,
             embedding_model: DEFAULT_COLLECTION_EMBEDDING_MODEL,
+            groups: None,
         }
     }
 }

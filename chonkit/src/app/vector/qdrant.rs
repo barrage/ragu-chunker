@@ -3,8 +3,8 @@ use crate::core::provider::Identity;
 use crate::core::vector::{
     CollectionSearchItem, CreateVectorCollection, VectorCollection, VectorDb,
     COLLECTION_EMBEDDING_MODEL_PROPERTY, COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
-    COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY, COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY,
-    DOCUMENT_ID_PROPERTY,
+    COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
+    COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
 };
 use crate::error::{ChonkitErr, ChonkitError};
 use crate::{err, map_err};
@@ -401,12 +401,32 @@ impl VectorCollection {
             }
         };
 
+        let mut groups: Option<Vec<String>> = None;
+        if let Some(_groups) = map.get(COLLECTION_GROUPS_PROPERTY) {
+            if let Some(value::Kind::ListValue(ref _groups)) = _groups.kind {
+                let _groups = _groups
+                    .values
+                    .iter()
+                    .filter_map(|v| match v.kind {
+                        Some(value::Kind::StringValue(ref s)) => Some(s.to_owned()),
+                        ref v => {
+                            warn!("Found unsupported value kind in 'groups' property: {v:?}");
+                            None
+                        }
+                    })
+                    .collect::<Vec<String>>();
+
+                groups = Some(_groups)
+            }
+        }
+
         Some(VectorCollection::new(
             id,
             name.to_string(),
             *size as usize,
             embedding_provider.to_string(),
             embedding_model.to_string(),
+            groups,
         ))
     }
 }
@@ -459,7 +479,8 @@ mod qdrant_tests {
         let name = "My_collection_0";
         let id = Uuid::new_v4();
 
-        let data = CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002");
+        let data =
+            CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002", None);
 
         qdrant.create_vector_collection(data).await.unwrap();
 

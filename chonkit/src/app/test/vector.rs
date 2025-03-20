@@ -50,6 +50,7 @@ mod vector_service_integration_tests {
                 model: embedder.default_model().0,
                 vector_provider: provider.to_string(),
                 embedding_provider: embedder.id().to_string(),
+                groups: None,
             };
 
             test_state
@@ -140,6 +141,7 @@ mod vector_service_integration_tests {
                 name: name.to_string(),
                 vector_provider: vector_db.id().to_string(),
                 embedding_provider: embedder.id().to_string(),
+                groups: None,
             };
 
             let collection = service.create_collection(params).await.unwrap();
@@ -178,6 +180,7 @@ mod vector_service_integration_tests {
                 name: name.to_string(),
                 vector_provider: vector_db.id().to_string(),
                 embedding_provider: embedder.id().to_string(),
+                groups: None,
             };
 
             let result = service.create_collection(params).await;
@@ -207,6 +210,7 @@ mod vector_service_integration_tests {
                 name: collection_name,
                 vector_provider: vector_db.id().to_string(),
                 embedding_provider: embedder.id().to_string(),
+                groups: None,
             };
 
             let result = service.create_collection(params).await;
@@ -238,7 +242,7 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let content = r#"Hello World!"#;
+            let content = "Hello World!";
 
             let document = services
                 .document
@@ -329,6 +333,7 @@ mod vector_service_integration_tests {
                     model: embedder.default_model().0,
                     vector_provider: vector_db.id().to_string(),
                     embedding_provider: embedder.id().to_string(),
+                    groups: None,
                 })
                 .await
                 .unwrap();

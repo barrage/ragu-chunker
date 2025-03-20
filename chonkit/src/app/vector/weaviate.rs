@@ -3,8 +3,8 @@ use crate::core::provider::Identity;
 use crate::core::vector::{
     CollectionSearchItem, CreateVectorCollection, VectorCollection, VectorDb,
     COLLECTION_EMBEDDING_MODEL_PROPERTY, COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
-    COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY, COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY,
-    DOCUMENT_ID_PROPERTY,
+    COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
+    COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
 };
 use crate::{err, error::ChonkitError, map_err};
 use dto::{QueryResult, WeaviateError};
@@ -324,28 +324,46 @@ impl VectorDb for WeaviateClient {
 
 /// Create properties for a collection (weaviate class).
 fn create_collection_properties(data: CreateVectorCollection<'_>) -> Properties {
+    let mut properties = vec![];
     let id = PropertyBuilder::new(COLLECTION_ID_PROPERTY, vec!["text"])
         .with_description(&data.collection_id.to_string())
         .build();
+
+    properties.push(id);
 
     let size = PropertyBuilder::new(COLLECTION_SIZE_PROPERTY, vec!["int"])
         .with_description(&data.size.to_string())
         .build();
 
+    properties.push(size);
+
     let name = PropertyBuilder::new(COLLECTION_NAME_PROPERTY, vec!["text"])
         .with_description(data.name)
         .build();
+
+    properties.push(name);
 
     let embedding_provider =
         PropertyBuilder::new(COLLECTION_EMBEDDING_PROVIDER_PROPERTY, vec!["text"])
             .with_description(data.embedding_provider)
             .build();
 
+    properties.push(embedding_provider);
+
     let embedding_model = PropertyBuilder::new(COLLECTION_EMBEDDING_MODEL_PROPERTY, vec!["text"])
         .with_description(data.embedding_model)
         .build();
 
-    Properties::new(vec![id, size, name, embedding_provider, embedding_model])
+    properties.push(embedding_model);
+
+    if let Some(groups) = data.groups {
+        let groups = PropertyBuilder::new(COLLECTION_GROUPS_PROPERTY, vec!["text[]"])
+            .with_description(&json!(groups).to_string())
+            .build();
+        properties.push(groups);
+    }
+
+    Properties::new(properties)
 }
 
 /// Attempt to parse Weaviate GraphQL data to a [dto::WeaviateError].
@@ -414,6 +432,12 @@ impl TryFrom<Class> for VectorCollection {
                     };
                     let id = map_err!(id.parse::<Uuid>());
                     v_collection = v_collection.with_id(id);
+                }
+                COLLECTION_GROUPS_PROPERTY => {
+                    if let Some(groups) = prop.description {
+                        let groups = map_err!(serde_json::from_str(&groups));
+                        v_collection = v_collection.with_groups(groups);
+                    }
                 }
                 _ => continue,
             }
@@ -507,8 +531,16 @@ mod weaviate_tests {
     async fn creates_collection(weaver: WeaviateDb) {
         let name = "My_collection_0";
         let id = Uuid::new_v4();
+        let groups = vec!["admin".to_string(), "user".to_string()];
 
-        let data = CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002");
+        let data = CreateVectorCollection::new(
+            id,
+            name,
+            420,
+            "openai",
+            "text-embedding-ada-002",
+            Some(groups.clone()),
+        );
 
         weaver.create_vector_collection(data).await.unwrap();
 
@@ -517,6 +549,7 @@ mod weaviate_tests {
         assert_eq!(id, collection.id);
         assert_eq!(name, collection.name);
         assert_eq!(420, collection.size);
+        assert_eq!(groups, collection.groups.unwrap());
         assert_eq!("openai", collection.embedding_provider);
         assert_eq!("text-embedding-ada-002", collection.embedding_model);
     }
