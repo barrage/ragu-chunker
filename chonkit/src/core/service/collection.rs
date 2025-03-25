@@ -149,6 +149,60 @@ impl CollectionService {
         Ok(count)
     }
 
+    /// Sync the collections in the repository with the ones in the vector DB.
+    pub async fn sync(&self) -> Result<(), ChonkitError> {
+        tracing::info!("Starting collection sync");
+
+        for provider in self.providers.vector.list_provider_ids() {
+            let v_provider = self.providers.vector.get_provider(provider)?;
+
+            let collections = self
+                .repo
+                .list_collections(PaginationSort::default())
+                .await?;
+
+            for collection in collections {
+                if let Err(e) = v_provider.get_collection(&collection.name).await {
+                    tracing::error!("Error getting collection: {e}");
+                    tracing::debug!("Deleting collection '{}' from database", collection.name);
+                    self.repo.delete_collection(collection.id).await?;
+                };
+            }
+
+            let v_collections = v_provider.list_vector_collections().await;
+
+            for v_collection in v_collections {
+                match v_collection {
+                    Ok(v_collection) => {
+                        let collection = self
+                            .repo
+                            .get_collection_by_name(&v_collection.name, provider)
+                            .await?;
+
+                        if collection.is_none() {
+                            tracing::info!(
+                                "Inserting collection '{}' to database",
+                                v_collection.name
+                            );
+                            let collection = CollectionInsert::new(
+                                &v_collection.name,
+                                &v_collection.embedding_model,
+                                &v_collection.embedding_provider,
+                                v_provider.id(),
+                            );
+                            self.repo.insert_collection(collection, None).await?;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Skipping collection: {e}");
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Query the vector database (semantic search).
     /// Limit defaults to 5.
     ///

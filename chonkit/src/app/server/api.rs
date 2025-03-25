@@ -24,8 +24,11 @@ use super::router::{
         __path_delete_collection,
         __path_search, 
         __path_list_collections_display,
-        __path_collection_display
+        __path_collection_display,
+        __path_sync as __path_collection_sync,
     },
+
+    // Embeddings
     embedding::{
         __path_count_embeddings,
         __path_delete_embeddings,
@@ -88,6 +91,7 @@ use utoipa::OpenApi;
         list_collections_display,
         collection_display,
         search,
+        collection_sync,
 
         // Embeddings
         list_embedding_models,

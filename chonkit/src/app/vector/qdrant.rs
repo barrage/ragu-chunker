@@ -6,7 +6,7 @@ use crate::core::vector::{
     COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
     COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
 };
-use crate::error::ChonkitError;
+use crate::error::{ChonkitErr, ChonkitError};
 use crate::{err, map_err};
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::with_payload_selector::SelectorOptions;
@@ -49,25 +49,47 @@ impl Identity for Qdrant {
 
 #[async_trait::async_trait]
 impl VectorDb for Qdrant {
-    async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError> {
-        let collection_names = map_err!(self.list_collections().await)
-            .collections
-            .into_iter()
-            .map(|col| col.name)
-            .collect::<Vec<_>>();
+    async fn list_vector_collections(&self) -> Vec<Result<VectorCollection, ChonkitError>> {
+        let collection_names = match self.list_collections().await {
+            Ok(collections) => collections
+                .collections
+                .into_iter()
+                .map(|col| col.name)
+                .collect::<Vec<_>>(),
 
-        let mut collections = vec![];
+            Err(e) => {
+                tracing::error!("Failed to list collections: {e}");
+                return vec![];
+            }
+        };
+
+        let mut results = vec![];
 
         for name in collection_names {
-            let info = map_err!(self.collection_info(&name).await);
-            let size = get_collection_size(&info);
-            if let Some(size) = size {
-                let info = get_id_vector(self, &name, size).await?;
-                collections.push(info);
-            }
+            match self.collection_info(&name).await {
+                Ok(info) => {
+                    let Some(size) = get_collection_size(&info) else {
+                        tracing::error!("Failed to get collection size: {info:?}");
+                        results.push(err!(Qdrant, "{name}"));
+                        continue;
+                    };
+
+                    match get_id_vector(self, &name, size).await {
+                        Ok(info) => results.push(Ok(info)),
+                        Err(e) => {
+                            tracing::error!("Failed to get collection info: {e}");
+                            results.push(err!(Qdrant, "{name}"));
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to get collection info: {e}");
+                    results.push(err!(Qdrant, "{name}"));
+                }
+            };
         }
 
-        Ok(collections)
+        results
     }
 
     async fn create_vector_collection(

@@ -153,3 +153,18 @@ pub(super) async fn search(
     let chunks = state.services.collection.search(search).await?;
     Ok(Json(chunks))
 }
+
+#[utoipa::path(
+    post,
+    path = "/sync", 
+    responses(
+        (status = 204, description = "Collections synced successfully"),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub(super) async fn sync(
+    State(state): State<AppState>,
+) -> Result<StatusCode, ChonkitError> {
+    state.services.collection.sync().await?;
+    Ok(StatusCode::NO_CONTENT)
+}

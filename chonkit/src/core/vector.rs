@@ -145,7 +145,9 @@ pub struct CollectionSearchItem {
 #[async_trait::async_trait]
 pub trait VectorDb: Identity {
     /// List available vector collections.
-    async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError>;
+    /// Returns a list of results whose errors indicate that a collection
+    /// is not compatible with the current data structures.
+    async fn list_vector_collections(&self) -> Vec<Result<VectorCollection, ChonkitError>>;
 
     /// Create a vector collection.
     ///

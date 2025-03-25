@@ -104,7 +104,7 @@ impl Pagination {
 impl Default for Pagination {
     fn default() -> Self {
         Self {
-            per_page: 10,
+            per_page: i64::MAX as usize,
             page: 1,
         }
     }
@@ -183,8 +183,8 @@ impl<T> Default for PaginationSort<T> {
     fn default() -> Self {
         Self {
             pagination: Some(Pagination::default()),
-            sort_by: Some("updated_at".to_string()),
-            sort_dir: Some(SortDirection::Desc),
+            sort_by: None,
+            sort_dir: None,
             search: None,
         }
     }

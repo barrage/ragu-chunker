@@ -16,9 +16,9 @@ pub struct Collection {
     pub name: String,
     /// Embedding model used for the collection.
     pub model: String,
-    /// Embedder provider ID.
+    /// Embedding provider ID.
     pub embedder: String,
-    /// Vector database provider.
+    /// Vector database provider ID.
     pub provider: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

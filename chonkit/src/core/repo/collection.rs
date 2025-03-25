@@ -275,6 +275,7 @@ impl Repository {
         )))
     }
 
+    /// Get a collection by its unique name and vector database provider combo.
     pub async fn get_collection_by_name(
         &self,
         name: &str,

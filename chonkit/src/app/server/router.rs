@@ -91,6 +91,7 @@ pub fn router(state: AppState) -> Router {
             "/collections/:collection_id/documents/:document_id/count",
             get(embedding::count_embeddings),
         )
+        .route("/collections/sync", post(collection::sync))
         .route(
             "/embeddings/reports",
             get(embedding::list_embedding_reports),

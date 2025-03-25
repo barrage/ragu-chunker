@@ -38,22 +38,28 @@ impl Identity for WeaviateClient {
 
 #[async_trait::async_trait]
 impl VectorDb for WeaviateClient {
-    async fn list_vector_collections(&self) -> Result<Vec<VectorCollection>, ChonkitError> {
+    async fn list_vector_collections(&self) -> Vec<Result<VectorCollection, ChonkitError>> {
+        let mut results = vec![];
+
         let classes = match self.schema.get().await {
             Ok(classes) => classes,
-            Err(e) => return err!(Weaviate, "{}", e),
+            Err(e) => {
+                tracing::error!("error getting classes: {}", e);
+                return results;
+            }
         };
 
-        let mut collections = vec![];
-
         for class in classes.classes {
-            let Ok(v_collection) = get_id_vector(self, &class.class).await else {
-                continue;
+            match get_id_vector(self, &class.class).await {
+                Ok(c) => results.push(Ok(c)),
+                Err(e) => {
+                    tracing::error!("error getting identity vector: {}", e);
+                    results.push(err!(Weaviate, "{}", class.class));
+                }
             };
-            collections.push(v_collection);
         }
 
-        Ok(collections)
+        results
     }
 
     async fn create_vector_collection(
@@ -87,9 +93,7 @@ impl VectorDb for WeaviateClient {
             return err!(Weaviate, "{e}");
         };
 
-        let mut collection = get_id_vector(self, collection).await?;
-
-        collection.groups = Some(groups);
+        let collection = get_id_vector(self, collection).await?.with_groups(groups);
 
         if let Err(e) = upsert_id_vector(self, (&collection).into()).await {
             tracing::error!("error upserting identity vector: {}", e);
@@ -100,13 +104,9 @@ impl VectorDb for WeaviateClient {
     }
 
     async fn get_collection(&self, name: &str) -> Result<VectorCollection, ChonkitError> {
-        let class = match self.schema.get_class(name).await {
-            Ok(class) => class,
-            Err(e) => return err!(Weaviate, "{e}"),
+        if let Err(e) = self.schema.get_class(name).await {
+            return err!(Weaviate, "{e}");
         };
-
-        debug_assert_eq!(class.class, name);
-
         get_id_vector(self, name).await
     }
 

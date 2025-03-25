@@ -87,10 +87,14 @@ pub enum ChonkitErr {
 
     #[cfg(feature = "qdrant")]
     #[error("Qdrant; {0}")]
-    Qdrant(#[from] QdrantError),
+    QdrantDb(#[from] QdrantError),
+
+    #[cfg(feature = "qdrant")]
+    #[error("{0}")]
+    Qdrant(String),
 
     #[cfg(feature = "weaviate")]
-    #[error("Weaviate; {0}")]
+    #[error("{0}")]
     Weaviate(String),
 
     #[error("Axum; {0}")]
