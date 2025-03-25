@@ -235,7 +235,7 @@ pub async fn init_qdrant() -> (
 ) {
     use testcontainers::core::{IntoContainerPort, WaitFor};
 
-    let qd_image = GenericImage::new("qdrant/qdrant", "latest")
+    let qd_image = GenericImage::new("qdrant/qdrant", "v1.13.5")
         .with_exposed_port(6334.tcp())
         .with_wait_for(WaitFor::message_on_stdout("gRPC listening on"))
         .start()

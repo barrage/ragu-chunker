@@ -23,7 +23,7 @@ services:
       ["redis-server", "--requirepass", "password", "--appendonly", "yes"]
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: "qdrant/qdrant:v1.13.5"
     container_name: qdrant
     ports:
       - "6333:6333"
