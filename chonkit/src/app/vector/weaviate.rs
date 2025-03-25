@@ -11,13 +11,13 @@ use dto::{QueryResult, WeaviateError};
 use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
+use weaviate_community::collections::schema::{Properties, PropertyBuilder};
 use weaviate_community::{
     collections::{
         batch::{BatchDeleteRequest, MatchConfig},
-        error::SchemaError,
         objects::{ConsistencyLevel, MultiObjects, Object},
         query::GetQuery,
-        schema::{Class, Properties, PropertyBuilder},
+        schema::Class,
     },
     WeaviateClient,
 };
@@ -47,7 +47,7 @@ impl VectorDb for WeaviateClient {
         let mut collections = vec![];
 
         for class in classes.classes {
-            let Ok(v_collection) = class.try_into() else {
+            let Ok(v_collection) = get_id_vector(self, &class.class).await else {
                 continue;
             };
             collections.push(v_collection);
@@ -61,55 +61,59 @@ impl VectorDb for WeaviateClient {
         data: CreateVectorCollection<'_>,
     ) -> Result<(), ChonkitError> {
         let class = Class::builder(data.name);
-        let props = create_collection_properties(data);
+        let props = create_collection_properties()?;
         let class = class.with_properties(props).build();
 
         if let Err(e) = self.schema.create_class(&class).await {
+            tracing::error!("error creating class: {}", e);
             return err!(Weaviate, "{}", e);
         }
+
+        if let Err(e) = upsert_id_vector(self, data).await {
+            tracing::error!("error creating identity vector: {}", e);
+            return err!(Weaviate, "{}", e);
+        };
+
+        Ok(())
+    }
+
+    async fn update_collection_groups(
+        &self,
+        collection: &str,
+        groups: Vec<String>,
+    ) -> Result<(), ChonkitError> {
+        // Sanity check
+        if let Err(e) = self.schema.get_class(collection).await {
+            return err!(Weaviate, "{e}");
+        };
+
+        let mut collection = get_id_vector(self, collection).await?;
+
+        collection.groups = Some(groups);
+
+        if let Err(e) = upsert_id_vector(self, (&collection).into()).await {
+            tracing::error!("error upserting identity vector: {}", e);
+            return err!(Weaviate, "{}", e);
+        };
 
         Ok(())
     }
 
     async fn get_collection(&self, name: &str) -> Result<VectorCollection, ChonkitError> {
-        match self.schema.get_class(name).await {
-            Ok(class) => class.try_into(),
-            Err(e) => err!(Weaviate, "{}", e),
-        }
+        let class = match self.schema.get_class(name).await {
+            Ok(class) => class,
+            Err(e) => return err!(Weaviate, "{e}"),
+        };
+
+        debug_assert_eq!(class.class, name);
+
+        get_id_vector(self, name).await
     }
 
     async fn delete_vector_collection(&self, name: &str) -> Result<(), ChonkitError> {
         if let Err(e) = self.schema.delete(name).await {
             return err!(Weaviate, "{}", e);
         }
-        Ok(())
-    }
-
-    async fn create_default_collection(
-        &self,
-        data: CreateVectorCollection<'_>,
-    ) -> Result<(), ChonkitError> {
-        let class = Class::builder(data.name);
-        let props = create_collection_properties(data);
-        let class = class
-            .with_description("Default vector collection")
-            .with_properties(props)
-            .build();
-
-        if let Err(e) = self.schema.create_class(&class).await {
-            let Some(err) = e.downcast_ref::<SchemaError>() else {
-                return err!(Weaviate, "{e}");
-            };
-
-            let Some(err) = parse_weaviate_error(&err.0) else {
-                return err!(Weaviate, "{e}");
-            };
-
-            if !err.errors[0].message.contains("already exists") {
-                return err!(Weaviate, "{e}");
-            }
-        };
-
         Ok(())
     }
 
@@ -167,7 +171,14 @@ impl VectorDb for WeaviateClient {
         Ok(results
             .into_iter()
             .filter_map(|obj| {
-                let content = obj.get(CONTENT_PROPERTY).cloned()?.to_string();
+                let content =
+                    match serde_json::from_value::<String>(obj.get(CONTENT_PROPERTY).cloned()?) {
+                        Ok(content) => content,
+                        Err(e) => {
+                            tracing::error!("weaviate - failed to parse content: {e}");
+                            return None;
+                        }
+                    };
 
                 let Some(max_distance) = max_distance else {
                     return Some(CollectionSearchItem {
@@ -236,6 +247,7 @@ impl VectorDb for WeaviateClient {
             .objects_batch_add(objects, Some(ConsistencyLevel::ONE), None)
             .await
         {
+            tracing::error!("error inserting embeddings: {}", e);
             return err!(Weaviate, "{}", e);
         }
 
@@ -262,6 +274,7 @@ impl VectorDb for WeaviateClient {
             .objects_batch_delete(delete, Some(ConsistencyLevel::ALL), None)
             .await
         {
+            tracing::error!("error deleting vectors: {}", e);
             return err!(Weaviate, "{}", e);
         }
 
@@ -322,141 +335,140 @@ impl VectorDb for WeaviateClient {
     }
 }
 
+async fn get_id_vector(
+    weaviate: &WeaviateClient,
+    collection: &str,
+) -> Result<VectorCollection, ChonkitError> {
+    let query = GetQuery::builder(
+        collection,
+        vec![
+            COLLECTION_ID_PROPERTY,
+            COLLECTION_NAME_PROPERTY,
+            COLLECTION_SIZE_PROPERTY,
+            COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
+            COLLECTION_EMBEDDING_MODEL_PROPERTY,
+            COLLECTION_GROUPS_PROPERTY,
+        ],
+    )
+    .with_where(&format!(
+        "{{ path: [\"id\"], operator: Equal, valueText: \"{}\" }}",
+        uuid::Uuid::nil()
+    ))
+    .with_limit(1)
+    .build();
+
+    let response = match weaviate.query.get(query).await {
+        Ok(res) => res,
+        Err(e) => return err!(Weaviate, "{}", e),
+    };
+
+    if response["data"].is_null() {
+        tracing::warn!("weaviate - query is missing 'data' field; response: {response:?}");
+        let error = map_err!(serde_json::from_value::<WeaviateError>(response));
+        return err!(
+            Weaviate,
+            "{}",
+            error
+                .errors
+                .into_iter()
+                .map(|e| e.message)
+                .collect::<Vec<_>>()
+                .join(";")
+        );
+    }
+
+    let result: QueryResult = map_err!(serde_json::from_value(response));
+
+    let Some(results) = result.data.get.get(collection) else {
+        return err!(
+            Weaviate,
+            "Response error - cannot index into '{collection}' in {}",
+            result.data.get
+        );
+    };
+
+    let mut results = map_err!(serde_json::from_value::<Vec<serde_json::Value>>(
+        results.clone()
+    ));
+
+    if results.is_empty() {
+        return err!(Weaviate, "No result found for ID vector query");
+    }
+
+    let result = results.remove(0);
+
+    let collection_info: VectorCollection = map_err!(serde_json::from_value(result));
+
+    Ok(collection_info)
+}
+
+async fn upsert_id_vector(
+    weaviate: &WeaviateClient,
+    collection: CreateVectorCollection<'_>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let properties = json!({
+        COLLECTION_ID_PROPERTY: collection.collection_id,
+        COLLECTION_NAME_PROPERTY: collection.name,
+        COLLECTION_SIZE_PROPERTY: collection.size,
+        COLLECTION_EMBEDDING_PROVIDER_PROPERTY: collection.embedding_provider,
+        COLLECTION_EMBEDDING_MODEL_PROPERTY: collection.embedding_model,
+        COLLECTION_GROUPS_PROPERTY: collection.groups
+    });
+
+    let _ = weaviate
+        .objects
+        .delete(
+            collection.name,
+            &uuid::Uuid::nil(),
+            Some(ConsistencyLevel::ONE),
+            None,
+        )
+        .await;
+
+    let object = Object::builder(collection.name, properties)
+        .with_vector(vec![0.0; collection.size])
+        .with_id(uuid::Uuid::nil())
+        .build();
+
+    weaviate
+        .objects
+        .create(&object, Some(ConsistencyLevel::ONE))
+        .await?;
+
+    Ok(())
+}
+
 /// Create properties for a collection (weaviate class).
-fn create_collection_properties(data: CreateVectorCollection<'_>) -> Properties {
-    let mut properties = vec![];
-    let id = PropertyBuilder::new(COLLECTION_ID_PROPERTY, vec!["text"])
-        .with_description(&data.collection_id.to_string())
-        .build();
+fn create_collection_properties() -> Result<Properties, ChonkitError> {
+    let id = PropertyBuilder::new(COLLECTION_ID_PROPERTY, vec!["uuid"]).build();
 
-    properties.push(id);
+    let size = PropertyBuilder::new(COLLECTION_SIZE_PROPERTY, vec!["int"]).build();
 
-    let size = PropertyBuilder::new(COLLECTION_SIZE_PROPERTY, vec!["int"])
-        .with_description(&data.size.to_string())
-        .build();
-
-    properties.push(size);
-
-    let name = PropertyBuilder::new(COLLECTION_NAME_PROPERTY, vec!["text"])
-        .with_description(data.name)
-        .build();
-
-    properties.push(name);
+    let name = PropertyBuilder::new(COLLECTION_NAME_PROPERTY, vec!["text"]).build();
 
     let embedding_provider =
-        PropertyBuilder::new(COLLECTION_EMBEDDING_PROVIDER_PROPERTY, vec!["text"])
-            .with_description(data.embedding_provider)
-            .build();
+        PropertyBuilder::new(COLLECTION_EMBEDDING_PROVIDER_PROPERTY, vec!["text"]).build();
 
-    properties.push(embedding_provider);
+    let embedding_model =
+        PropertyBuilder::new(COLLECTION_EMBEDDING_MODEL_PROPERTY, vec!["text"]).build();
 
-    let embedding_model = PropertyBuilder::new(COLLECTION_EMBEDDING_MODEL_PROPERTY, vec!["text"])
-        .with_description(data.embedding_model)
-        .build();
+    let groups = PropertyBuilder::new(COLLECTION_GROUPS_PROPERTY, vec!["text[]"]).build();
 
-    properties.push(embedding_model);
-
-    if let Some(groups) = data.groups {
-        let groups = PropertyBuilder::new(COLLECTION_GROUPS_PROPERTY, vec!["text[]"])
-            .with_description(&json!(groups).to_string())
-            .build();
-        properties.push(groups);
-    }
-
-    Properties::new(properties)
+    Ok(Properties::new(vec![
+        id,
+        size,
+        name,
+        embedding_provider,
+        embedding_model,
+        groups,
+    ]))
 }
 
-/// Attempt to parse Weaviate GraphQL data to a [dto::WeaviateError].
-fn parse_weaviate_error(s: &str) -> Option<WeaviateError> {
-    let json_err = s.rsplit_once("Response: ")?.1;
-    serde_json::from_str(json_err).ok()
-}
-
-impl TryFrom<Class> for VectorCollection {
-    type Error = ChonkitError;
-
-    fn try_from(class: Class) -> Result<Self, Self::Error> {
-        let class_name = &class.class;
-
-        let Some(props) = class.properties else {
-            return err!(Weaviate, "Missing 'properties' field in class {class_name}");
-        };
-
-        let mut v_collection = VectorCollection::default().with_name(class_name.clone());
-
-        for prop in props.0 {
-            match prop.name.as_str() {
-                COLLECTION_SIZE_PROPERTY => {
-                    let Some(size) = prop.description else {
-                        return err!(
-                            Weaviate,
-                            "Missing '{COLLECTION_SIZE_PROPERTY}' property in class {class_name}",
-                        );
-                    };
-                    let size = map_err!(size.parse::<usize>());
-                    v_collection = v_collection.with_size(size);
-                }
-                COLLECTION_NAME_PROPERTY => {
-                    let Some(name) = prop.description else {
-                        return err!(
-                            Weaviate,
-                            "Missing '{COLLECTION_NAME_PROPERTY}' property in class {class_name}",
-                        );
-                    };
-                    v_collection = v_collection.with_name(name);
-                }
-                COLLECTION_EMBEDDING_PROVIDER_PROPERTY => {
-                    let Some(embedding_provider) = prop.description else {
-                        return err!(
-                            Weaviate,
-                            "Missing '{COLLECTION_EMBEDDING_PROVIDER_PROPERTY}' property in class {class_name}",
-                        );
-                    };
-                    v_collection = v_collection.with_embedding_provider(embedding_provider);
-                }
-                COLLECTION_EMBEDDING_MODEL_PROPERTY => {
-                    let Some(embedding_model) = prop.description else {
-                        return err!(
-                            Weaviate,
-                            "Missing '{COLLECTION_EMBEDDING_MODEL_PROPERTY}' property in class {class_name}",
-                        );
-                    };
-                    v_collection = v_collection.with_embedding_model(embedding_model);
-                }
-                COLLECTION_ID_PROPERTY => {
-                    let Some(id) = prop.description else {
-                        return err!(
-                            Weaviate,
-                            "Missing '{COLLECTION_ID_PROPERTY}' property in class {class_name}",
-                        );
-                    };
-                    let id = map_err!(id.parse::<Uuid>());
-                    v_collection = v_collection.with_id(id);
-                }
-                COLLECTION_GROUPS_PROPERTY => {
-                    if let Some(groups) = prop.description {
-                        let groups = map_err!(serde_json::from_str(&groups));
-                        v_collection = v_collection.with_groups(groups);
-                    }
-                }
-                _ => continue,
-            }
-        }
-
-        if v_collection.size == 0 {
-            return err!(Weaviate, "Missing 'size' property in class {class_name}",);
-        }
-
-        if v_collection.name.is_empty() {
-            return err!(
-                Weaviate,
-                "Missing 'original_name' property in class {class_name}",
-            );
-        }
-
-        Ok(v_collection)
-    }
-}
+// Attempt to parse Weaviate GraphQL data to a [dto::WeaviateError].
+// fn parse_weaviate_error(s: &str) -> Option<WeaviateError> {
+//     let json_err = s.rsplit_once("Response: ")?.1;
+//     serde_json::from_str(json_err).ok()
+// }
 
 mod dto {
     use serde::Deserialize;
@@ -485,15 +497,12 @@ mod dto {
 
 #[cfg(test)]
 #[suitest::suite(weaviate_tests)]
+#[suitest::suite_cfg(sequential = true)]
 mod weaviate_tests {
     use crate::{
         app::{
             test::{init_weaviate, AsyncContainer},
             vector::weaviate::WeaviateDb,
-        },
-        config::{
-            DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_EMBEDDING_PROVIDER,
-            DEFAULT_COLLECTION_ID, DEFAULT_COLLECTION_NAME, DEFAULT_COLLECTION_SIZE,
         },
         core::vector::{CreateVectorCollection, VectorDb},
     };
@@ -503,28 +512,7 @@ mod weaviate_tests {
     #[before_all]
     async fn setup() -> (WeaviateDb, AsyncContainer) {
         let (weaver, img) = init_weaviate().await;
-        weaver
-            .create_default_collection(CreateVectorCollection::default())
-            .await
-            .unwrap();
         (weaver, img)
-    }
-
-    #[test]
-    async fn creates_default_collection(weaver: WeaviateDb) {
-        let default = weaver
-            .get_collection(DEFAULT_COLLECTION_NAME)
-            .await
-            .unwrap();
-
-        assert_eq!(DEFAULT_COLLECTION_ID, default.id);
-        assert_eq!(DEFAULT_COLLECTION_NAME, default.name);
-        assert_eq!(DEFAULT_COLLECTION_SIZE, default.size);
-        assert_eq!(
-            DEFAULT_COLLECTION_EMBEDDING_PROVIDER,
-            default.embedding_provider
-        );
-        assert_eq!(DEFAULT_COLLECTION_EMBEDDING_MODEL, default.embedding_model);
     }
 
     #[test]
@@ -552,5 +540,32 @@ mod weaviate_tests {
         assert_eq!(groups, collection.groups.unwrap());
         assert_eq!("openai", collection.embedding_provider);
         assert_eq!("text-embedding-ada-002", collection.embedding_model);
+
+        weaver.delete_vector_collection(name).await.unwrap();
+    }
+
+    #[test]
+    async fn updates_collection_groups(weaver: WeaviateDb) {
+        let name = "My_collection_with_groups";
+        let id = Uuid::new_v4();
+        let groups = vec!["admin".to_string(), "user".to_string()];
+
+        let collection =
+            CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002", None);
+
+        weaver.create_vector_collection(collection).await.unwrap();
+
+        let collection = weaver.get_collection(name).await.unwrap();
+
+        assert!(collection.groups.is_none());
+
+        weaver
+            .update_collection_groups(name, groups.clone())
+            .await
+            .unwrap();
+
+        let collection = weaver.get_collection(name).await.unwrap();
+
+        assert_eq!(groups, collection.groups.unwrap());
     }
 }

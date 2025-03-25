@@ -24,6 +24,8 @@ pub trait EmbeddingCache {
         &self,
         key: &EmbeddingCacheKey,
     ) -> impl Future<Output = Result<bool, ChonkitError>> + Send;
+
+    fn clear(&self) -> impl Future<Output = Result<(), ChonkitError>> + Send;
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]

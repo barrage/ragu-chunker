@@ -346,6 +346,13 @@ mod document_service_integration_tests {
                     .await
                     .unwrap();
                 assert!(emb_2.is_none());
+
+                // We have to clear the cache here to keep test state fresh per provider
+                let mut conn = state.cache.get().await.unwrap();
+                deadpool_redis::redis::cmd("FLUSHDB")
+                    .query_async::<()>(&mut conn)
+                    .await
+                    .unwrap();
             }
         }
     }

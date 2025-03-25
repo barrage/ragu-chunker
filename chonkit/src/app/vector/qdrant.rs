@@ -6,7 +6,7 @@ use crate::core::vector::{
     COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
     COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
 };
-use crate::error::{ChonkitErr, ChonkitError};
+use crate::error::ChonkitError;
 use crate::{err, map_err};
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::with_payload_selector::SelectorOptions;
@@ -93,10 +93,22 @@ impl VectorDb for Qdrant {
             .await
         );
 
-        map_err!(create_id_vector(self, data).await);
+        map_err!(upsert_id_vector(self, data).await);
 
         debug_assert!(res.result);
 
+        Ok(())
+    }
+
+    async fn update_collection_groups(
+        &self,
+        collection: &str,
+        groups: Vec<String>,
+    ) -> Result<(), ChonkitError> {
+        let collection = &self.get_collection(collection).await?;
+        let mut collection: CreateVectorCollection<'_> = collection.into();
+        collection.groups = Some(groups);
+        map_err!(upsert_id_vector(self, collection).await);
         Ok(())
     }
 
@@ -122,22 +134,6 @@ impl VectorDb for Qdrant {
     async fn delete_vector_collection(&self, name: &str) -> Result<(), ChonkitError> {
         map_err!(self.delete_collection(name).await);
         Ok(())
-    }
-
-    async fn create_default_collection(
-        &self,
-        data: CreateVectorCollection<'_>,
-    ) -> Result<(), ChonkitError> {
-        let result = self.create_vector_collection(data).await;
-
-        match result {
-            Ok(_) => Ok(()),
-            Err(ChonkitError {
-                error: ChonkitErr::Qdrant(QdrantError::ResponseError { status }),
-                ..
-            }) if matches!(status.code(), tonic::Code::AlreadyExists) => Ok(()),
-            Err(e) => Err(e),
-        }
     }
 
     async fn query(
@@ -268,7 +264,7 @@ impl VectorDb for Qdrant {
     }
 }
 
-async fn create_id_vector(
+async fn upsert_id_vector(
     qdrant: &Qdrant,
     collection: CreateVectorCollection<'_>,
 ) -> Result<(), QdrantError> {
@@ -439,10 +435,6 @@ mod qdrant_tests {
             test::{init_qdrant, AsyncContainer},
             vector::qdrant::QdrantDb,
         },
-        config::{
-            DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_EMBEDDING_PROVIDER,
-            DEFAULT_COLLECTION_NAME, DEFAULT_COLLECTION_SIZE,
-        },
         core::vector::{CreateVectorCollection, VectorDb},
     };
     use suitest::before_all;
@@ -451,36 +443,23 @@ mod qdrant_tests {
     #[before_all]
     async fn setup() -> (QdrantDb, AsyncContainer) {
         let (qdrant, img) = init_qdrant().await;
-
-        let data = CreateVectorCollection::default();
-
-        qdrant.create_default_collection(data).await.unwrap();
         (qdrant, img)
-    }
-
-    #[test]
-    async fn creates_default_collection(qdrant: QdrantDb) {
-        let default = qdrant
-            .get_collection(DEFAULT_COLLECTION_NAME)
-            .await
-            .unwrap();
-
-        assert_eq!(DEFAULT_COLLECTION_NAME, default.name);
-        assert_eq!(DEFAULT_COLLECTION_SIZE, default.size);
-        assert_eq!(
-            DEFAULT_COLLECTION_EMBEDDING_PROVIDER,
-            default.embedding_provider
-        );
-        assert_eq!(DEFAULT_COLLECTION_EMBEDDING_MODEL, default.embedding_model);
     }
 
     #[test]
     async fn creates_collection(qdrant: QdrantDb) {
         let name = "My_collection_0";
         let id = Uuid::new_v4();
+        let groups = vec!["admin".to_string(), "user".to_string()];
 
-        let data =
-            CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002", None);
+        let data = CreateVectorCollection::new(
+            id,
+            name,
+            420,
+            "openai",
+            "text-embedding-ada-002",
+            Some(groups.clone()),
+        );
 
         qdrant.create_vector_collection(data).await.unwrap();
 
@@ -489,7 +468,35 @@ mod qdrant_tests {
         assert_eq!(id, collection.id);
         assert_eq!(name, collection.name);
         assert_eq!(420, collection.size);
+        assert_eq!(groups, collection.groups.unwrap());
         assert_eq!("openai", collection.embedding_provider);
         assert_eq!("text-embedding-ada-002", collection.embedding_model);
+
+        qdrant.delete_vector_collection(name).await.unwrap();
+    }
+
+    #[test]
+    async fn updates_collection_groups(qdrant: QdrantDb) {
+        let name = "My_collection_0_with_groups";
+        let id = Uuid::new_v4();
+        let groups = vec!["admin".to_string(), "user".to_string()];
+
+        let data =
+            CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002", None);
+
+        qdrant.create_vector_collection(data).await.unwrap();
+
+        let collection = qdrant.get_collection(name).await.unwrap();
+
+        assert!(collection.groups.is_none());
+
+        qdrant
+            .update_collection_groups(name, groups.clone())
+            .await
+            .unwrap();
+
+        let collection = qdrant.get_collection(name).await.unwrap();
+
+        assert_eq!(groups, collection.groups.unwrap());
     }
 }

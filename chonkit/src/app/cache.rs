@@ -66,4 +66,10 @@ impl EmbeddingCache for deadpool_redis::Pool {
                 .await
         ) == 1)
     }
+
+    async fn clear(&self) -> Result<(), ChonkitError> {
+        let mut conn = map_err!(self.get().await);
+        map_err!(redis::cmd("FLUSHDB").query_async::<()>(&mut conn).await);
+        Ok(())
+    }
 }

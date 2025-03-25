@@ -301,11 +301,7 @@ mod vector_service_integration_tests {
             assert_eq!(collection.name, collection_name);
             assert_eq!(document.id, embeddings.document_id);
 
-            let amount = postgres
-                .remove_document_by_id(document.id, None)
-                .await
-                .unwrap();
-            assert_eq!(1, amount);
+            services.document.delete(document.id).await.unwrap();
         }
     }
 
@@ -375,11 +371,7 @@ mod vector_service_integration_tests {
 
             assert!(embeddings.is_none());
 
-            let amount = postgres
-                .remove_document_by_id(document.id, None)
-                .await
-                .unwrap();
-            assert_eq!(1, amount);
+            services.document.delete(document.id).await.unwrap();
         }
     }
 
@@ -435,11 +427,7 @@ mod vector_service_integration_tests {
 
             assert!(matches!(error, ChonkitErr::AlreadyExists(_)));
 
-            let amount = postgres
-                .remove_document_by_id(document.id, None)
-                .await
-                .unwrap();
-            assert_eq!(1, amount);
+            services.document.delete(document.id).await.unwrap();
         }
     }
 }

@@ -33,6 +33,8 @@ struct TestState {
     /// Holds the application state.
     pub app: AppState,
 
+    pub cache: deadpool_redis::Pool,
+
     /// Holds the list of active vector storage providers. Depends on feature flags.
     pub active_vector_providers: Vec<&'static str>,
 
@@ -140,7 +142,7 @@ impl TestState {
             collection: CollectionService::new(postgres.clone(), providers.clone().into()),
             document: DocumentService::new(postgres.clone(), providers.clone().into(), tokenizer),
             external: ServiceFactory::new(postgres.clone(), providers.clone().into()),
-            embedding: EmbeddingService::new(postgres, providers.clone().into(), redis),
+            embedding: EmbeddingService::new(postgres, providers.clone().into(), redis.clone()),
         };
 
         let app = AppState::new_test(services, providers);
@@ -150,6 +152,7 @@ impl TestState {
             app,
             active_vector_providers,
             active_embedding_providers,
+            cache: redis,
         }
     }
 }
@@ -203,7 +206,7 @@ impl AppState {
 
 /// Setup a postgres test container and connect to it using PgPool.
 /// Runs the migrations in the container.
-/// When using suitest's [before_all][suitest::before_all], make sure you return this, othwerise the
+/// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
 /// container will get dropped and cleaned up.
 pub async fn init_repository() -> (Repository, PostgresContainer) {
     let pg_image = Postgres::default()
@@ -217,6 +220,9 @@ pub async fn init_repository() -> (Repository, PostgresContainer) {
     (crate::core::repo::Repository::new(&pg_url).await, pg_image)
 }
 
+/// Setup a redis test container and connect to it using RedisPool.
+/// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
+/// container will get dropped and cleaned up.
 pub async fn init_cache() -> (deadpool_redis::Pool, RedisContainer) {
     let redis_image = Redis.start().await.unwrap();
     let redis_host = redis_image.get_host().await.unwrap();
@@ -226,7 +232,7 @@ pub async fn init_cache() -> (deadpool_redis::Pool, RedisContainer) {
 }
 
 /// Setup a qdrant test container and connect to it using QdrantDb.
-/// When using suitest's [before_all][suitest::before_all], make sure you return this, othwerise the
+/// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
 /// container will get dropped and cleaned up.
 #[cfg(feature = "qdrant")]
 pub async fn init_qdrant() -> (
@@ -249,7 +255,7 @@ pub async fn init_qdrant() -> (
 }
 
 /// Setup a weaviate test container and connect to it using WeaviateDb.
-/// When using suitest's [before_all][suitest::before_all], make sure you return this, othwerise the
+/// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
 /// container will get dropped and cleaned up.
 #[cfg(feature = "weaviate")]
 pub async fn init_weaviate() -> (
