@@ -14,8 +14,8 @@ use crate::{
         },
         repo::Repository,
         service::{
-            document::DocumentService, embedding::EmbeddingService, external::ServiceFactory,
-            vector::CollectionService, ServiceState,
+            collection::CollectionService, document::DocumentService, embedding::EmbeddingService,
+            external::ServiceFactory, ServiceState,
         },
         token::Tokenizer,
     },

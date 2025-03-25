@@ -10,8 +10,8 @@ mod document_service_integration_tests {
                 DocumentType, Docx, Pdf, Text, TextDocumentType,
             },
             service::{
-                document::dto::DocumentUpload, embedding::EmbedSingleInput,
-                vector::dto::CreateCollectionPayload,
+                collection::dto::CreateCollectionPayload, document::dto::DocumentUpload,
+                embedding::EmbedSingleInput,
             },
         },
     };
@@ -28,7 +28,7 @@ mod document_service_integration_tests {
 
         let test_state = TestState::init(TestStateConfig {
             fs_store_path: TEST_UPLOAD_PATH.to_string(),
-            gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
+            _gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
         })
         .await;
 

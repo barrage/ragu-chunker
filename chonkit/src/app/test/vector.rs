@@ -11,9 +11,9 @@ mod vector_service_integration_tests {
         core::{
             document::{DocumentType, TextDocumentType},
             service::{
+                collection::dto::{CreateCollectionPayload, SearchPayload},
                 document::dto::DocumentUpload,
                 embedding::EmbedSingleInput,
-                vector::dto::{CreateCollectionPayload, SearchPayload},
             },
         },
         error::ChonkitErr,
@@ -33,7 +33,7 @@ mod vector_service_integration_tests {
 
         let test_state = TestState::init(TestStateConfig {
             fs_store_path: TEST_UPLOAD_PATH.to_string(),
-            gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
+            _gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
         })
         .await;
 
@@ -378,7 +378,6 @@ mod vector_service_integration_tests {
     #[test]
     async fn prevents_duplicate_embeddings(state: TestState) {
         let services = &state.app.services;
-        let postgres = &state.app.providers.database;
         let embedder = state
             .app
             .providers

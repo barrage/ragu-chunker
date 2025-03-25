@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::provider::Identity;
 
-// Collection properties.
+// Collection (identity vector) properties.
 
 pub const COLLECTION_ID_PROPERTY: &str = "collection_id";
 pub const COLLECTION_NAME_PROPERTY: &str = "name";
@@ -90,14 +90,6 @@ impl VectorCollection {
         self.groups = Some(groups);
         self
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct VectorCollectionInfo {
-    pub name: String,
-    pub size: usize,
-    pub embedding_provider: String,
-    pub embedding_model: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

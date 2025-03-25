@@ -438,7 +438,9 @@ async fn upsert_id_vector(
     Ok(())
 }
 
-/// Create properties for a collection (weaviate class).
+/// Create properties for a collection (weaviate class). We need classes
+/// to also have defined properties because otherwise some foul weaviate
+/// treachery with wrong types will occur.
 fn create_collection_properties() -> Result<Properties, ChonkitError> {
     let id = PropertyBuilder::new(COLLECTION_ID_PROPERTY, vec!["uuid"]).build();
 

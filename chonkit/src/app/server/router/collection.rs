@@ -2,7 +2,7 @@ use crate::{
     app::  state::AppState , core::{
          model::{
             collection::{Collection, CollectionDisplay, CollectionSearchColumn},  List, PaginationSort
-        }, service:: vector::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload }
+        }, service:: collection::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload }
     },  error::ChonkitError, map_err
 };
 use axum::{

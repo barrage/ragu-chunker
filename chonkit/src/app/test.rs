@@ -12,8 +12,8 @@ use crate::core::{
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
     repo::Repository,
     service::{
-        document::DocumentService, embedding::EmbeddingService, external::ServiceFactory,
-        vector::CollectionService, ServiceState,
+        collection::CollectionService, document::DocumentService, embedding::EmbeddingService,
+        external::ServiceFactory, ServiceState,
     },
     token::Tokenizer,
 };
@@ -66,7 +66,7 @@ impl TestState {
         {
             let drive = Arc::new(
                 crate::app::external::google::store::GoogleDriveStore::new(
-                    &config.gdrive_download_path,
+                    &config._gdrive_download_path,
                 )
                 .await,
             );
@@ -160,7 +160,7 @@ impl TestState {
 struct TestStateConfig {
     pub fs_store_path: String,
     // We do not feature gate this to make our lives easier.
-    pub gdrive_download_path: String,
+    pub _gdrive_download_path: String,
 }
 
 /// Holds test container images so they don't get dropped during execution of test suites.

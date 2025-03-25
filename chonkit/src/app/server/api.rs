@@ -56,7 +56,7 @@ use crate::{
         service::{
             document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
             embedding::{EmbedSingleInput, ListEmbeddingReportsParams},
-            vector::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload},
+            collection::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload},
         },
         token::TokenCount,
         vector::{CollectionSearchItem, VectorCollection},
