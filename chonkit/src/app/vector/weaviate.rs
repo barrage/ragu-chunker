@@ -86,7 +86,7 @@ impl VectorDb for WeaviateClient {
     async fn update_collection_groups(
         &self,
         collection: &str,
-        groups: Vec<String>,
+        groups: Option<Vec<String>>,
     ) -> Result<(), ChonkitError> {
         // Sanity check
         if let Err(e) = self.schema.get_class(collection).await {
@@ -562,7 +562,7 @@ mod weaviate_tests {
         assert!(collection.groups.is_none());
 
         weaver
-            .update_collection_groups(name, groups.clone())
+            .update_collection_groups(name, Some(groups.clone()))
             .await
             .unwrap();
 

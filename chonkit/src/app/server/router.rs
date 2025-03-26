@@ -82,6 +82,10 @@ pub fn router(state: AppState) -> Router {
         .route("/collections", get(collection::list_collections))
         .route("/collections", post(collection::create_collection))
         .route("/collections/:id", get(collection::get_collection))
+        .route(
+            "/collections/:id/groups",
+            put(collection::update_collection_groups),
+        )
         .route("/collections/:id", delete(collection::delete_collection))
         .route(
             "/collections/:collection_id/documents/:document_id",

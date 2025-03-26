@@ -7,7 +7,7 @@ use crate::core::repo::{Atomic, Repository};
 use crate::core::vector::CreateVectorCollection;
 use crate::error::ChonkitError;
 use crate::{err, map_err, transaction};
-use dto::{CreateCollectionPayload, SearchPayload};
+use dto::{CollectionData, CreateCollectionPayload, SearchPayload};
 use tracing::info;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -48,11 +48,22 @@ impl CollectionService {
     /// Get the collection for the given ID.
     ///
     /// * `id`: Collection ID.
-    pub async fn get_collection(&self, id: Uuid) -> Result<Collection, ChonkitError> {
-        match self.repo.get_collection_by_id(id).await? {
-            Some(collection) => Ok(collection),
-            None => err!(DoesNotExist, "Collection with ID '{id}'"),
-        }
+    pub async fn get_collection(&self, id: Uuid) -> Result<CollectionData, ChonkitError> {
+        let Some(collection) = self.repo.get_collection_by_id(id).await? else {
+            return err!(DoesNotExist, "Collection with ID '{id}'");
+        };
+
+        let vector_collection = self
+            .providers
+            .vector
+            .get_provider(&collection.provider)?
+            .get_collection(&collection.name)
+            .await?;
+
+        Ok(CollectionData {
+            collection,
+            vector_collection,
+        })
     }
 
     /// Get the collection for the given ID with additional info for display purposes.
@@ -149,6 +160,21 @@ impl CollectionService {
         Ok(count)
     }
 
+    pub async fn update_collection_groups(
+        &self,
+        id: Uuid,
+        groups: Option<Vec<String>>,
+    ) -> Result<(), ChonkitError> {
+        let Some(collection) = self.repo.get_collection_by_id(id).await? else {
+            return err!(DoesNotExist, "Collection with ID '{id}'");
+        };
+        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
+        vector_db
+            .update_collection_groups(&collection.name, groups)
+            .await?;
+        Ok(())
+    }
+
     /// Sync the collections in the repository with the ones in the vector DB.
     pub async fn sync(&self) -> Result<(), ChonkitError> {
         tracing::info!("Starting collection sync");
@@ -213,7 +239,13 @@ impl CollectionService {
     ) -> Result<dto::CollectionSearchResult, ChonkitError> {
         map_err!(search.validate());
 
-        let collection = self.get_collection(search.collection_id).await?;
+        let Some(collection) = self.repo.get_collection_by_id(search.collection_id).await? else {
+            return err!(
+                DoesNotExist,
+                "Collection with ID '{}'",
+                search.collection_id
+            );
+        };
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
         let embedder = self
@@ -244,12 +276,14 @@ impl CollectionService {
 }
 
 pub mod dto {
+    use crate::core::{
+        model::collection::Collection,
+        vector::{CollectionSearchItem, VectorCollection},
+    };
     use serde::{Deserialize, Serialize};
     use utoipa::ToSchema;
     use uuid::Uuid;
     use validify::{field_err, Validate, ValidationError, Validify};
-
-    use crate::core::vector::CollectionSearchItem;
 
     fn ascii_alphanumeric_underscored(s: &str) -> Result<(), ValidationError> {
         if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
@@ -273,6 +307,14 @@ pub mod dto {
             ));
         }
         Ok(())
+    }
+
+    /// Fully encapsulates the collection as it is in the DB and vector DB.
+    #[derive(Debug, Serialize, Validify, ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct CollectionData {
+        pub collection: Collection,
+        pub vector_collection: VectorCollection,
     }
 
     #[derive(Debug, Deserialize, Validify, ToSchema)]

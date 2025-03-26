@@ -159,7 +159,7 @@ impl BatchEmbedder {
             let report = ok_or_continue!(
                 services
                     .embedding
-                    .create_embeddings(EmbedSingleInput::new(document_id, collection.id))
+                    .create_embeddings(EmbedSingleInput::new(document_id, collection.collection.id))
                     .await
             );
 
@@ -175,7 +175,7 @@ impl BatchEmbedder {
             let report = ok_or_continue!(
                 services
                     .embedding
-                    .delete_embeddings(collection.id, document_id)
+                    .delete_embeddings(collection.collection.id, document_id)
                     .await
             );
 

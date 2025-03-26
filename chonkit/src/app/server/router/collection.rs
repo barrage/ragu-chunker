@@ -2,7 +2,7 @@ use crate::{
     app::  state::AppState , core::{
          model::{
             collection::{Collection, CollectionDisplay, CollectionSearchColumn},  List, PaginationSort
-        }, service:: collection::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload }
+        }, service:: collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload }
     },  error::ChonkitError, map_err
 };
 use axum::{
@@ -95,8 +95,7 @@ pub(super) async fn create_collection(
     get,
     path = "/collections/{id}", 
     responses(
-        (status = 200, description = "Collection retrieved successfully", body = Collection),
-        (status = 400, description = "Invalid collection ID format"),
+        (status = 200, description = "Collection retrieved successfully", body = CollectionData),
         (status = 404, description = "Collection not found"),
         (status = 500, description = "Internal server error")
     ),
@@ -106,11 +105,33 @@ pub(super) async fn create_collection(
 )]
 pub(super) async fn get_collection(
     State(state): State<AppState>,
-    Path(id_str): Path<String>,
-) -> Result<Json<Collection>, ChonkitError> {
-    let collection_id = map_err!(Uuid::parse_str(&id_str));
-    let collection = state.services.collection.get_collection(collection_id).await?;
+    Path(id): Path<Uuid>,
+) -> Result<Json<CollectionData>, ChonkitError> {
+    let collection = state.services.collection.get_collection(id).await?;
     Ok(Json(collection))
+}
+
+#[utoipa::path(
+    get,
+    path = "/collections/{id}/groups", 
+    responses(
+        (status = 204, description = "Collection groups updated successfully"),
+        (status = 404, description = "Collection not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Collection ID")
+    )
+)]
+pub(super) async fn update_collection_groups(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<Option<Vec<String>>>,
+) -> Result<StatusCode, ChonkitError> {
+    state.services.collection
+        .update_collection_groups(id, payload)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(

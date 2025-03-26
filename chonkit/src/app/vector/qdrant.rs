@@ -6,7 +6,7 @@ use crate::core::vector::{
     COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
     COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
 };
-use crate::error::{ChonkitErr, ChonkitError};
+use crate::error::ChonkitError;
 use crate::{err, map_err};
 use qdrant_client::qdrant::vectors_config::Config;
 use qdrant_client::qdrant::with_payload_selector::SelectorOptions;
@@ -125,12 +125,10 @@ impl VectorDb for Qdrant {
     async fn update_collection_groups(
         &self,
         collection: &str,
-        groups: Vec<String>,
+        groups: Option<Vec<String>>,
     ) -> Result<(), ChonkitError> {
-        let collection = &self.get_collection(collection).await?;
-        let mut collection: CreateVectorCollection<'_> = collection.into();
-        collection.groups = Some(groups);
-        map_err!(upsert_id_vector(self, collection).await);
+        let collection = self.get_collection(collection).await?.with_groups(groups);
+        map_err!(upsert_id_vector(self, (&collection).into()).await);
         Ok(())
     }
 
@@ -513,7 +511,7 @@ mod qdrant_tests {
         assert!(collection.groups.is_none());
 
         qdrant
-            .update_collection_groups(name, groups.clone())
+            .update_collection_groups(name, Some(groups.clone()))
             .await
             .unwrap();
 

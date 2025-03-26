@@ -33,6 +33,8 @@ impl ChonkitError {
 
             #[cfg(feature = "qdrant")]
             E::QdrantDb(_) => SC::INTERNAL_SERVER_ERROR,
+            #[cfg(feature = "qdrant")]
+            E::Qdrant(_) => SC::INTERNAL_SERVER_ERROR,
 
             #[cfg(feature = "weaviate")]
             E::Weaviate(_) => SC::BAD_REQUEST,
@@ -48,7 +50,6 @@ impl ChonkitError {
             E::InvalidHeader(_) => SC::INTERNAL_SERVER_ERROR,
             E::Cache(_) => SC::BAD_REQUEST,
             E::CachePool(_) => SC::INTERNAL_SERVER_ERROR,
-            _ => SC::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -141,6 +142,8 @@ impl IntoResponse for ChonkitError {
 
             #[cfg(feature = "qdrant")]
             CE::QdrantDb(_) => (status, "qdrant".to_string()).into_response(),
+            #[cfg(feature = "qdrant")]
+            CE::Qdrant(_) => (status, "qdrant".to_string()).into_response(),
 
             CE::Axum(_) => (status, "axum".to_string()).into_response(),
             CE::Uuid(_) => (status, "Invalid UUID format").into_response(),
@@ -157,7 +160,6 @@ impl IntoResponse for ChonkitError {
             CE::Xlsx(e) => (status, e.to_string()).into_response(),
             CE::Cache(e) => (status, e.to_string()).into_response(),
             CE::CachePool(e) => (status, e.to_string()).into_response(),
-            _ => (status, "Internal".to_string()).into_response(),
         }
     }
 }

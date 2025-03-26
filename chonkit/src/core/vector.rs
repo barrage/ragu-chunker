@@ -86,13 +86,13 @@ impl VectorCollection {
         self
     }
 
-    pub fn with_groups(mut self, groups: Vec<String>) -> Self {
-        self.groups = Some(groups);
+    pub fn with_groups(mut self, groups: Option<Vec<String>>) -> Self {
+        self.groups = groups;
         self
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CreateVectorCollection<'a> {
     pub collection_id: Uuid,
     pub name: &'a str,
@@ -167,7 +167,7 @@ pub trait VectorDb: Identity {
     async fn update_collection_groups(
         &self,
         collection: &str,
-        groups: Vec<String>,
+        groups: Option<Vec<String>>,
     ) -> Result<(), ChonkitError>;
 
     /// Get collection info.

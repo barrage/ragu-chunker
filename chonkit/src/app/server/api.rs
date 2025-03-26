@@ -26,6 +26,7 @@ use super::router::{
         __path_list_collections_display,
         __path_collection_display,
         __path_sync as __path_collection_sync,
+        __path_update_collection_groups
     },
 
     // Embeddings
@@ -57,9 +58,7 @@ use crate::{
             List, Pagination, PaginationSort, Search, SortDirection,
         },
         service::{
-            document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload},
-            embedding::{EmbedSingleInput, ListEmbeddingReportsParams},
-            collection::dto::{CollectionSearchResult, CreateCollectionPayload, SearchPayload},
+            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
         },
         token::TokenCount,
         vector::{CollectionSearchItem, VectorCollection},
@@ -92,6 +91,7 @@ use utoipa::OpenApi;
         collection_display,
         search,
         collection_sync,
+        update_collection_groups,
 
         // Embeddings
         list_embedding_models,
@@ -135,6 +135,7 @@ use utoipa::OpenApi;
         CreateCollectionPayload,
         CollectionSearchResult,
         CollectionSearchItem,
+        CollectionData,
         SearchPayload,
         Embedding,
         Collection,
