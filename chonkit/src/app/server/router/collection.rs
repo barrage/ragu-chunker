@@ -2,12 +2,14 @@ use crate::{
     app::  state::AppState , core::{
          model::{
             collection::{Collection, CollectionDisplay, CollectionSearchColumn},  List, PaginationSort
-        }, service:: collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload }
+        }, service:: collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution }
     },  error::ChonkitError, map_err
 };
 use axum::{
     extract::{Path, Query, State}, http::StatusCode,  Json
 };
+use serde::Deserialize;
+use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[utoipa::path(
@@ -181,11 +183,22 @@ pub(super) async fn search(
     responses(
         (status = 204, description = "Collections synced successfully"),
         (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("mode" = SyncIncompatibilityResolution, Query, description = "Determines what to do in cases when existing collections do not conform to current data structures.")
     )
 )]
 pub(super) async fn sync(
     State(state): State<AppState>,
+    params: Query<SyncParams>
 ) -> Result<StatusCode, ChonkitError> {
-    state.services.collection.sync().await?;
+    let mode =  params.0.mode.unwrap_or_default();
+    state.services.collection.sync(mode).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize, Default, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::app::server) struct SyncParams {
+    mode: Option<SyncIncompatibilityResolution>
 }

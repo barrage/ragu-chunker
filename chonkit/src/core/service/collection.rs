@@ -7,7 +7,7 @@ use crate::core::repo::{Atomic, Repository};
 use crate::core::vector::CreateVectorCollection;
 use crate::error::ChonkitError;
 use crate::{err, map_err, transaction};
-use dto::{CollectionData, CreateCollectionPayload, SearchPayload};
+use dto::{CollectionData, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution};
 use tracing::info;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -176,7 +176,7 @@ impl CollectionService {
     }
 
     /// Sync the collections in the repository with the ones in the vector DB.
-    pub async fn sync(&self) -> Result<(), ChonkitError> {
+    pub async fn sync(&self, mode: SyncIncompatibilityResolution) -> Result<(), ChonkitError> {
         tracing::info!("Starting collection sync");
 
         for provider in self.providers.vector.list_provider_ids() {
@@ -219,9 +219,16 @@ impl CollectionService {
                             self.repo.insert_collection(collection, None).await?;
                         }
                     }
-                    Err(e) => {
-                        tracing::warn!("Skipping collection: {e}");
-                    }
+                    Err(e) => match mode {
+                        SyncIncompatibilityResolution::Delete => {
+                            tracing::info!("Deleting collection: {e}");
+                            v_provider.delete_vector_collection(&e.to_string()).await?;
+                            tracing::info!("Deleted collection: {e}");
+                        }
+                        SyncIncompatibilityResolution::Ignore => {
+                            tracing::warn!("Skipping collection: {e}");
+                        }
+                    },
                 }
             }
         }
@@ -284,6 +291,21 @@ pub mod dto {
     use utoipa::ToSchema;
     use uuid::Uuid;
     use validify::{field_err, Validate, ValidationError, Validify};
+
+    /// Determines what to do when collections being synced do not conform to current data
+    /// structures.
+    ///
+    /// `delete`: Delete the collection from the vector DB in case it cannot be deserialized into
+    ///           current structure.
+    ///
+    /// `ignore`: Do nothing.
+    #[derive(Clone, Copy, Debug, Deserialize, Default, ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub enum SyncIncompatibilityResolution {
+        Delete,
+        #[default]
+        Ignore,
+    }
 
     fn ascii_alphanumeric_underscored(s: &str) -> Result<(), ValidationError> {
         if !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {

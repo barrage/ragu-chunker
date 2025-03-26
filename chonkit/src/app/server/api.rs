@@ -42,7 +42,7 @@ use super::router::{
 };
 use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, UploadResult};
 use crate::{
-    app::state::AppConfig,
+    app::{server::router::collection::SyncParams, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig},
         document::parser::ParseConfig,
@@ -58,7 +58,7 @@ use crate::{
             List, Pagination, PaginationSort, Search, SortDirection,
         },
         service::{
-            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
+            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
         },
         token::TokenCount,
         vector::{CollectionSearchItem, VectorCollection},
@@ -136,6 +136,8 @@ use utoipa::OpenApi;
         CollectionSearchResult,
         CollectionSearchItem,
         CollectionData,
+        SyncIncompatibilityResolution,
+        SyncParams,
         SearchPayload,
         Embedding,
         Collection,
