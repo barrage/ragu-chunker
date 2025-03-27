@@ -97,3 +97,12 @@ impl CollectionDisplay {
         }
     }
 }
+
+/// Fully aggregated collection from the database and vector database.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionDisplayAggregate {
+    pub collection: CollectionDisplay,
+    pub groups: Option<Vec<String>>,
+    pub size: usize,
+}

@@ -1,5 +1,6 @@
 use crate::core::model::collection::{
-    Collection, CollectionDisplay, CollectionInsert, CollectionSearchColumn,
+    Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionInsert,
+    CollectionSearchColumn,
 };
 use crate::core::model::{List, PaginationSort};
 use crate::core::provider::ProviderState;
@@ -72,12 +73,23 @@ impl CollectionService {
     pub async fn get_collection_display(
         &self,
         id: Uuid,
-    ) -> Result<CollectionDisplay, ChonkitError> {
-        let collection = self.repo.get_collection_display(id).await?;
-        match collection {
-            Some(collection) => Ok(collection),
-            None => err!(DoesNotExist, "Collection with ID '{id}'"),
-        }
+    ) -> Result<CollectionDisplayAggregate, ChonkitError> {
+        let Some(collection) = self.repo.get_collection_display(id).await? else {
+            return err!(DoesNotExist, "Collection with ID '{id}'");
+        };
+
+        let vector_collection = self
+            .providers
+            .vector
+            .get_provider(&collection.collection.provider)?
+            .get_collection(&collection.collection.name)
+            .await?;
+
+        Ok(CollectionDisplayAggregate {
+            collection,
+            groups: vector_collection.groups,
+            size: vector_collection.size,
+        })
     }
 
     /// Get the collection for the given name and provider unique combo.

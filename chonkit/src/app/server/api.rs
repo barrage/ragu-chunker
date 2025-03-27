@@ -47,7 +47,7 @@ use crate::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig},
         document::parser::ParseConfig,
         model::{
-            collection::{Collection, CollectionDisplay, CollectionSearchColumn, CollectionShort},
+            collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort},
             document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentSearchColumn, DocumentShort,
             },
@@ -160,6 +160,7 @@ use utoipa::OpenApi;
         DocumentDisplay,
         DocumentShort,
         CollectionDisplay,
+        CollectionDisplayAggregate,
         CollectionShort,
         SortDirection,
     ))

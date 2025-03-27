@@ -1,7 +1,7 @@
 use crate::{
     app::  state::AppState , core::{
          model::{
-            collection::{Collection, CollectionDisplay, CollectionSearchColumn},  List, PaginationSort
+            collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn},  List, PaginationSort
         }, service:: collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution }
     },  error::ChonkitError, map_err
 };
@@ -57,7 +57,7 @@ pub(super) async fn list_collections_display(
     get,
     path = "/collections/{id}/display",
     responses(
-        (status = 200, description = "Get collection by id", body = CollectionDisplay),
+        (status = 200, description = "Get collection by id", body = CollectionDisplayAggregate),
         (status = 404, description = "Collection not found"),
         (status = 500, description = "Internal server error")
     ),
@@ -68,7 +68,7 @@ pub(super) async fn list_collections_display(
 pub(super) async fn collection_display(
     State(state):State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<CollectionDisplay>, ChonkitError> {
+) -> Result<Json<CollectionDisplayAggregate>, ChonkitError> {
     let collection = state.services.collection.get_collection_display(id).await?;
     Ok(Json(collection))
 }
