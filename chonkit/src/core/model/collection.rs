@@ -102,6 +102,7 @@ impl CollectionDisplay {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectionDisplayAggregate {
+    #[serde(flatten)]
     pub collection: CollectionDisplay,
     pub groups: Option<Vec<String>>,
     pub size: usize,
