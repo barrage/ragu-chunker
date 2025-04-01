@@ -1,6 +1,15 @@
 /// The line chunker matches patterns of text on lines to determine chunk boundaries.
-/// The chunker is line based, which makes it useful for processing CSVs and markdown.
-#[derive(Debug, Clone)]
+/// The chunker is line based, which makes it useful for processing any documents that can
+/// be chunked based on lines.
+///
+/// Examples of such documents are CSVs, markdown, and any document
+/// formed with some kind of distinguishable header (e.g. PDFs with section headers in formats of
+/// X. Header, X.Y. Subheader).
+///
+/// To use the chunker as a section based chunker, set the size to `usize::MAX` and specify the
+/// header patterns. If size is set to max and no patterns are specified, the chunker will
+/// return a single chunk for the entire document.
+#[derive(Debug)]
 pub struct Splitline {
     /// The maximum number of lines to include in each chunk.
     /// Headers are excluded from the count.
@@ -82,6 +91,8 @@ impl Splitline {
 
 #[cfg(test)]
 mod tests {
+    use regex::Regex;
+
     use super::*;
 
     #[test]
@@ -215,6 +226,54 @@ mod tests {
         assert_eq!(1, chunks.len());
         for (chunk, test) in chunks.into_iter().zip(expected.into_iter()) {
             assert_eq!(test, chunk);
+        }
+    }
+
+    #[test]
+    fn splitline_section_split() {
+        let chunker = Splitline::new(200, vec![Regex::new(r#"^\s*\d\. .+$"#).unwrap()], false);
+        let input = r#"
+        1. A
+          1.1 A1
+          1.2 A2
+          1.2.1 A2.1
+        2. B
+          2.1 B1
+          2.2 B2
+          2.2.1 B2.1
+        3. C
+          3.1 C1
+          3.2 C2
+          3.3 C3
+        "#;
+
+        let expected = [
+            r#"
+        1. A
+          1.1 A1
+          1.2 A2
+          1.2.1 A2.1
+        "#,
+            r#"
+        2. B
+          2.1 B1
+          2.2 B2
+          2.2.1 B2.1
+        "#,
+            r#"
+        3. C
+          3.1 C1
+          3.2 C2
+          3.3 C3
+            "#,
+        ];
+
+        let chunks = chunker.chunk(input);
+
+        assert_eq!(3, chunks.len());
+
+        for (chunk, test) in chunks.into_iter().zip(expected.into_iter()) {
+            assert_eq!(test.trim(), chunk.trim());
         }
     }
 }

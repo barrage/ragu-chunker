@@ -1,5 +1,5 @@
 use super::{embeddings::Embedder, provider::ProviderState};
-use crate::{err, error::ChonkitError, map_err};
+use crate::{err, error::ChonkitError, map_err, timed};
 use chunx::ChunkerError;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ pub async fn chunk<'i>(
 ) -> Result<ChunkedDocument<'i>, ChonkitError> {
     let chunks = match config {
         ChunkConfig::Sliding(config) => {
-            let chunker = map_err!(chunx::SlidingWindow::new(config.size, config.overlap));
+            let chunker = map_err!(chunx::Sliding::new(config.size, config.overlap));
             let chunked = map_err!(chunker.chunk(input));
 
             ChunkedDocument::Ref(chunked)
@@ -64,6 +64,25 @@ pub async fn chunk<'i>(
 
             ChunkedDocument::Owned(chunked)
         }
+        ChunkConfig::Splitline(config) => {
+            let SplitlineConfig {
+                size,
+                patterns,
+                prepend_latest_header,
+            } = config;
+
+            let mut matchers = vec![];
+            for pattern in patterns {
+                let re = map_err!(regex::Regex::new(&pattern));
+                matchers.push(re);
+            }
+
+            let chunker = timed! {"splitline chunker finished",
+                chunx::Splitline::new(size.unwrap_or(usize::MAX), matchers, prepend_latest_header.unwrap_or(false))
+            };
+
+            ChunkedDocument::Owned(chunker.chunk(input))
+        }
     };
 
     if chunks.is_empty() {
@@ -76,11 +95,40 @@ pub async fn chunk<'i>(
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum ChunkConfig {
+    /// Sliding window chunking implementation.
+    /// See [Sliding](chunx::Sliding) for more details.
     Sliding(SlidingWindowConfig),
+
+    /// Snapping window chunking implementation.
+    /// See [Snapping](chunx::Snapping) for more details.
     Snapping(SnappingWindowConfig),
+
+    /// Semantic (embedding based) chunking implementation.
+    /// See [Semantic](chunx::Semantic) for more details.
     Semantic(SemanticWindowConfig),
+
+    /// Splitline chunking implementation.
+    /// See [Splitline](chunx::Splitline) for more details.
+    Splitline(SplitlineConfig),
 }
 
+/// See [Splitline](chunx::splitline::Splitline) for more details.
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitlineConfig {
+    /// Defaults to `usize::MAX` if not provided.
+    pub size: Option<usize>,
+
+    /// Regular expression patterns to use as the basis for chunk boundaries.
+    pub patterns: Vec<String>,
+
+    /// If `true`, prepends the last header found to each subsequent chunk if the boundary is
+    /// determined by the size. Does not include the header if the boundary is determined by
+    /// another pattern.
+    pub prepend_latest_header: Option<bool>,
+}
+
+/// See [Sliding](chunx::Sliding) for more details.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SlidingWindowConfig {
@@ -88,6 +136,7 @@ pub struct SlidingWindowConfig {
     pub overlap: usize,
 }
 
+/// See [Snapping](chunx::Snapping) for more details.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SnappingWindowConfig {
@@ -98,6 +147,7 @@ pub struct SnappingWindowConfig {
     pub skip_b: Vec<String>,
 }
 
+/// See [Semantic](chunx::Semantic) for more details.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SemanticWindowConfig {
@@ -114,7 +164,7 @@ pub struct SemanticWindowConfig {
 }
 
 impl ChunkConfig {
-    /// Create a `SlidingWindow` chunker.
+    /// Create a `Sliding` chunker.
     ///
     /// * `size`: Chunk base size.
     /// * `overlap`: Chunk overlap.
@@ -122,16 +172,16 @@ impl ChunkConfig {
         Ok(Self::Sliding(SlidingWindowConfig { size, overlap }))
     }
 
-    /// Create a default `SlidingWindow` chunker.
+    /// Create a default `Sliding` chunker.
     pub fn sliding_default() -> Self {
-        let config = chunx::SlidingWindow::default();
+        let config = chunx::Sliding::default();
         Self::Sliding(SlidingWindowConfig {
             size: config.size,
             overlap: config.overlap,
         })
     }
 
-    /// Create a `SnappingWindow` chunker.
+    /// Create a `Snapping` chunker.
     ///
     /// * `size`: Chunk base size.
     /// * `overlap`: Chunk overlap.
@@ -153,7 +203,7 @@ impl ChunkConfig {
         }))
     }
 
-    /// Create a default `SnappingWindow` chunker.
+    /// Create a default `Snapping` chunker.
     pub fn snapping_default() -> Self {
         let config = chunx::Snapping::default();
         Self::Snapping(SnappingWindowConfig {
@@ -165,7 +215,7 @@ impl ChunkConfig {
         })
     }
 
-    /// Create a `SemanticWindow` chunker.
+    /// Create a `Semantic` chunker.
     ///
     /// See [SemanticWindow](chunx::semantic::SemanticWindow) for more details.
     #[allow(clippy::too_many_arguments)]
@@ -215,6 +265,7 @@ impl std::fmt::Display for ChunkConfig {
             Self::Sliding(_) => write!(f, "SlidingWindow"),
             Self::Snapping(_) => write!(f, "SnappingWindow"),
             Self::Semantic(_) => write!(f, "SemanticWindow"),
+            Self::Splitline(_) => write!(f, "Splitline"),
         }
     }
 }

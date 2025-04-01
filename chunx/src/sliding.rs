@@ -10,12 +10,12 @@ const SLIDING_WINDOW_DEFAULT_OVERLAP: usize = 200;
 /// `overlap` determines how much back and front characters
 /// to extend the base with.
 #[derive(Debug, Clone)]
-pub struct SlidingWindow {
+pub struct Sliding {
     pub size: usize,
     pub overlap: usize,
 }
 
-impl SlidingWindow {
+impl Sliding {
     /// Create a new `SlidingWindow` chunker.
     /// Errors if `overlap` is greater than `size`.
     pub fn new(size: usize, overlap: usize) -> Result<Self, ChunkerError> {
@@ -28,7 +28,7 @@ impl SlidingWindow {
     }
 
     pub fn chunk<'a>(&self, input: &'a str) -> Result<Vec<&'a str>, ChunkerError> {
-        let SlidingWindow { size, overlap } = self;
+        let Sliding { size, overlap } = self;
 
         let input = input.trim();
 
@@ -85,7 +85,7 @@ impl SlidingWindow {
     }
 }
 
-impl Default for SlidingWindow {
+impl Default for Sliding {
     fn default() -> Self {
         Self::new(SLIDING_WINDOW_DEFAULT_SIZE, SLIDING_WINDOW_DEFAULT_OVERLAP)
             .expect("overlap is greater than size")
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn sliding_window_works() {
         let input = "Sticks and stones may break my bones, but words will never leverage agile frameworks to provide a robust synopsis for high level overviews.";
-        let window = SlidingWindow::new(30, 20).unwrap();
+        let window = Sliding::new(30, 20).unwrap();
         let chunks = window.chunk(input).unwrap();
 
         assert_eq!(&input[0..50], chunks[0]);
@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn sliding_window_empty() {
         let input = "";
-        let window = SlidingWindow::new(1, 0).unwrap();
+        let window = Sliding::new(1, 0).unwrap();
         let chunks = window.chunk(input).unwrap();
 
         assert!(chunks.is_empty());
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn sliding_window_small_input() {
         let input = "Foobar";
-        let window = SlidingWindow::new(30, 20).unwrap();
+        let window = Sliding::new(30, 20).unwrap();
         let chunks = window.chunk(input).unwrap();
 
         assert_eq!(input, chunks[0]);
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn sliding_window_unicode() {
         let input = "Dobrodošli u budućnost, počeo je kraj\nVrata pakla se otvaraju zapalila su raj\nNe, ovo nije bajka, ovo nije san,\nOvo je rase čovječanske sudnji dan";
-        let window = SlidingWindow::new(40, 0).unwrap();
+        let window = Sliding::new(40, 0).unwrap();
         let chunks = window.chunk(input).unwrap();
 
         assert_eq!(4, chunks.len());

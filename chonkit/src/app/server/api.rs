@@ -44,7 +44,7 @@ use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, U
 use crate::{
     app::{server::router::collection::SyncParams, state::AppConfig},
     core::{
-        chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig},
+        chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
         document::parser::ParseConfig,
         model::{
             collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort},
@@ -125,11 +125,15 @@ use utoipa::OpenApi;
         Document,
         DocumentConfig,
         UploadResult,
+
+        // Chunk config
         ChunkConfig,
         SlidingWindowConfig,
         SnappingWindowConfig,
         SemanticWindowConfig,
         SemanticWindowConfig,
+        SplitlineConfig,
+
         ChunkPreviewPayload,
         ParseConfig,
         CreateCollectionPayload,

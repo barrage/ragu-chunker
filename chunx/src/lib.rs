@@ -7,8 +7,9 @@ pub mod snapping;
 pub mod splitline;
 
 pub use semantic::Semantic;
-pub use sliding::SlidingWindow;
+pub use sliding::Sliding;
 pub use snapping::Snapping;
+pub use splitline::Splitline;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChunkerError {

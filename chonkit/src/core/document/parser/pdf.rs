@@ -78,7 +78,7 @@ pub fn parse(input: &[u8], config: &ParseConfig) -> Result<String, ChonkitError>
 
     debug!(
         "Finished processing PDF, {page_count}/{total_pages} pages took {}ms",
-        Instant::now().duration_since(_start).as_millis()
+        _start.elapsed().as_millis()
     );
 
     Ok(out)
