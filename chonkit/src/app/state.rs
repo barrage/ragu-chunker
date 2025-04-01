@@ -87,7 +87,7 @@ impl AppState {
             let mut verifier = jwtk::jwk::RemoteJwksVerifier::new(
                 args.jwks_endpoint(),
                 Some(http_client.clone()),
-                std::time::Duration::from_secs(300),
+                std::time::Duration::from_secs(60 * 60 * 24),
             );
 
             verifier.set_require_kid(true);
