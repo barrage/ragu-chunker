@@ -1,3 +1,4 @@
+use crate::core::document::parser::ParseConfig;
 use crate::core::model::document::{DocumentParameterUpdate, DocumentSearchColumn};
 use crate::core::model::ToSearchColumn;
 use crate::core::repo::Repository;
@@ -5,7 +6,6 @@ use crate::error::ChonkitError;
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::parser::ParseConfig,
         model::{
             collection::CollectionShort,
             document::{
@@ -964,7 +964,10 @@ mod tests {
         app::test::{init_repository, PostgresContainer},
         core::{
             chunk::ChunkConfig,
-            document::{parser::ParseConfig, DocumentType, TextDocumentType},
+            document::{
+                parser::{GenericParseConfig, ParseConfig},
+                DocumentType, TextDocumentType,
+            },
             model::{
                 document::{DocumentInsert, DocumentSearchColumn},
                 Pagination, PaginationSort, Search,
@@ -1066,7 +1069,7 @@ mod tests {
                     "Hash1r",
                     "fs",
                 ),
-                ParseConfig::default(),
+                ParseConfig::Generic(GenericParseConfig::default()),
                 ChunkConfig::snapping_default(),
                 tx,
             )
@@ -1084,7 +1087,7 @@ mod tests {
                     "Hash2r",
                     "other",
                 ),
-                ParseConfig::default(),
+                ParseConfig::Generic(GenericParseConfig::default()),
                 ChunkConfig::snapping_default(),
                 tx,
             )

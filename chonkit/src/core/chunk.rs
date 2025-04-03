@@ -122,9 +122,7 @@ pub struct SplitlineConfig {
     /// Regular expression patterns to use as the basis for chunk boundaries.
     pub patterns: Vec<String>,
 
-    /// If `true`, prepends the last header found to each subsequent chunk if the boundary is
-    /// determined by the size. Does not include the header if the boundary is determined by
-    /// another pattern.
+    /// Defaults to `false` if not provided.
     pub prepend_latest_header: Option<bool>,
 }
 

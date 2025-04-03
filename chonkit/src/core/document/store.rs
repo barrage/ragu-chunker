@@ -1,4 +1,7 @@
-use super::{parser::ParseConfig, sha256, DocumentType};
+use super::{
+    parser::{GenericParseConfig, ParseConfig},
+    sha256, DocumentType,
+};
 use crate::{
     core::{
         chunk::ChunkConfig,
@@ -132,7 +135,7 @@ pub trait DocumentStorage: Identity {
                     DocumentInsert::new(&file.name, &file.path.0, file.ext, &hash, self.id());
                 repo.insert_document_with_configs(
                     insert,
-                    ParseConfig::default(),
+                    ParseConfig::Generic(GenericParseConfig::default()),
                     ChunkConfig::snapping_default(),
                     tx,
                 )

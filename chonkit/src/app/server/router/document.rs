@@ -1,10 +1,14 @@
+use super::Force;
 use crate::{
     app::{
         server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
         state::AppState,
     },
     core::{
-        document::{parser::ParseConfig, DocumentType},
+        document::{
+            parser::{ParseConfig, ParseOutput},
+            DocumentType,
+        },
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
             List,
@@ -20,8 +24,6 @@ use axum::{
 };
 use std::collections::HashMap;
 use uuid::Uuid;
-
-use super::Force;
 
 #[utoipa::path(
     get,
@@ -265,9 +267,8 @@ pub(super) async fn parse_preview(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(config): Json<ParseConfig>,
-) -> Result<Json<String>, ChonkitError> {
-    let parsed = state.services.document.parse_document(id, config).await?;
-    Ok(Json(parsed))
+) -> Result<Json<ParseOutput>, ChonkitError> {
+    Ok(Json(state.services.document.parse(id, config).await?))
 }
 
 #[utoipa::path(

@@ -1,6 +1,6 @@
 use crate::core::cache::{CachedEmbeddings, EmbeddingCache, EmbeddingCacheKey};
 use crate::core::chunk::{ChunkConfig, ChunkedDocument};
-use crate::core::document::parser::{ParseConfig, Parser};
+use crate::core::document::parser::{GenericParseConfig, ParseConfig, Parser};
 use crate::core::model::embedding::{
     Embedding, EmbeddingInsert, EmbeddingRemovalReportBuilder, EmbeddingReport,
     EmbeddingReportAddition, EmbeddingReportBuilder, EmbeddingReportRemoval,
@@ -84,7 +84,7 @@ where
     ) -> Result<EmbeddingReportAddition, ChonkitError> {
         // Make sure the collection and document exist.
 
-        let Some(document) = self.repo.get_document_by_id(input.document).await? else {
+        let Some(document) = self.repo.get_document_config_by_id(input.document).await? else {
             return err!(DoesNotExist, "Document with ID {}", input.document);
         };
 
@@ -139,47 +139,69 @@ where
             );
         }
 
-        tracing::info!("{} - starting embedding process", document.id);
+        tracing::info!("{} - starting embedding process", document.name);
 
         // Load parser and chunker
 
-        let parse_cfg = match self.repo.get_document_parse_config(document.id).await? {
-            Some(cfg) => cfg.config,
-            None => ParseConfig::default(),
+        let parse_cfg = match document.parse_config {
+            Some(cfg) => cfg,
+            // The default parser processes the whole document in cases it was not explicitly
+            // set by users
+            None => ParseConfig::Generic(GenericParseConfig::default()),
         };
 
-        let chunk_cfg = match self.repo.get_document_chunk_config(document.id).await? {
-            Some(cfg) => cfg.config,
-            None => ChunkConfig::snapping_default(),
+        let chunk_cfg = match parse_cfg {
+            ParseConfig::Generic(_) => {
+                tracing::info!("{} - using generic parser", document.name);
+                document
+                    .chunk_config
+                    .or(Some(ChunkConfig::snapping_default()))
+            }
+            // Sectioned parsers do not support chunking
+            ParseConfig::Sectioned(_) => {
+                tracing::info!("{} - using section parser", document.name);
+                None
+            }
         };
 
         // Check embedding cache
 
-        let cache_key = EmbeddingCacheKey::new(&document.hash, &chunk_cfg, &parse_cfg)?;
+        let cache_key = EmbeddingCacheKey::new(&document.hash, chunk_cfg.as_ref(), &parse_cfg)?;
 
         // If the cache errors, we want to gracefully fail and continue as usual
 
         let cached = match self.cache.get(&cache_key).await {
             Ok(embeddings) => embeddings,
             Err(e) => {
-                tracing::warn!(
+                tracing::debug!(
                     "{} -  failed to get embeddings from cache: {e}",
-                    document.id
+                    document.name
                 );
                 None
             }
         };
 
         if let Some(embeddings) = cached {
-            // Assert we get the same chunks from the cache as we would when chunking
-            // regularly.
             #[cfg(debug_assertions)]
-            {
+            'debug_assertions: {
+                // Assert we get the same chunks from the cache as we would when chunking regularly.
+                let Some(chunk_cfg) = chunk_cfg.clone() else {
+                    break 'debug_assertions;
+                };
+
+                let ParseConfig::Generic(parse_cfg) = parse_cfg.clone() else {
+                    break 'debug_assertions;
+                };
+
                 let content_bytes = storage.read(&document.path).await?;
-                let content =
-                    Parser::new(parse_cfg).parse_bytes(document.ext.try_into()?, &content_bytes)?;
+
+                let content = Parser::new(parse_cfg.to_owned())
+                    .parse(document.ext.try_into()?, &content_bytes)?;
+
                 let chunks =
-                    crate::core::chunk::chunk(&self.providers, chunk_cfg, &content).await?;
+                    crate::core::chunk::chunk(&self.providers, chunk_cfg.to_owned(), &content)
+                        .await?;
+
                 let chunks = match chunks {
                     ChunkedDocument::Ref(r) => r,
                     ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
@@ -230,17 +252,83 @@ where
         // Read, parse, chunk, embed
 
         let content_bytes = storage.read(&document.path).await?;
-        let content =
-            Parser::new(parse_cfg).parse_bytes(document.ext.try_into()?, &content_bytes)?;
-        let chunks = crate::core::chunk::chunk(&self.providers, chunk_cfg, &content).await?;
-        let chunks = match chunks {
-            ChunkedDocument::Ref(r) => r,
-            ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
+
+        // FIXME: We do not have to assign here, and we can avoid remapping to/from owned multiple times
+        let (chunks, embeddings) = match parse_cfg {
+            ParseConfig::Generic(config) => {
+                // In case of generic parsers, there will always be an associated chunker.
+                let Some(chunk_cfg) = chunk_cfg else {
+                    unreachable!("generic parsers always have a default chunker")
+                };
+
+                tracing::info!("{} - parsing generic", document.name);
+
+                let content =
+                    Parser::new(config).parse(document.ext.try_into()?, &content_bytes)?;
+
+                let chunks =
+                    crate::core::chunk::chunk(&self.providers, chunk_cfg, &content).await?;
+
+                let chunks = match chunks {
+                    ChunkedDocument::Ref(r) => r,
+                    ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
+                };
+
+                tracing::info!(
+                    "{} - generating embeddings ({} total chunks)",
+                    document.name,
+                    chunks.len()
+                );
+
+                let embeddings = embedder.embed(&chunks, &collection.model).await?;
+
+                (
+                    chunks
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>(),
+                    embeddings,
+                )
+            }
+            ParseConfig::Sectioned(config) => {
+                tracing::info!("{} - parsing sections", document.name);
+
+                // In case of sectioned parsers, we define the sections as chunks
+                let content =
+                    Parser::new(config).parse(document.ext.try_into()?, &content_bytes)?;
+
+                let sections = content
+                    .into_iter()
+                    .map(|s| {
+                        s.pages.into_iter().fold(String::new(), |mut acc, el| {
+                            acc.push_str(&el.content);
+                            acc.push('\n');
+                            acc
+                        })
+                    })
+                    .collect::<Vec<String>>();
+
+                let chunks = sections.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
+
+                tracing::info!(
+                    "{} - generating embeddings ({} total chunks)",
+                    document.name,
+                    chunks.len()
+                );
+
+                let embeddings = embedder.embed(&chunks, &collection.model).await?;
+
+                (
+                    chunks
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>(),
+                    embeddings,
+                )
+            }
         };
 
-        tracing::info!("{} - generating embeddings", document.id);
-
-        let embeddings = embedder.embed(&chunks, &collection.model).await?;
+        tracing::info!("{} - storing embeddings", document.name);
 
         debug_assert_eq!(chunks.len(), embeddings.embeddings.len());
 
@@ -262,7 +350,7 @@ where
 
             self.store_embedding_report(&report).await?;
 
-            tracing::info!("{} - caching embeddings", document.id);
+            tracing::info!("{} - caching embeddings", document.name);
 
             if let Err(e) = self
                 .cache
@@ -276,17 +364,19 @@ where
                 )
                 .await
             {
-                tracing::warn!("{} - failed to cache embeddings: {}", document.id, e);
+                tracing::warn!("{} - failed to cache embeddings: {}", document.name, e);
             }
 
             vector_db
                 .insert_embeddings(
                     document.id,
                     &collection.name,
-                    &chunks,
+                    &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     embeddings.embeddings,
                 )
                 .await?;
+
+            tracing::info!("{} - successfully processed", document.name);
 
             Ok(report)
         })

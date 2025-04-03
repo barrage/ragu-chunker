@@ -1,3 +1,4 @@
+use crate::core::document::parser::{ParseConfig, ParseOutput};
 use crate::core::model::document::DocumentSearchColumn;
 use crate::core::token::{TokenCount, Tokenizer};
 use crate::{
@@ -5,7 +6,7 @@ use crate::{
     core::{
         chunk::{ChunkConfig, ChunkedDocument},
         document::{
-            parser::{ParseConfig, Parser},
+            parser::{GenericParseConfig, Parser},
             sha256, DocumentType, TextDocumentType,
         },
         model::{
@@ -84,32 +85,13 @@ impl DocumentService {
     ///
     /// * `id`: Document ID.
     pub async fn get_config(&self, id: Uuid) -> Result<DocumentConfig, ChonkitError> {
-        let file = self.repo.get_document_config_by_id(id).await?;
+        let document = self.repo.get_document_config_by_id(id).await?;
 
-        let Some(file) = file else {
+        let Some(document) = document else {
             return err!(DoesNotExist, "Document with ID {id}");
         };
 
-        Ok(file)
-    }
-
-    /// Get document text content using its parsing configuration,
-    /// or the default parser if it has no configuration.
-    ///
-    /// * `id`: Document ID.
-    pub async fn get_content(&self, id: Uuid) -> Result<String, ChonkitError> {
-        let Some(document) = self.repo.get_document_by_id(id).await? else {
-            return err!(DoesNotExist, "Document with ID {id}");
-        };
-
-        let store = self.providers.storage.get_provider(&document.src)?;
-
-        let ext = document.ext.as_str().try_into()?;
-        let parser = self.get_parsing_config(id).await?;
-
-        let content = store.read(&document.path).await?;
-
-        parser.parse_bytes(ext, &content)
+        Ok(document)
     }
 
     /// Get document chunks using its parsing and chunking configuration,
@@ -160,7 +142,7 @@ impl DocumentService {
 
         // The default parser parses the whole input so we use it
         // to check whether the document has any content. Reject if empty.
-        Parser::default().parse_bytes(ty, file)?;
+        Parser::default().parse(ty, file)?;
 
         // Always return errors if there is a hash collision
         if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
@@ -197,7 +179,7 @@ impl DocumentService {
                 .repo
                 .insert_document_with_configs(
                     insert,
-                    ParseConfig::default(),
+                    ParseConfig::Generic(GenericParseConfig::default()),
                     ChunkConfig::snapping_default(),
                     tx,
                 )
@@ -264,82 +246,131 @@ impl DocumentService {
     ) -> Result<ChunkPreview, ChonkitError> {
         map_err!(config.validate());
 
-        let parser = if let Some(parser) = config.parser {
-            parser
-        } else {
-            let config = self.get_config(document_id).await?;
-            match config.parse_config {
+        let parse_config = match config.parse_config {
+            Some(cfg) => cfg,
+            None => match self.get_config(document_id).await?.parse_config {
                 Some(config) => config,
                 None => return err!(DoesNotExist, "Parsing configuration for {document_id}"),
-            }
+            },
         };
 
-        let content = self.parse_document(document_id, parser).await?;
+        match self.parse(document_id, parse_config).await? {
+            ParseOutput::Generic(content) => {
+                let Some(chunker) = config.chunker else {
+                    return err!(InvalidParameter, "Chunking configuration must be specified when previewing with generic parser");
+                };
 
-        let total_tokens_pre = self.tokenizer.count(&content);
-        let mut total_tokens_post = TokenCount::default();
+                let total_tokens_pre = self.tokenizer.count(&content);
+                let mut total_tokens_post = TokenCount::default();
 
-        let chunks =
-            match crate::core::chunk::chunk(&self.providers, config.chunker, &content).await? {
-                ChunkedDocument::Ref(chunked) => chunked
+                let chunks =
+                    match crate::core::chunk::chunk(&self.providers, chunker, &content).await? {
+                        ChunkedDocument::Ref(chunked) => chunked
+                            .into_iter()
+                            .map(|s| {
+                                let token_count = self.tokenizer.count(s);
+                                total_tokens_post += token_count;
+                                ChunkForPreview {
+                                    token_count,
+                                    chunk: s.to_string(),
+                                }
+                            })
+                            .collect(),
+                        ChunkedDocument::Owned(chunked) => chunked
+                            .into_iter()
+                            .map(|s| {
+                                let token_count = self.tokenizer.count(&s);
+                                total_tokens_post += token_count;
+                                ChunkForPreview {
+                                    token_count,
+                                    chunk: s,
+                                }
+                            })
+                            .collect(),
+                    };
+
+                Ok(ChunkPreview {
+                    chunks,
+                    total_tokens_pre,
+                    total_tokens_post,
+                })
+            }
+            ParseOutput::Sectioned(sections) => {
+                let mut total_tokens = TokenCount::default();
+
+                let sections = sections
                     .into_iter()
                     .map(|s| {
-                        let token_count = self.tokenizer.count(s);
-                        total_tokens_post += token_count;
-                        ChunkForPreview {
-                            token_count,
-                            chunk: s.to_string(),
-                        }
+                        s.pages.into_iter().fold(String::new(), |mut acc, el| {
+                            acc.push_str(&el.content);
+                            acc.push('\n');
+                            acc
+                        })
                     })
-                    .collect(),
-                ChunkedDocument::Owned(chunked) => chunked
-                    .into_iter()
-                    .map(|s| {
-                        let token_count = self.tokenizer.count(&s);
-                        total_tokens_post += token_count;
-                        ChunkForPreview {
-                            token_count,
-                            chunk: s,
-                        }
-                    })
-                    .collect(),
-            };
+                    .collect::<Vec<String>>();
 
-        Ok(ChunkPreview {
-            chunks,
-            total_tokens_pre,
-            total_tokens_post,
-        })
+                let chunks = sections
+                    .into_iter()
+                    .map(|section| {
+                        let token_count = self.tokenizer.count(&section);
+                        total_tokens += token_count;
+                        ChunkForPreview {
+                            chunk: section,
+                            token_count,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                Ok(ChunkPreview {
+                    chunks,
+                    total_tokens_pre: total_tokens,
+                    total_tokens_post: total_tokens,
+                })
+            }
+        }
+    }
+
+    /// Parse specific sections of the document.
+    ///
+    /// * `id`: Document ID.
+    /// * `config`: Parsing configuration.
+    pub async fn parse(&self, id: Uuid, config: ParseConfig) -> Result<ParseOutput, ChonkitError> {
+        map_err!(config.validate());
+
+        let (document, content) = self.get_document_with_content(id).await?;
+        let ext: DocumentType = document.ext.as_str().try_into()?;
+
+        match config {
+            ParseConfig::Generic(config) => {
+                tracing::info!("Using generic parser ({ext}) for '{id}'");
+                let parsed = Parser::new(config).parse(ext, &content)?;
+                Ok(ParseOutput::Generic(parsed))
+            }
+            ParseConfig::Sectioned(config) => {
+                tracing::info!("Using section parser ({ext}) for '{id}'");
+                let parsed = Parser::new(config).parse(ext, &content)?;
+                Ok(ParseOutput::Sectioned(parsed))
+            }
+        }
     }
 
     /// Parse the document and return its content.
     ///
     /// * `id`: Document ID.
-    /// * `config`: If given, uses the parsing config, otherwise use the default parser for the
-    ///             file type.
-    pub async fn parse_document(
+    /// * `config`: Parsing configuration.
+    pub async fn parse_to_string(
         &self,
         id: Uuid,
-        config: ParseConfig,
+        config: GenericParseConfig,
     ) -> Result<String, ChonkitError> {
         map_err!(config.validate());
 
-        let document = self.repo.get_document_by_id(id).await?;
-
-        let Some(document) = document else {
-            return err!(DoesNotExist, "Document with ID {id}");
-        };
-
-        let store = self.providers.storage.get_provider(&document.src)?;
+        let (document, content) = self.get_document_with_content(id).await?;
 
         let ext: DocumentType = document.ext.as_str().try_into()?;
         let parser = Parser::new(config);
 
-        tracing::info!("Using parser ({ext}) for '{id}'");
-
-        let content = store.read(&document.path).await?;
-
-        parser.parse_bytes(ext, &content)
+        parser.parse(ext, &content)
     }
 
     /// Update a document's parsing configuration.
@@ -405,15 +436,21 @@ impl DocumentService {
         }
     }
 
-    /// Get a parser for a document, or a default parser if the document has no configuration.
-    ///
-    /// * `id`: Document ID.
-    /// * `ext`: Document extension.
-    async fn get_parsing_config(&self, id: Uuid) -> Result<Parser, ChonkitError> {
-        match self.repo.get_document_parse_config(id).await? {
-            Some(cfg) => Ok(Parser::new(cfg.config)),
-            None => Ok(Parser::default()),
-        }
+    async fn get_document_with_content(
+        &self,
+        id: Uuid,
+    ) -> Result<(Document, Vec<u8>), ChonkitError> {
+        let document = self.repo.get_document_by_id(id).await?;
+
+        let Some(document) = document else {
+            return err!(DoesNotExist, "Document with ID {id}");
+        };
+
+        let store = self.providers.storage.get_provider(&document.src)?;
+
+        let content = store.read(&document.path).await?;
+
+        Ok((document, content))
     }
 }
 
@@ -452,10 +489,11 @@ pub mod dto {
     #[serde(rename_all = "camelCase")]
     pub struct ChunkPreviewPayload {
         /// Parsing configuration.
-        pub parser: Option<ParseConfig>,
+        #[serde(alias = "parser")]
+        pub parse_config: Option<ParseConfig>,
 
         /// Chunking configuration.
-        pub chunker: ChunkConfig,
+        pub chunker: Option<ChunkConfig>,
     }
 
     #[derive(Debug, Serialize, utoipa::ToSchema)]

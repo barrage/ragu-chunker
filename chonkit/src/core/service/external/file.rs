@@ -2,7 +2,7 @@ use crate::{
     core::{
         chunk::ChunkConfig,
         document::{
-            parser::{ParseConfig, Parser},
+            parser::{GenericParseConfig, ParseConfig, Parser},
             sha256,
             store::external::ExternalDocumentStorage,
         },
@@ -111,7 +111,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = Parser::default().parse_bytes(file.ext, content.as_slice()) {
+                if let Err(e) = Parser::default().parse(file.ext, content.as_slice()) {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -194,7 +194,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = Parser::default().parse_bytes(file.ext, content.as_slice()) {
+                if let Err(e) = Parser::default().parse(file.ext, content.as_slice()) {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -211,7 +211,7 @@ where
                         .repo
                         .insert_document_with_configs(
                             insert,
-                            ParseConfig::default(),
+                            ParseConfig::Generic(GenericParseConfig::default()),
                             ChunkConfig::snapping_default(),
                             tx,
                         )
@@ -291,7 +291,7 @@ where
         let content = self.api.download(file_id).await?;
 
         // Attempt to parse with defaults to check for empty documents.
-        Parser::default().parse_bytes(file.ext, content.as_slice())?;
+        Parser::default().parse(file.ext, content.as_slice())?;
 
         let hash = sha256(&content);
         storage.write(&local_path, &content, force_download).await?;

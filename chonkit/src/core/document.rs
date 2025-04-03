@@ -1,6 +1,6 @@
-use sha2::{Digest, Sha256};
-
 use crate::{err, error::ChonkitError};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 /// Parsing implementations for various file types.
 pub mod parser;
@@ -8,13 +8,8 @@ pub mod parser;
 /// File system storage implementations.
 pub mod store;
 
-pub struct Docx<'a>(pub &'a [u8]);
-pub struct Pdf<'a>(pub &'a [u8]);
-pub struct Text<'a>(pub &'a [u8]);
-pub struct Excel<'a>(pub &'a [u8]);
-
 /// All possible file types chonkit can process.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum DocumentType {
     /// Encapsulates any files that can be read as strings.
     /// Does not necessarily have to be `.txt`, could be `.json`, `.csv`, etc.
@@ -29,7 +24,7 @@ pub enum DocumentType {
     Excel,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum TextDocumentType {
     Md,
     Xml,
@@ -67,6 +62,7 @@ impl std::fmt::Display for DocumentType {
 impl TryFrom<&str> for DocumentType {
     type Error = ChonkitError;
 
+    /// Implementation that should be given either the document extension or a mime type.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "xlsx" | "application/vnd.google-apps.spreadsheet" => Ok(Self::Excel),

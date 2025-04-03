@@ -51,7 +51,7 @@ pub struct EmbeddingCacheKey(String);
 impl EmbeddingCacheKey {
     pub fn new(
         document_hash: &str,
-        chunk_config: &ChunkConfig,
+        chunk_config: Option<&ChunkConfig>,
         parse_config: &ParseConfig,
     ) -> Result<Self, ChonkitError> {
         Ok(EmbeddingCacheKey(
@@ -68,14 +68,14 @@ impl EmbeddingCacheKey {
 #[derive(Debug, Serialize)]
 struct EmbeddingCacheKeyInner<'a> {
     document_hash: &'a str,
-    chunk_config: &'a ChunkConfig,
+    chunk_config: Option<&'a ChunkConfig>,
     parse_config: &'a ParseConfig,
 }
 
 impl<'a> EmbeddingCacheKeyInner<'a> {
     fn new(
         document_hash: &'a str,
-        chunk_config: &'a ChunkConfig,
+        chunk_config: Option<&'a ChunkConfig>,
         parse_config: &'a ParseConfig,
     ) -> Self {
         EmbeddingCacheKeyInner {

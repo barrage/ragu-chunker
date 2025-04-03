@@ -6,8 +6,8 @@ mod document_service_integration_tests {
         app::test::{TestState, TestStateConfig},
         core::{
             document::{
-                parser::{Parse, ParseConfig, Parser},
-                DocumentType, Docx, Pdf, Text, TextDocumentType,
+                parser::{GenericParseConfig, ParseConfig, Parser},
+                DocumentType, TextDocumentType,
             },
             service::{
                 collection::dto::CreateCollectionPayload, document::dto::DocumentUpload,
@@ -58,8 +58,26 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = Parser::default().parse(Text(content)).unwrap();
-        let text_from_store = service.get_content(document.id).await.unwrap();
+        let parser = Parser::default();
+
+        let text_from_bytes = parser
+            .parse(document.ext.as_str().try_into().unwrap(), content)
+            .unwrap();
+
+        let text_from_store = parser
+            .parse(
+                document.ext.try_into().unwrap(),
+                &state
+                    .app
+                    .providers
+                    .storage
+                    .get_provider(&document.src)
+                    .unwrap()
+                    .read(&document.path)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
 
@@ -83,8 +101,26 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = Parser::default().parse(Pdf(content)).unwrap();
-        let text_from_store = service.get_content(document.id).await.unwrap();
+        let parser = Parser::default();
+
+        let text_from_bytes = parser
+            .parse(document.ext.as_str().try_into().unwrap(), content)
+            .unwrap();
+
+        let text_from_store = parser
+            .parse(
+                document.ext.try_into().unwrap(),
+                &state
+                    .app
+                    .providers
+                    .storage
+                    .get_provider(&document.src)
+                    .unwrap()
+                    .read(&document.path)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
 
@@ -108,8 +144,26 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = Parser::default().parse(Docx(content)).unwrap();
-        let text_from_store = service.get_content(document.id).await.unwrap();
+        let parser = Parser::default();
+
+        let text_from_bytes = parser
+            .parse(document.ext.as_str().try_into().unwrap(), content)
+            .unwrap();
+
+        let text_from_store = parser
+            .parse(
+                document.ext.try_into().unwrap(),
+                &state
+                    .app
+                    .providers
+                    .storage
+                    .get_provider(&document.src)
+                    .unwrap()
+                    .read(&document.path)
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
 
@@ -144,9 +198,17 @@ mod document_service_integration_tests {
         assert_eq!(regular.id, forced.id);
         assert_eq!(regular.path, forced.path);
 
-        let content = service.get_content(forced.id).await.unwrap();
+        let content = state
+            .app
+            .providers
+            .storage
+            .get_provider(&forced.src)
+            .unwrap()
+            .read(&forced.path)
+            .await
+            .unwrap();
 
-        assert_eq!("foo", content);
+        assert_eq!("foo".as_bytes(), content);
     }
 
     #[test]
@@ -166,15 +228,20 @@ mod document_service_integration_tests {
 
         let document = file_service.upload(upload, false).await.unwrap();
 
-        let config = ParseConfig::new(10, 20).use_range().with_filter("foo");
+        let config = GenericParseConfig::new(10, 20)
+            .use_range()
+            .with_filter("foo");
 
         service
-            .update_parser(document.id, config.clone())
+            .update_parser(document.id, ParseConfig::Generic(config.clone()))
             .await
             .unwrap();
 
         let document = service.get_config(document.id).await.unwrap();
-        let parse_config = document.parse_config.unwrap();
+
+        let ParseConfig::Generic(parse_config) = document.parse_config.unwrap() else {
+            unreachable!()
+        };
 
         assert_eq!(config.start, parse_config.start);
         assert_eq!(config.end, parse_config.end);

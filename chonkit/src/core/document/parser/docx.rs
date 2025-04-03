@@ -1,4 +1,4 @@
-use super::ParseConfig;
+use super::GenericParseConfig;
 use crate::error::ChonkitError;
 use crate::map_err;
 use docx_rs::read_docx;
@@ -6,7 +6,7 @@ use docx_rs::{Paragraph, ParagraphChild, RunChild, Table};
 use std::{fmt::Write, time::Instant};
 use tracing::debug;
 
-pub fn parse(input: &[u8], _config: &ParseConfig) -> Result<String, ChonkitError> {
+pub fn parse(input: &[u8], _config: &GenericParseConfig) -> Result<String, ChonkitError> {
     let start = Instant::now();
 
     let input = map_err!(read_docx(input));

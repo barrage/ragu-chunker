@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(CONTENT, file);
 
         let read = store.read(&path).await.unwrap();
-        let content = Parser::default().parse_bytes(ext, &read).unwrap();
+        let content = Parser::default().parse(ext, &read).unwrap();
 
         assert_eq!(CONTENT, content);
 

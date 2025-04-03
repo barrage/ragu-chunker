@@ -1,8 +1,7 @@
-use crate::error::ChonkitError;
+use super::DocumentType;
+use crate::{err, error::ChonkitError};
 use serde::{Deserialize, Serialize};
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
-
-use super::{DocumentType, Docx, Excel, Pdf, Text};
 
 pub mod docx;
 pub mod excel;
@@ -10,27 +9,85 @@ pub mod pdf;
 pub mod text;
 
 #[derive(Debug)]
-pub struct Parser<C = ParseConfig>(pub C);
+pub struct Parser<C = GenericParseConfig>(pub C);
 
-impl Parser {
-    pub fn new(config: ParseConfig) -> Self {
+impl<C> Parser<C> {
+    pub fn new(config: C) -> Self {
         Self(config)
+    }
+}
+
+impl Parser<GenericParseConfig> {
+    pub fn parse(&self, ext: DocumentType, input: &[u8]) -> Result<String, ChonkitError> {
+        let out = match ext {
+            DocumentType::Text(_) => text::parse(input, &self.0),
+            DocumentType::Docx => docx::parse(input, &self.0),
+            DocumentType::Pdf => pdf::parse(input, &self.0),
+            DocumentType::Excel => excel::parse(input, &self.0),
+        }?;
+
+        let GenericParseConfig {
+            start, end, range, ..
+        } = self.0;
+
+        if out.trim().is_empty() {
+            tracing::error!("Parsing resulted in empty output. Config: {:?}", self.0);
+
+            return crate::err!(
+                ParseConfig,
+                "empty output (start: {start} | end: {end} | range: {range})",
+            );
+        }
+
+        Ok(out)
+    }
+}
+
+impl Parser<SectionParseConfig> {
+    pub fn parse(
+        &self,
+        ext: DocumentType,
+        input: &[u8],
+    ) -> Result<Vec<DocumentSection>, ChonkitError> {
+        match ext {
+            DocumentType::Pdf => pdf::parse_paginated(input, &self.0),
+            _ => err!(
+                InvalidParameter,
+                "cannot parse {ext} with pagination parser"
+            ),
+        }
     }
 }
 
 impl Default for Parser {
     fn default() -> Self {
-        Self::new(ParseConfig::default())
+        Self::new(GenericParseConfig::default())
     }
 }
 
-/// Generic parsing configuration for documents.
+/// Enumerations of all possible parsing configurations chonkit supports.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
+#[serde(untagged)]
+pub enum ParseConfig {
+    Generic(#[validate] GenericParseConfig),
+    Sectioned(#[validate] SectionParseConfig),
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, utoipa::ToSchema)]
+#[serde(untagged)]
+pub enum ParseOutput {
+    Generic(String),
+    Sectioned(Vec<DocumentSection>),
+}
+
+/// Generic parsing configuration for documents based on text elements.
+///
 /// A text element is parser specific, it could be PDF pages,
 /// DOCX paragraphs, CSV rows, etc.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[validate(Self::validate_schema)]
-pub struct ParseConfig {
+pub struct GenericParseConfig {
     /// Skip the first amount of text elements.
     pub start: usize,
 
@@ -42,11 +99,11 @@ pub struct ParseConfig {
     /// skipping the elements.
     pub range: bool,
 
-    /// Filter specific patterns in text elements. Parser specific.
+    /// Exclude specific lines matching any of the patterns provided here from the output.
     pub filters: Vec<String>,
 }
 
-impl ParseConfig {
+impl GenericParseConfig {
     pub fn new(start: usize, end: usize) -> Self {
         Self {
             start,
@@ -83,58 +140,59 @@ impl ParseConfig {
     }
 }
 
-pub trait Parse<T> {
-    fn parse(&self, input: T) -> Result<String, ChonkitError>;
+/// Pagination based parser.
+///
+/// Applicable to documents with pagination:
+///
+/// - DOCX
+/// - PDF
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionParseConfig {
+    /// A list of document sections (pages) to capture in the final output.
+    #[validate]
+    pub sections: Vec<PageRange>,
+
+    /// Exclude lines matching any of the provided filters.
+    pub filters: Vec<String>,
 }
 
-impl Parse<Docx<'_>> for Parser {
-    fn parse(&self, input: Docx<'_>) -> Result<String, ChonkitError> {
-        docx::parse(input.0, &self.0)
-    }
+/// Represents a range of pages in a document to capture in the final output.
+///
+/// Both `start` and `end` are inclusive. Given `start == end`, a single page will be captured.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Validate, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+#[validate(Self::schema_validation)]
+pub struct PageRange {
+    #[validate(range(min = 1.))]
+    pub start: usize,
+    pub end: usize,
 }
 
-impl Parse<Pdf<'_>> for Parser {
-    fn parse(&self, input: Pdf<'_>) -> Result<String, ChonkitError> {
-        let out = pdf::parse(input.0, &self.0)?;
-
-        Ok(out)
-    }
-}
-
-impl Parse<Excel<'_>> for Parser {
-    fn parse(&self, input: Excel<'_>) -> Result<String, ChonkitError> {
-        excel::parse(input.0, &self.0)
-    }
-}
-
-impl Parse<Text<'_>> for Parser {
-    fn parse(&self, input: Text<'_>) -> Result<String, ChonkitError> {
-        text::parse(input.0, &self.0)
-    }
-}
-
-impl Parser {
-    pub fn parse_bytes(&self, ext: DocumentType, input: &[u8]) -> Result<String, ChonkitError> {
-        let out = match ext {
-            DocumentType::Text(_) => Parse::parse(self, Text(input)),
-            DocumentType::Docx => Parse::parse(self, Docx(input)),
-            DocumentType::Pdf => Parse::parse(self, Pdf(input)),
-            DocumentType::Excel => Parse::parse(self, Excel(input)),
-        }?;
-
-        let ParseConfig {
-            start, end, range, ..
-        } = self.0;
-
-        if out.trim().is_empty() {
-            tracing::error!("Parsing resulted in empty output. Config: {:?}", self.0);
-
-            return crate::err!(
-                ParseConfig,
-                "empty output (start: {start} | end: {end} | range: {range})",
+impl PageRange {
+    #[schema_validation]
+    fn schema_validation(&self) -> Result<(), ValidationErrors> {
+        if self.start > self.end {
+            schema_err!(
+                "start>end",
+                "section end must be greater than or equal to start"
             );
         }
-
-        Ok(out)
     }
+}
+
+/// A document section that has been parsed with a parser using [SectionParseConfig].
+#[derive(Debug, Default, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct DocumentSection {
+    pub pages: Vec<DocumentPage>,
+}
+
+/// A document page that has been parsed with a parser using [SectionParseConfig].
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct DocumentPage {
+    /// The text contents of the page.
+    pub content: String,
+
+    /// The page number.
+    pub number: usize,
 }
