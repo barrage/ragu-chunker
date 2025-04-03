@@ -166,7 +166,10 @@ impl VectorDb for Qdrant {
         let search_points = SearchPoints {
             collection_name: collection.to_string(),
             vector: search.into_iter().map(|x| x as f32).collect(),
-            filter: None,
+            filter: Some(Filter::must_not(vec![Condition::matches_text(
+                "id",
+                Uuid::nil().to_string(),
+            )])),
             limit: limit as u64,
             with_payload: Some(WithPayloadSelector {
                 selector_options: Some(SelectorOptions::Enable(true)),
@@ -518,5 +521,31 @@ mod qdrant_tests {
         let collection = qdrant.get_collection(name).await.unwrap();
 
         assert_eq!(groups, collection.groups.unwrap());
+    }
+
+    #[test]
+    async fn queries_collection_skipping_id_vector(qdrant: QdrantDb) {
+        let name = "My_collection_for_query";
+        let id = Uuid::new_v4();
+        let document_id = Uuid::new_v4();
+
+        let collection =
+            CreateVectorCollection::new(id, name, 420, "openai", "text-embedding-ada-002", None);
+
+        qdrant.create_vector_collection(collection).await.unwrap();
+
+        qdrant
+            .insert_embeddings(document_id, name, &["foo"], vec![vec![0.420f64; 420]])
+            .await
+            .unwrap();
+
+        let results = VectorDb::query(qdrant.as_ref(), vec![0.420f64; 420], name, 420, None)
+            .await
+            .unwrap();
+
+        assert_eq!(1, results.len());
+        assert_eq!("foo", results[0].content);
+
+        qdrant.delete_vector_collection(name).await.unwrap();
     }
 }

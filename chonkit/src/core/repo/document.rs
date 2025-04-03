@@ -1,3 +1,4 @@
+use super::Atomic;
 use crate::core::document::parser::ParseConfig;
 use crate::core::model::document::{DocumentParameterUpdate, DocumentSearchColumn};
 use crate::core::model::ToSearchColumn;
@@ -22,8 +23,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use sqlx::{types::Json, FromRow, Postgres, Row};
 use std::collections::HashMap;
 use uuid::Uuid;
-
-use super::Atomic;
 
 impl Repository {
     pub async fn get_document_by_id(
