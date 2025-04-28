@@ -19,6 +19,7 @@ use tracing::Span;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+pub(super) mod blob;
 pub(super) mod collection;
 pub(super) mod document;
 pub(super) mod embedding;
@@ -121,6 +122,8 @@ pub fn router(state: AppState) -> Router {
             "/display/collections/:id",
             get(collection::collection_display),
         )
+        .route("/blobs/images/:id", get(blob::get_image))
+        .route("/blobs/documents/:id", get(blob::get_document_bytes))
         .with_state(state.clone());
 
     #[cfg(feature = "gdrive")]

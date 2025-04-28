@@ -5,15 +5,12 @@ use crate::{
         state::AppState,
     },
     core::{
-        document::{
-            parser::{ParseConfig, ParseOutput},
-            DocumentType,
-        },
+        document::{parser::ParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
             List,
         },
-        service::document::dto::{ChunkPreview, ChunkPreviewPayload, DocumentUpload},
+        service::document::dto::{ChunkPreview, ChunkPreviewPayload, DocumentUpload, ParsePreview},
     },
     error::ChonkitError,
 };
@@ -267,8 +264,10 @@ pub(super) async fn parse_preview(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(config): Json<ParseConfig>,
-) -> Result<Json<ParseOutput>, ChonkitError> {
-    Ok(Json(state.services.document.parse(id, config).await?))
+) -> Result<Json<ParsePreview>, ChonkitError> {
+    Ok(Json(
+        state.services.document.parse_preview(id, config).await?,
+    ))
 }
 
 #[utoipa::path(

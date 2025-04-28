@@ -963,10 +963,7 @@ mod tests {
         app::test::{init_repository, PostgresContainer},
         core::{
             chunk::ChunkConfig,
-            document::{
-                parser::{GenericParseConfig, ParseConfig},
-                DocumentType, TextDocumentType,
-            },
+            document::{parser::ParseConfig, DocumentType, TextDocumentType},
             model::{
                 document::{DocumentInsert, DocumentSearchColumn},
                 Pagination, PaginationSort, Search,
@@ -1068,7 +1065,7 @@ mod tests {
                     "Hash1r",
                     "fs",
                 ),
-                ParseConfig::Generic(GenericParseConfig::default()),
+                ParseConfig::default(),
                 ChunkConfig::snapping_default(),
                 tx,
             )
@@ -1086,7 +1083,7 @@ mod tests {
                     "Hash2r",
                     "other",
                 ),
-                ParseConfig::Generic(GenericParseConfig::default()),
+                ParseConfig::default(),
                 ChunkConfig::snapping_default(),
                 tx,
             )

@@ -1,7 +1,4 @@
-use super::{
-    parser::{GenericParseConfig, ParseConfig},
-    sha256, DocumentType,
-};
+use super::{parser::ParseConfig, sha256, DocumentType};
 use crate::{
     core::{
         chunk::ChunkConfig,
@@ -106,7 +103,7 @@ pub trait DocumentStorage: Identity {
             if let Err(e) = tokio::fs::metadata(path).await {
                 match e.kind() {
                     std::io::ErrorKind::NotFound => {
-                        tracing::info!("Document '{}' not found in storage, removing", path);
+                        tracing::info!("{path} - not found in storage, removing");
                         repo.remove_document_by_id(*id, None).await?;
                         continue;
                     }
@@ -124,7 +121,25 @@ pub trait DocumentStorage: Identity {
             let doc = repo.get_document_by_path(&file.path.0, self.id()).await?;
 
             if let Some(Document { id, name, .. }) = doc {
-                tracing::info!("Document '{name}' already exists ({id})");
+                tracing::info!("{id} - '{name}' already exists");
+                if let Err(e) = repo.get_document_config_by_id(id).await {
+                    tracing::error!("{id} - error loading config: {e}");
+                    tracing::debug!("{id} - attempting to upsert configuration");
+
+                    if let Err(e) = repo
+                        .upsert_document_chunk_config(id, ChunkConfig::snapping_default())
+                        .await
+                    {
+                        tracing::error!("{id} - error updating chunk config: {e}");
+                    }
+
+                    if let Err(e) = repo
+                        .upsert_document_parse_config(id, ParseConfig::default())
+                        .await
+                    {
+                        tracing::error!("{id} - error updating parsing config: {e}");
+                    }
+                }
                 continue;
             }
 
@@ -135,7 +150,7 @@ pub trait DocumentStorage: Identity {
                     DocumentInsert::new(&file.name, &file.path.0, file.ext, &hash, self.id());
                 repo.insert_document_with_configs(
                     insert,
-                    ParseConfig::Generic(GenericParseConfig::default()),
+                    ParseConfig::default(),
                     ChunkConfig::snapping_default(),
                     tx,
                 )
@@ -144,7 +159,7 @@ pub trait DocumentStorage: Identity {
 
             match result {
                 Ok(Document { id, name, .. }) => {
-                    tracing::info!("Successfully inserted '{name}' ({id})")
+                    tracing::info!("{id} - successfully inserted '{name}'")
                 }
                 Err(e) => tracing::error!("{e}"),
             }

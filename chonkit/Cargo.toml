@@ -35,10 +35,10 @@ validify = "2.0.0"
 docx-rs = "0.4.17"
 regex = "1.10.6"
 suitest = "0.1.4"
-pdfium-render = { version = "0.8.28" }
+pdfium-render = { version = "0.8.28", features = ["image"] }
 calamine = "0.26.1"
 testcontainers = "0.22.0"
-testcontainers-modules = { version = "0.10.0", features = ["postgres", "redis"] }
+testcontainers-modules = { version = "0.10.0", features = ["postgres", "redis", "minio"] }
 
 # weaviate
 weaviate-community = { version = "0.2.2", optional = true }
@@ -70,6 +70,9 @@ jwtk = { version = "0.4.0", features = ["remote-jwks"], optional = true }
 reqwest = { version = "0.12.7", features = ["json"] }
 tiktoken-rs = { version = "0.6.0" }
 deadpool-redis = { version = "0.19.0" }
+image = { version = "0.25.6", features = ["webp", "serde"] }
+base64 = "0.22.1"
+rust-s3 = { git = "https://github.com/durch/rust-s3.git", rev = "7c6fdc0646704eac315c11eb60bf9f125975159b" }
 
 [features]
 default = ["weaviate", "qdrant", "fe-local", "openai", "azure", "gdrive", "auth-jwt"]

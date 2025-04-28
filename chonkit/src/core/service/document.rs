@@ -1,14 +1,11 @@
-use crate::core::document::parser::{ParseConfig, ParseOutput};
+use crate::core::document::parser::{parse, ParseConfig, ParseOutput};
 use crate::core::model::document::DocumentSearchColumn;
 use crate::core::token::{TokenCount, Tokenizer};
 use crate::{
     config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
     core::{
         chunk::{ChunkConfig, ChunkedDocument},
-        document::{
-            parser::{GenericParseConfig, Parser},
-            sha256, DocumentType, TextDocumentType,
-        },
+        document::{sha256, DocumentType, TextDocumentType},
         model::{
             document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentInsert, DocumentParameterUpdate,
@@ -22,7 +19,7 @@ use crate::{
     error::ChonkitError,
     map_err, transaction,
 };
-use dto::{ChunkForPreview, ChunkPreview, DocumentUpload};
+use dto::{ChunkForPreview, ChunkPreview, DocumentUpload, ParseOutputPreview, ParsePreview};
 use std::time::Instant;
 use uuid::Uuid;
 use validify::{Validate, Validify};
@@ -134,7 +131,7 @@ impl DocumentService {
     ) -> Result<Document, ChonkitError> {
         map_err!(params.validify());
 
-        let store = self.providers.storage.get_provider(FS_STORE_ID)?;
+        let store = self.providers.document.get_provider(FS_STORE_ID)?;
 
         let DocumentUpload { ref name, ty, file } = params;
         let path = store.absolute_path(name, ty);
@@ -142,7 +139,7 @@ impl DocumentService {
 
         // The default parser parses the whole input so we use it
         // to check whether the document has any content. Reject if empty.
-        Parser::default().parse(ty, file)?;
+        parse(ParseConfig::default(), ty, file).await?;
 
         // Always return errors if there is a hash collision
         if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
@@ -179,7 +176,7 @@ impl DocumentService {
                 .repo
                 .insert_document_with_configs(
                     insert,
-                    ParseConfig::Generic(GenericParseConfig::default()),
+                    ParseConfig::default(),
                     ChunkConfig::snapping_default(),
                     tx,
                 )
@@ -202,7 +199,7 @@ impl DocumentService {
             .repo
             .get_document_assigned_collections(document.id)
             .await?;
-        let store = self.providers.storage.get_provider(&document.src)?;
+        let store = self.providers.document.get_provider(&document.src)?;
         transaction! {self.repo, |tx| async move {
                 self.repo.remove_document_by_id(document.id, Some(tx)).await?;
                 for (_, name, provider) in collections {
@@ -220,7 +217,7 @@ impl DocumentService {
     pub async fn sync(&self, provider: &str) -> Result<(), ChonkitError> {
         let __start = Instant::now();
 
-        let store = self.providers.storage.get_provider(provider)?;
+        let store = self.providers.document.get_provider(provider)?;
 
         tracing::info!("Syncing documents with {}", store.id());
 
@@ -254,13 +251,18 @@ impl DocumentService {
             },
         };
 
-        match self.parse(document_id, parse_config).await? {
-            ParseOutput::Generic(content) => {
+        let ParsePreview {
+            text,
+            images,
+            total_tokens,
+        } = self.parse_preview(document_id, parse_config).await?;
+
+        match text {
+            ParseOutputPreview::String(content) => {
                 let Some(chunker) = config.chunker else {
                     return err!(InvalidParameter, "Chunking configuration must be specified when previewing with generic parser");
                 };
 
-                let total_tokens_pre = self.tokenizer.count(&content);
                 let mut total_tokens_post = TokenCount::default();
 
                 let chunks =
@@ -291,13 +293,14 @@ impl DocumentService {
 
                 Ok(ChunkPreview {
                     chunks,
-                    total_tokens_pre,
+                    images,
+                    total_tokens_pre: total_tokens,
                     total_tokens_post,
                 })
             }
-            ParseOutput::Sectioned(sections) => {
-                let mut total_tokens = TokenCount::default();
-
+            ParseOutputPreview::Sections(sections) => {
+                // TODO: configure section merge strategy
+                // currently we are merging them, but we should also enable storing page by page
                 let sections = sections
                     .into_iter()
                     .map(|s| {
@@ -311,18 +314,15 @@ impl DocumentService {
 
                 let chunks = sections
                     .into_iter()
-                    .map(|section| {
-                        let token_count = self.tokenizer.count(&section);
-                        total_tokens += token_count;
-                        ChunkForPreview {
-                            chunk: section,
-                            token_count,
-                        }
+                    .map(|section| ChunkForPreview {
+                        token_count: self.tokenizer.count(&section),
+                        chunk: section,
                     })
                     .collect::<Vec<_>>();
 
                 Ok(ChunkPreview {
                     chunks,
+                    images,
                     total_tokens_pre: total_tokens,
                     total_tokens_post: total_tokens,
                 })
@@ -334,43 +334,56 @@ impl DocumentService {
     ///
     /// * `id`: Document ID.
     /// * `config`: Parsing configuration.
-    pub async fn parse(&self, id: Uuid, config: ParseConfig) -> Result<ParseOutput, ChonkitError> {
-        map_err!(config.validate());
-
-        let (document, content) = self.get_document_with_content(id).await?;
-        let ext: DocumentType = document.ext.as_str().try_into()?;
-
-        match config {
-            ParseConfig::Generic(config) => {
-                tracing::info!("Using generic parser ({ext}) for '{id}'");
-                let parsed = Parser::new(config).parse(ext, &content)?;
-                Ok(ParseOutput::Generic(parsed))
-            }
-            ParseConfig::Sectioned(config) => {
-                tracing::info!("Using section parser ({ext}) for '{id}'");
-                let parsed = Parser::new(config).parse(ext, &content)?;
-                Ok(ParseOutput::Sectioned(parsed))
-            }
-        }
-    }
-
-    /// Parse the document and return its content.
-    ///
-    /// * `id`: Document ID.
-    /// * `config`: Parsing configuration.
-    pub async fn parse_to_string(
+    pub async fn parse_preview(
         &self,
         id: Uuid,
-        config: GenericParseConfig,
-    ) -> Result<String, ChonkitError> {
-        map_err!(config.validate());
-
+        config: ParseConfig,
+    ) -> Result<ParsePreview, ChonkitError> {
         let (document, content) = self.get_document_with_content(id).await?;
 
-        let ext: DocumentType = document.ext.as_str().try_into()?;
-        let parser = Parser::new(config);
+        let output = parse(config, document.ext.as_str().try_into()?, &content).await?;
 
-        parser.parse(ext, &content)
+        match output {
+            ParseOutput::String { text, images } => {
+                let mut image_paths = vec![];
+                for image in images.into_iter() {
+                    if self.providers.image.exists(&image.path).await? {
+                        tracing::debug!("Image '{}' in document {id} already exists", image.path);
+                        image_paths.push(image.path);
+                        continue;
+                    }
+
+                    if let Err(e) = self.providers.image.store_image(&image).await {
+                        tracing::error!(
+                            "Unable to store image ({}) in document {id}: {e}",
+                            image.path
+                        );
+                        continue;
+                    }
+
+                    image_paths.push(image.path);
+                }
+
+                Ok(ParsePreview {
+                    total_tokens: self.tokenizer.count(&text),
+                    text: dto::ParseOutputPreview::String(text),
+                    images: image_paths,
+                })
+            }
+            ParseOutput::Sections(document_sections) => Ok(ParsePreview {
+                total_tokens: document_sections.iter().fold(
+                    TokenCount::default(),
+                    |mut acc, el| {
+                        el.pages
+                            .iter()
+                            .for_each(|page| acc += self.tokenizer.count(&page.content));
+                        acc
+                    },
+                ),
+                text: dto::ParseOutputPreview::Sections(document_sections),
+                images: vec![],
+            }),
+        }
     }
 
     /// Update a document's parsing configuration.
@@ -380,9 +393,7 @@ impl DocumentService {
     pub async fn update_parser(&self, id: Uuid, config: ParseConfig) -> Result<(), ChonkitError> {
         map_err!(config.validate());
 
-        let document = self.repo.get_document_by_id(id).await?;
-
-        if document.is_none() {
+        if self.repo.get_document_by_id(id).await?.is_none() {
             return err!(DoesNotExist, "Document with ID {id}");
         }
 
@@ -396,9 +407,7 @@ impl DocumentService {
     /// * `id`: Document ID.
     /// * `config`: Chunking configuration.
     pub async fn update_chunker(&self, id: Uuid, config: ChunkConfig) -> Result<(), ChonkitError> {
-        let document = self.repo.get_document_by_id(id).await?;
-
-        if document.is_none() {
+        if self.repo.get_document_by_id(id).await?.is_none() {
             return err!(DoesNotExist, "Document with ID {id}");
         }
 
@@ -436,7 +445,7 @@ impl DocumentService {
         }
     }
 
-    async fn get_document_with_content(
+    pub async fn get_document_with_content(
         &self,
         id: Uuid,
     ) -> Result<(Document, Vec<u8>), ChonkitError> {
@@ -446,7 +455,7 @@ impl DocumentService {
             return err!(DoesNotExist, "Document with ID {id}");
         };
 
-        let store = self.providers.storage.get_provider(&document.src)?;
+        let store = self.providers.document.get_provider(&document.src)?;
 
         let content = store.read(&document.path).await?;
 
@@ -458,7 +467,10 @@ impl DocumentService {
 pub mod dto {
     use crate::core::{
         chunk::ChunkConfig,
-        document::{parser::ParseConfig, DocumentType},
+        document::{
+            parser::{DocumentSection, ParseConfig},
+            DocumentType,
+        },
         token::TokenCount,
     };
     use serde::{Deserialize, Serialize};
@@ -507,7 +519,23 @@ pub mod dto {
     #[serde(rename_all = "camelCase")]
     pub struct ChunkPreview {
         pub chunks: Vec<ChunkForPreview>,
+        pub images: Vec<String>,
         pub total_tokens_pre: TokenCount,
         pub total_tokens_post: TokenCount,
+    }
+
+    #[derive(Debug, Serialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ParsePreview {
+        pub text: ParseOutputPreview,
+        pub images: Vec<String>,
+        pub total_tokens: TokenCount,
+    }
+
+    #[derive(Debug, Serialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub enum ParseOutputPreview {
+        String(String),
+        Sections(Vec<DocumentSection>),
     }
 }

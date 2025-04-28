@@ -124,6 +124,9 @@ pub enum ChonkitErr {
 
     #[error("redis pool: {0}")]
     CachePool(#[from] deadpool_redis::PoolError),
+
+    #[error("s3: {0}")]
+    S3(#[from] s3::error::S3Error),
 }
 
 /// A wrapper around an error that includes the specific file, line and column it was created in.

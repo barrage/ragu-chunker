@@ -31,16 +31,5 @@ pub mod vector;
 /// Tokenizer utilities.
 pub mod token;
 
-/// Utility macro for timing short expressions so we don't polute the codebase.
-///
-/// Logs the amount of milliseconds the expression took to complete.
-#[macro_export]
-macro_rules! timed {
-    ($msg:literal, $expr:expr) => {{
-        let start = std::time::Instant::now();
-        let result = $expr;
-        let elapsed = start.elapsed().as_millis();
-        tracing::debug!("{} ({elapsed}ms)", $msg);
-        result
-    }};
-}
+/// Image models and utilities.
+pub mod image;

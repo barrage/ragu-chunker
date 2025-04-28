@@ -1,14 +1,15 @@
 use super::{
     batch::{self, BatchEmbedderHandle},
-    cache::init_redis,
     server::HttpConfiguration,
 };
 use crate::{
     app::document::store::FsDocumentStore,
     config::FS_STORE_ID,
     core::{
+        cache::{init, TextEmbeddingCache},
         chunk::ChunkConfig,
         document::{DocumentType, TextDocumentType},
+        image::{minio::MinioClient, ImageStore},
         provider::{
             DocumentStorageProvider, EmbeddingProvider, Identity, ProviderState, VectorDbProvider,
         },
@@ -28,7 +29,7 @@ use tracing_subscriber::EnvFilter;
 #[derive(Clone)]
 pub struct AppState {
     /// Chonkit services.
-    pub services: ServiceState<deadpool_redis::Pool>,
+    pub services: ServiceState,
 
     /// Handle for batch embedding documents.
     pub batch_embedder: BatchEmbedderHandle,
@@ -58,13 +59,15 @@ impl AppState {
             .init();
 
         let repository = crate::core::repo::Repository::new(&args.db_url()).await;
-        let cache = init_redis(&args.redis_url()).await;
+        let embedding_cache =
+            TextEmbeddingCache::new(init(&args.redis_url(), &args.redis_embedding_db()).await);
 
         let providers = AppProviderState {
             database: repository.clone(),
             vector: Self::init_vector_providers(args),
             embedding: Self::init_embedding_providers(args),
-            storage: Self::init_storage(args).await,
+            document: Self::init_storage(args).await,
+            image: Self::init_image_storage(args).await,
         };
 
         let services = ServiceState {
@@ -75,7 +78,7 @@ impl AppState {
             ),
             collection: CollectionService::new(repository.clone(), providers.clone().into()),
             external: ServiceFactory::new(repository.clone(), providers.clone().into()),
-            embedding: EmbeddingService::new(repository, providers.clone().into(), cache),
+            embedding: EmbeddingService::new(repository, providers.clone().into(), embedding_cache),
         };
 
         services.document.create_default_document().await;
@@ -215,6 +218,18 @@ impl AppState {
         storage
     }
 
+    async fn init_image_storage(args: &crate::config::StartArgs) -> ImageStore {
+        Arc::new(
+            MinioClient::new(
+                args.minio_url(),
+                args.minio_bucket(),
+                args.minio_access_key(),
+                args.minio_secret_key(),
+            )
+            .await,
+        )
+    }
+
     /// Used for metadata display.
     pub async fn get_configuration(&self) -> Result<AppConfig, ChonkitError> {
         let mut embedding_providers = HashMap::new();
@@ -278,7 +293,8 @@ pub struct AppProviderState {
     pub database: Repository,
     pub vector: VectorDbProvider,
     pub embedding: EmbeddingProvider,
-    pub storage: DocumentStorageProvider,
+    pub document: DocumentStorageProvider,
+    pub image: ImageStore,
 }
 
 impl From<AppProviderState> for ProviderState {
@@ -286,7 +302,8 @@ impl From<AppProviderState> for ProviderState {
         ProviderState {
             vector: value.vector,
             embedding: value.embedding,
-            storage: value.storage,
+            document: value.document,
+            image: value.image,
         }
     }
 }

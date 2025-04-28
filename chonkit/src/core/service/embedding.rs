@@ -1,6 +1,7 @@
-use crate::core::cache::{CachedEmbeddings, EmbeddingCache, EmbeddingCacheKey};
+use crate::core::cache::embedding::{CachedEmbeddings, EmbeddingCacheKey};
+use crate::core::cache::TextEmbeddingCache;
 use crate::core::chunk::{ChunkConfig, ChunkedDocument};
-use crate::core::document::parser::{GenericParseConfig, ParseConfig, Parser};
+use crate::core::document::parser::{parse, ParseMode, ParseOutput};
 use crate::core::model::embedding::{
     Embedding, EmbeddingInsert, EmbeddingRemovalReportBuilder, EmbeddingReport,
     EmbeddingReportAddition, EmbeddingReportBuilder, EmbeddingReportRemoval,
@@ -16,17 +17,14 @@ use uuid::Uuid;
 use validify::Validate;
 
 #[derive(Clone)]
-pub struct EmbeddingService<Cache> {
+pub struct EmbeddingService {
     repo: Repository,
     providers: ProviderState,
-    cache: Cache,
+    cache: TextEmbeddingCache,
 }
 
-impl<Cache> EmbeddingService<Cache>
-where
-    Cache: EmbeddingCache,
-{
-    pub fn new(repo: Repository, providers: ProviderState, cache: Cache) -> Self {
+impl EmbeddingService {
+    pub fn new(repo: Repository, providers: ProviderState, cache: TextEmbeddingCache) -> Self {
         Self {
             repo,
             providers,
@@ -115,7 +113,7 @@ where
 
         // Load providers and check for state treachery
 
-        let storage = self.providers.storage.get_provider(&document.src)?;
+        let storage = self.providers.document.get_provider(&document.src)?;
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
         let embedder = self
             .providers
@@ -143,22 +141,17 @@ where
 
         // Load parser and chunker
 
-        let parse_cfg = match document.parse_config {
-            Some(cfg) => cfg,
-            // The default parser processes the whole document in cases it was not explicitly
-            // set by users
-            None => ParseConfig::Generic(GenericParseConfig::default()),
-        };
+        let parse_cfg = document.parse_config.unwrap_or_default();
 
-        let chunk_cfg = match parse_cfg {
-            ParseConfig::Generic(_) => {
+        let chunk_cfg = match parse_cfg.mode {
+            ParseMode::String(_) => {
                 tracing::info!("{} - using generic parser", document.name);
                 document
                     .chunk_config
                     .or(Some(ChunkConfig::snapping_default()))
             }
             // Sectioned parsers do not support chunking
-            ParseConfig::Sectioned(_) => {
+            ParseMode::Section(_) => {
                 tracing::info!("{} - using section parser", document.name);
                 None
             }
@@ -166,7 +159,9 @@ where
 
         // Check embedding cache
 
-        let cache_key = EmbeddingCacheKey::new(&document.hash, chunk_cfg.as_ref(), &parse_cfg)?;
+        // TODO: Image embedding cache
+        let cache_key =
+            EmbeddingCacheKey::new(&document.hash, chunk_cfg.as_ref(), &parse_cfg.mode)?;
 
         // If the cache errors, we want to gracefully fail and continue as usual
 
@@ -182,33 +177,6 @@ where
         };
 
         if let Some(embeddings) = cached {
-            #[cfg(debug_assertions)]
-            'debug_assertions: {
-                // Assert we get the same chunks from the cache as we would when chunking regularly.
-                let Some(chunk_cfg) = chunk_cfg.clone() else {
-                    break 'debug_assertions;
-                };
-
-                let ParseConfig::Generic(parse_cfg) = parse_cfg.clone() else {
-                    break 'debug_assertions;
-                };
-
-                let content_bytes = storage.read(&document.path).await?;
-
-                let content = Parser::new(parse_cfg.to_owned())
-                    .parse(document.ext.try_into()?, &content_bytes)?;
-
-                let chunks =
-                    crate::core::chunk::chunk(&self.providers, chunk_cfg.to_owned(), &content)
-                        .await?;
-
-                let chunks = match chunks {
-                    ChunkedDocument::Ref(r) => r,
-                    ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
-                };
-                debug_assert_eq!(chunks, embeddings.chunks);
-            }
-
             tracing::info!("{} - using cached embeddings", document.id);
 
             let collection_name = collection.name.clone();
@@ -253,51 +221,49 @@ where
 
         let content_bytes = storage.read(&document.path).await?;
 
-        // FIXME: We do not have to assign here, and we can avoid remapping to/from owned multiple times
-        let (chunks, embeddings) = match parse_cfg {
-            ParseConfig::Generic(config) => {
-                // In case of generic parsers, there will always be an associated chunker.
-                let Some(chunk_cfg) = chunk_cfg else {
-                    unreachable!("generic parsers always have a default chunker")
-                };
+        let parse_output = parse(parse_cfg, document.ext.try_into()?, &content_bytes).await?;
 
-                tracing::info!("{} - parsing generic", document.name);
+        // TODO: Handle images
+        let (chunks, embeddings) = match parse_output {
+            ParseOutput::String { text, images } => {
+                tracing::info!("{} - parsed to string", document.name);
 
-                let content =
-                    Parser::new(config).parse(document.ext.try_into()?, &content_bytes)?;
+                match chunk_cfg {
+                    Some(cfg) => {
+                        let chunks = crate::core::chunk::chunk(&self.providers, cfg, &text).await?;
 
-                let chunks =
-                    crate::core::chunk::chunk(&self.providers, chunk_cfg, &content).await?;
+                        let chunks = match chunks {
+                            ChunkedDocument::Ref(r) => r,
+                            ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
+                        };
 
-                let chunks = match chunks {
-                    ChunkedDocument::Ref(r) => r,
-                    ChunkedDocument::Owned(ref o) => o.iter().map(|s| s.as_str()).collect(),
-                };
+                        tracing::info!(
+                            "{} - generating embeddings ({} total chunks)",
+                            document.name,
+                            chunks.len()
+                        );
 
-                tracing::info!(
-                    "{} - generating embeddings ({} total chunks)",
-                    document.name,
-                    chunks.len()
-                );
+                        let embeddings = embedder.embed(&chunks, &collection.model).await?;
 
-                let embeddings = embedder.embed(&chunks, &collection.model).await?;
-
-                (
-                    chunks
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<String>>(),
-                    embeddings,
-                )
+                        (
+                            chunks
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<String>>(),
+                            embeddings,
+                        )
+                    }
+                    None => {
+                        let embeddings = embedder.embed(&[&text], &collection.model).await?;
+                        (vec![text], embeddings)
+                    }
+                }
             }
-            ParseConfig::Sectioned(config) => {
-                tracing::info!("{} - parsing sections", document.name);
+            ParseOutput::Sections(document_sections) => {
+                tracing::info!("{} - parsed sections", document.name);
 
                 // In case of sectioned parsers, we define the sections as chunks
-                let content =
-                    Parser::new(config).parse(document.ext.try_into()?, &content_bytes)?;
-
-                let sections = content
+                let sections = document_sections
                     .into_iter()
                     .map(|s| {
                         s.pages.into_iter().fold(String::new(), |mut acc, el| {

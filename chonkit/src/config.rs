@@ -67,6 +67,24 @@ pub struct StartArgs {
     #[arg(long)]
     redis_url: Option<String>,
 
+    #[arg(long)]
+    redis_embedding_db: Option<String>,
+
+    #[arg(long)]
+    redis_image_db: Option<String>,
+
+    #[arg(long)]
+    minio_url: Option<String>,
+
+    #[arg(long)]
+    minio_bucket: Option<String>,
+
+    #[arg(long)]
+    minio_access_key: Option<String>,
+
+    #[arg(long)]
+    minio_secret_key: Option<String>,
+
     /// Cookie domain used for setting chonkit-specific cookies.
     #[arg(long)]
     cookie_domain: Option<String>,
@@ -155,7 +173,7 @@ impl StartArgs {
                     .filter_map(|o| (!o.is_empty()).then_some(String::from(o)))
                     .collect(),
                 Err(_) => panic!(
-                    "Allowed origins not found; Pass --allowed-origins (-c) or set CORS_ALLOWED_ORIGINS as a comma separated list"
+                    "Allowed origins not found; Pass --cors-allowed-origins or set CORS_ALLOWED_ORIGINS as a comma separated list"
                 ),
             },
         }
@@ -173,7 +191,7 @@ impl StartArgs {
                     .filter_map(|h| (!h.is_empty()).then_some(String::from(h)))
                     .collect(),
                 Err(_) => panic!(
-                    "Allowed headers not found; Pass --allowed-headers or set CORS_ALLOWED_HEADERS as a comma separated list"
+                    "Allowed headers not found; Pass --cors-allowed-headers or set CORS_ALLOWED_HEADERS as a comma separated list"
                 ),
             },
         }
@@ -190,12 +208,35 @@ impl StartArgs {
     }
 }
 
-arg!(db_url,          "DATABASE_URL",    panic   "Database url not found; Pass --db-url or set DATABASE_URL");
 arg!(log,             "RUST_LOG",        default "info".to_string());
-arg!(upload_path,     "UPLOAD_PATH",     default DEFAULT_UPLOAD_PATH.to_string());
 arg!(address,         "ADDRESS",         default DEFAULT_ADDRESS.to_string());
 arg!(cookie_domain,   "COOKIE_DOMAIN",   panic   "Cookie domain not found; Pass --cookie-domain or set COOKIE_DOMAIN");
+arg!(db_url,          "DATABASE_URL",    panic   "Database url not found; Pass --db-url or set DATABASE_URL");
+arg!(upload_path,     "UPLOAD_PATH",     default DEFAULT_UPLOAD_PATH.to_string());
+
+// redis
+
 arg!(redis_url,       "REDIS_URL",       panic   "Redis url not found; Pass --redis-url or set REDIS_URL");
+
+arg!(
+    redis_embedding_db,
+    "REDIS_EMBEDDING_DB",
+    panic
+    "Redis embedding db not found; Pass --redis-embedding-db or set REDIS_EMBEDDING_DB"
+);
+
+arg!(
+    redis_image_db,
+    "REDIS_IMAGE_DB",
+    panic
+    "Redis image db not found; Pass --redis-image-db or set REDIS_IMAGE_DB"
+);
+
+// minio
+arg!(minio_url, "MINIO_URL", panic "Minio url not found; Pass --minio-url or set MINIO_URL");
+arg!(minio_bucket, "MINIO_BUCKET", panic "Minio bucket not found; Pass --minio-bucket or set MINIO_BUCKET");
+arg!(minio_access_key, "MINIO_ACCESS_KEY", panic "Minio access key not found; Pass --minio-access-key or set MINIO_ACCESS_KEY");
+arg!(minio_secret_key, "MINIO_SECRET_KEY", panic "Minio secret key not found; Pass --minio-secret-key or set MINIO_SECRET_KEY");
 
 // qdrant
 

@@ -1,4 +1,6 @@
-use super::{document::store::DocumentStorage, embeddings::Embedder, vector::VectorDb};
+use super::{
+    document::store::DocumentStorage, embeddings::Embedder, image::ImageStore, vector::VectorDb,
+};
 use crate::{err, error::ChonkitError};
 use std::{collections::HashMap, sync::Arc};
 
@@ -65,7 +67,10 @@ pub struct ProviderState {
     pub embedding: ProviderFactory<Arc<dyn Embedder + Send + Sync>>,
 
     // Document storage providers.
-    pub storage: ProviderFactory<Arc<dyn DocumentStorage + Send + Sync>>,
+    pub document: ProviderFactory<Arc<dyn DocumentStorage + Send + Sync>>,
+
+    /// Image storage providers.
+    pub image: ImageStore,
 }
 
 impl<T> Identity for Arc<T>

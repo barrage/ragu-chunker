@@ -1,5 +1,5 @@
 use super::{embeddings::Embedder, provider::ProviderState};
-use crate::{err, error::ChonkitError, map_err, timed};
+use crate::{err, error::ChonkitError, map_err};
 use chunx::ChunkerError;
 use serde::{Deserialize, Serialize};
 
@@ -77,9 +77,11 @@ pub async fn chunk<'i>(
                 matchers.push(re);
             }
 
-            let chunker = timed! {"splitline chunker finished",
-                chunx::Splitline::new(size.unwrap_or(usize::MAX), matchers, prepend_latest_header.unwrap_or(false))
-            };
+            let chunker = chunx::Splitline::new(
+                size.unwrap_or(usize::MAX),
+                matchers,
+                prepend_latest_header.unwrap_or(false),
+            );
 
             ChunkedDocument::Owned(chunker.chunk(input))
         }

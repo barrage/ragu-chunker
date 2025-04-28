@@ -30,12 +30,10 @@ impl ChonkitError {
             | E::Xlsx(_)
             | E::SerdeJson(_) => SC::INTERNAL_SERVER_ERROR,
             E::Axum(_) => SC::INTERNAL_SERVER_ERROR,
-
             #[cfg(feature = "qdrant")]
             E::QdrantDb(_) => SC::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "qdrant")]
             E::Qdrant(_) => SC::INTERNAL_SERVER_ERROR,
-
             #[cfg(feature = "weaviate")]
             E::Weaviate(_) => SC::BAD_REQUEST,
             E::Uuid(_) => SC::BAD_REQUEST,
@@ -50,6 +48,7 @@ impl ChonkitError {
             E::InvalidHeader(_) => SC::INTERNAL_SERVER_ERROR,
             E::Cache(_) => SC::BAD_REQUEST,
             E::CachePool(_) => SC::INTERNAL_SERVER_ERROR,
+            E::S3(_) => SC::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -97,24 +96,18 @@ impl IntoResponse for ChonkitError {
         match self.error {
             CE::InvalidProvider(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
             CE::DoesNotExist(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
-
             CE::SerdeJson(e) => {
                 (status, ResponseError::new(ET::Api, e.to_string())).into_response()
             }
-
             CE::Validation(errors) => (status, ResponseError::new(ET::Api, errors)).into_response(),
-
             CE::InvalidEmbeddingModel(e) => {
                 (status, ResponseError::new(ET::Api, e)).into_response()
             }
-
             CE::Batch => (
                 status,
                 ResponseError::new(ET::Internal, "Batch embedding error".to_string()),
             )
                 .into_response(),
-
-            // TODO
             CE::IO(_)
             | CE::Regex(_)
             | CE::Embedding(_)
@@ -129,22 +122,18 @@ impl IntoResponse for ChonkitError {
             CE::ParsePdf(e) => (status, e.to_string()).into_response(),
             CE::DocxRead(e) => (status, e.to_string()).into_response(),
             CE::AlreadyExists(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
-
             #[cfg(feature = "weaviate")]
             CE::Weaviate(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
-
             #[cfg(feature = "qdrant")]
             CE::QdrantDb(qdrant_client::QdrantError::ResponseError { .. }) => (
                 status,
                 ResponseError::new(ET::Internal, "qdrant".to_string()),
             )
                 .into_response(),
-
             #[cfg(feature = "qdrant")]
             CE::QdrantDb(_) => (status, "qdrant".to_string()).into_response(),
             #[cfg(feature = "qdrant")]
             CE::Qdrant(_) => (status, "qdrant".to_string()).into_response(),
-
             CE::Axum(_) => (status, "axum".to_string()).into_response(),
             CE::Uuid(_) => (status, "Invalid UUID format").into_response(),
             CE::Chunks(e) => (status, e.to_string()).into_response(),
@@ -160,6 +149,7 @@ impl IntoResponse for ChonkitError {
             CE::Xlsx(e) => (status, e.to_string()).into_response(),
             CE::Cache(e) => (status, e.to_string()).into_response(),
             CE::CachePool(e) => (status, e.to_string()).into_response(),
+            CE::S3(e) => (status, e.to_string()).into_response(),
         }
     }
 }

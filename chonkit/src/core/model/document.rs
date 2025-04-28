@@ -43,6 +43,18 @@ pub struct Document {
     pub updated_at: DateTime<Utc>,
 }
 
+impl Document {
+    pub fn mime_type(&self) -> &'static str {
+        match self.ext.as_str() {
+            "pdf" => "application/pdf",
+            "docx" => "application/docx",
+            "json" => "application/json",
+            "xml" => "application/xml",
+            _ => "application/plain",
+        }
+    }
+}
+
 search_column! {
     DocumentSearchColumn,
     Name => "name",

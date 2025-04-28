@@ -24,8 +24,5 @@ pub mod auth;
 /// External API implementations.
 pub mod external;
 
-/// Embedding cache implementations.
-pub mod cache;
-
 #[cfg(test)]
 pub mod test;

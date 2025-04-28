@@ -13,7 +13,7 @@ use uuid::Uuid;
 /// Sending end for batch embedding jobs.
 pub type BatchEmbedderHandle = mpsc::Sender<BatchJob>;
 
-pub fn start_batch_embedder(state: ServiceState<deadpool_redis::Pool>) -> BatchEmbedderHandle {
+pub fn start_batch_embedder(state: ServiceState) -> BatchEmbedderHandle {
     let (tx, rx) = mpsc::channel(128);
     BatchEmbedder::new(rx, state).start();
     tx
@@ -34,14 +34,11 @@ pub struct BatchEmbedder {
     /// Here solely so we can just clone it for jobs.
     result_tx: mpsc::Sender<BatchJobResult>,
 
-    state: ServiceState<deadpool_redis::Pool>,
+    state: ServiceState,
 }
 
 impl BatchEmbedder {
-    pub fn new(
-        job_rx: mpsc::Receiver<BatchJob>,
-        state: ServiceState<deadpool_redis::Pool>,
-    ) -> Self {
+    pub fn new(job_rx: mpsc::Receiver<BatchJob>, state: ServiceState) -> Self {
         let (result_tx, result_rx) = mpsc::channel(128);
         Self {
             q: HashMap::new(),
@@ -113,7 +110,7 @@ impl BatchEmbedder {
 
     async fn execute_job(
         job_id: Uuid,
-        services: ServiceState<deadpool_redis::Pool>,
+        services: ServiceState,
         add: Vec<Uuid>,
         remove: Vec<Uuid>,
         collection_id: Uuid,

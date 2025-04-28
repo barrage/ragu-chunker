@@ -4,11 +4,11 @@ mod document;
 mod vector;
 
 use super::{
-    cache::init_redis,
     document::store::FsDocumentStore,
     state::{AppProviderState, AppState},
 };
 use crate::core::{
+    cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
     repo::Repository,
     service::{
@@ -25,6 +25,7 @@ use testcontainers_modules::{postgres::Postgres, redis::Redis};
 pub type PostgresContainer = ContainerAsync<Postgres>;
 pub type AsyncContainer = ContainerAsync<GenericImage>;
 pub type RedisContainer = ContainerAsync<Redis>;
+pub type MinioContainer = ContainerAsync<testcontainers_modules::minio::MinIO>;
 
 struct TestState {
     /// Holds test containers so they don't get dropped.
@@ -33,7 +34,7 @@ struct TestState {
     /// Holds the application state.
     pub app: AppState,
 
-    pub cache: deadpool_redis::Pool,
+    pub embedding_cache: TextEmbeddingCache,
 
     /// Holds the list of active vector storage providers. Depends on feature flags.
     pub active_vector_providers: Vec<&'static str>,
@@ -47,7 +48,8 @@ impl TestState {
         // Set up test containers
 
         let (postgres, postgres_img) = init_repository().await;
-        let (redis, redis_img) = init_cache().await;
+        let (embedding_cache, _, redis_img) = init_cache().await;
+        let (minio, minio_img) = init_minio().await;
 
         #[cfg(feature = "qdrant")]
         let (qdrant, qdrant_img) = init_qdrant().await;
@@ -57,10 +59,10 @@ impl TestState {
 
         // Set up document storage
 
-        let mut storage = DocumentStorageProvider::default();
+        let mut document_storage = DocumentStorageProvider::default();
 
         let fs_store = Arc::new(FsDocumentStore::new(&config.fs_store_path).await);
-        storage.register(fs_store);
+        document_storage.register(fs_store);
 
         #[cfg(feature = "gdrive")]
         {
@@ -70,7 +72,7 @@ impl TestState {
                 )
                 .await,
             );
-            storage.register(drive);
+            document_storage.register(drive);
         }
 
         // Set up vector storage
@@ -120,18 +122,22 @@ impl TestState {
             embedding.register(fastembed);
         }
 
+        let image = Arc::new(minio);
+
         let tokenizer = Tokenizer::new();
 
         let providers = AppProviderState {
             database: postgres.clone(),
             vector: vector.clone(),
             embedding,
-            storage,
+            document: document_storage,
+            image,
         };
 
         let _containers = TestContainers {
             _postgres: postgres_img,
             _redis: redis_img,
+            _minio: minio_img,
             #[cfg(feature = "qdrant")]
             _qdrant: qdrant_img,
             #[cfg(feature = "weaviate")]
@@ -142,7 +148,11 @@ impl TestState {
             collection: CollectionService::new(postgres.clone(), providers.clone().into()),
             document: DocumentService::new(postgres.clone(), providers.clone().into(), tokenizer),
             external: ServiceFactory::new(postgres.clone(), providers.clone().into()),
-            embedding: EmbeddingService::new(postgres, providers.clone().into(), redis.clone()),
+            embedding: EmbeddingService::new(
+                postgres,
+                providers.clone().into(),
+                embedding_cache.clone(),
+            ),
         };
 
         let app = AppState::new_test(services, providers);
@@ -152,7 +162,7 @@ impl TestState {
             app,
             active_vector_providers,
             active_embedding_providers,
-            cache: redis,
+            embedding_cache,
         }
     }
 }
@@ -169,6 +179,8 @@ struct TestContainers {
 
     pub _redis: RedisContainer,
 
+    pub _minio: MinioContainer,
+
     #[cfg(feature = "qdrant")]
     pub _qdrant: ContainerAsync<GenericImage>,
 
@@ -178,10 +190,7 @@ struct TestContainers {
 
 impl AppState {
     #[cfg(test)]
-    pub fn new_test(
-        services: ServiceState<deadpool_redis::Pool>,
-        providers: AppProviderState,
-    ) -> Self {
+    pub fn new_test(services: ServiceState, providers: AppProviderState) -> Self {
         use super::server::HttpConfiguration;
         use crate::app::batch;
 
@@ -223,12 +232,59 @@ pub async fn init_repository() -> (Repository, PostgresContainer) {
 /// Setup a redis test container and connect to it using RedisPool.
 /// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
 /// container will get dropped and cleaned up.
-pub async fn init_cache() -> (deadpool_redis::Pool, RedisContainer) {
+pub async fn init_cache() -> (TextEmbeddingCache, ImageEmbeddingCache, RedisContainer) {
     let redis_image = Redis.start().await.unwrap();
     let redis_host = redis_image.get_host().await.unwrap();
     let redis_port = redis_image.get_host_port_ipv4(6379).await.unwrap();
     let redis_url = format!("redis://{redis_host}:{redis_port}");
-    (init_redis(&redis_url).await, redis_image)
+
+    let embedding_cache = TextEmbeddingCache::new(init(&redis_url, "0").await);
+    let image_cache = ImageEmbeddingCache::new(init(&redis_url, "1").await);
+
+    (embedding_cache, image_cache, redis_image)
+}
+
+pub async fn init_minio() -> (crate::core::image::minio::MinioClient, MinioContainer) {
+    let minio_image = testcontainers_modules::minio::MinIO::default()
+        .start()
+        .await
+        .unwrap();
+
+    let host = minio_image.get_host().await.unwrap();
+    let port = minio_image.get_host_port_ipv4(9000).await.unwrap();
+
+    let endpoint = format!("http://{host}:{port}");
+    let bucket = "test-bucket";
+    let access_key = "minioadmin";
+    let secret_key = "minioadmin";
+
+    let region = s3::region::Region::Custom {
+        region: "eu-central-1".to_owned(),
+        endpoint: endpoint.clone(),
+    };
+
+    let credentials =
+        s3::creds::Credentials::new(Some(access_key), Some(secret_key), None, None, None)
+            .expect("s3 credentials error");
+
+    s3::Bucket::create_with_path_style(
+        bucket,
+        region.clone(),
+        credentials.clone(),
+        s3::BucketConfiguration::default(),
+    )
+    .await
+    .expect("cannot create test bucket");
+
+    let minio_client = crate::core::image::minio::MinioClient::new(
+        endpoint,
+        bucket.to_string(),
+        "minioadmin".to_string(),
+        "minioadmin".to_string(),
+    )
+    .await;
+
+    (minio_client, minio_image)
 }
 
 /// Setup a qdrant test container and connect to it using QdrantDb.

@@ -1,5 +1,5 @@
 use super::DocumentType;
-use crate::{err, error::ChonkitError};
+use crate::{core::image::Image, err, error::ChonkitError, map_err};
 use serde::{Deserialize, Serialize};
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 
@@ -8,76 +8,107 @@ pub mod excel;
 pub mod pdf;
 pub mod text;
 
-#[derive(Debug)]
-pub struct Parser<C = GenericParseConfig>(pub C);
+pub async fn parse(
+    config: ParseConfig,
+    ext: DocumentType,
+    input: &[u8],
+) -> Result<ParseOutput, ChonkitError> {
+    map_err!(config.validate());
 
-impl<C> Parser<C> {
-    pub fn new(config: C) -> Self {
-        Self(config)
-    }
-}
+    let ParseConfig {
+        mode,
+        include_images,
+    } = config;
 
-impl Parser<GenericParseConfig> {
-    pub fn parse(&self, ext: DocumentType, input: &[u8]) -> Result<String, ChonkitError> {
-        let out = match ext {
-            DocumentType::Text(_) => text::parse(input, &self.0),
-            DocumentType::Docx => docx::parse(input, &self.0),
-            DocumentType::Pdf => pdf::parse(input, &self.0),
-            DocumentType::Excel => excel::parse(input, &self.0),
-        }?;
+    match mode {
+        ParseMode::String(config) => {
+            if let DocumentType::Pdf = ext {
+                let (text, images) = pdf::parse_to_string(&config, input, include_images).await?;
 
-        let GenericParseConfig {
-            start, end, range, ..
-        } = self.0;
+                if text.trim().is_empty() && images.is_empty() {
+                    return err!(InvalidFile, "Parsing resulted in empty output");
+                }
 
-        if out.trim().is_empty() {
-            tracing::error!("Parsing resulted in empty output. Config: {:?}", self.0);
+                return Ok(ParseOutput::String { text, images });
+            }
 
-            return crate::err!(
-                ParseConfig,
-                "empty output (start: {start} | end: {end} | range: {range})",
-            );
+            let out = match ext {
+                DocumentType::Text(_) => text::parse(&config, input)?,
+                DocumentType::Docx => docx::parse(&config, input)?,
+                DocumentType::Excel => excel::parse(&config, input)?,
+                _ => unreachable!(),
+            };
+
+            if out.trim().is_empty() {
+                return err!(InvalidFile, "Parsing resulted in empty output");
+            }
+
+            Ok(ParseOutput::String {
+                text: out,
+                images: vec![],
+            })
         }
+        ParseMode::Section(config) => match ext {
+            DocumentType::Pdf => {
+                let out = pdf::parse_to_sections(&config, input, include_images).await?;
 
-        Ok(out)
-    }
-}
+                if out.is_empty() {
+                    return err!(InvalidFile, "Parsing resulted in empty output");
+                }
 
-impl Parser<SectionParseConfig> {
-    pub fn parse(
-        &self,
-        ext: DocumentType,
-        input: &[u8],
-    ) -> Result<Vec<DocumentSection>, ChonkitError> {
-        match ext {
-            DocumentType::Pdf => pdf::parse_paginated(input, &self.0),
+                Ok(ParseOutput::Sections(out))
+            }
             _ => err!(
                 InvalidParameter,
-                "cannot parse {ext} with pagination parser"
+                "Sectioned parsing not supported for document type '{ext}'"
             ),
+        },
+    }
+}
+
+/// Parsing configuration for a document.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ParseConfig {
+    #[validate]
+    pub mode: ParseMode,
+    pub include_images: bool,
+}
+
+/// Parsing mode determines the output of the parser.
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ParseMode {
+    String(#[validate] StringParseConfig),
+    Section(#[validate] SectionParseConfig),
+}
+
+impl Default for ParseMode {
+    fn default() -> Self {
+        ParseMode::String(StringParseConfig::default())
+    }
+}
+
+/// Note: PartialEq implementation checks text only.
+#[derive(Debug)]
+pub enum ParseOutput {
+    String {
+        /// The parsed text.
+        text: String,
+        /// Base64 data uris for all images found in the document.
+        images: Vec<Image>,
+    },
+    Sections(Vec<DocumentSection>),
+}
+
+impl PartialEq for ParseOutput {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ParseOutput::String { text: a, .. }, ParseOutput::String { text: b, .. }) => a == b,
+            (ParseOutput::Sections(a), ParseOutput::Sections(b)) => a == b,
+            _ => false,
         }
     }
-}
-
-impl Default for Parser {
-    fn default() -> Self {
-        Self::new(GenericParseConfig::default())
-    }
-}
-
-/// Enumerations of all possible parsing configurations chonkit supports.
-#[derive(Debug, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
-#[serde(untagged)]
-pub enum ParseConfig {
-    Generic(#[validate] GenericParseConfig),
-    Sectioned(#[validate] SectionParseConfig),
-}
-
-#[derive(Debug, Serialize, Deserialize, Validate, utoipa::ToSchema)]
-#[serde(untagged)]
-pub enum ParseOutput {
-    Generic(String),
-    Sectioned(Vec<DocumentSection>),
 }
 
 /// Generic parsing configuration for documents based on text elements.
@@ -87,7 +118,7 @@ pub enum ParseOutput {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 #[validate(Self::validate_schema)]
-pub struct GenericParseConfig {
+pub struct StringParseConfig {
     /// Skip the first amount of text elements.
     pub start: usize,
 
@@ -103,7 +134,7 @@ pub struct GenericParseConfig {
     pub filters: Vec<String>,
 }
 
-impl GenericParseConfig {
+impl StringParseConfig {
     pub fn new(start: usize, end: usize) -> Self {
         Self {
             start,
@@ -182,13 +213,15 @@ impl PageRange {
 }
 
 /// A document section that has been parsed with a parser using [SectionParseConfig].
-#[derive(Debug, Default, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentSection {
     pub pages: Vec<DocumentPage>,
 }
 
 /// A document page that has been parsed with a parser using [SectionParseConfig].
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentPage {
     /// The text contents of the page.
     pub content: String,

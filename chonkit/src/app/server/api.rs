@@ -40,12 +40,13 @@ use super::router::{
         __path_list_embedding_reports,
     }
 };
+
 use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, UploadResult};
 use crate::{
     app::{server::router::collection::SyncParams, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
-        document::parser::{DocumentPage, DocumentSection, GenericParseConfig, PageRange, ParseConfig, ParseOutput, SectionParseConfig},
+        document::parser::{DocumentPage, DocumentSection, PageRange, ParseMode, SectionParseConfig, StringParseConfig},
         model::{
             collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort},
             document::{
@@ -58,7 +59,7 @@ use crate::{
             List, Pagination, PaginationSort, Search, SortDirection,
         },
         service::{
-            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
+            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload, ParseOutputPreview, ParsePreview}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
         },
         token::TokenCount,
         vector::{CollectionSearchItem, VectorCollection},
@@ -135,10 +136,11 @@ use utoipa::OpenApi;
         SplitlineConfig,
 
         ChunkPreviewPayload,
-        ParseConfig,
+        ParseMode,
         SectionParseConfig,
-        GenericParseConfig,
-        ParseOutput,
+        StringParseConfig,
+        ParsePreview,
+        ParseOutputPreview,
         PageRange,
         DocumentSection,
         DocumentPage,

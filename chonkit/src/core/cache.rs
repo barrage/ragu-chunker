@@ -1,93 +1,132 @@
-use super::{
-    chunk::ChunkConfig,
-    document::{parser::ParseConfig, sha256},
-};
-use crate::{error::ChonkitError, map_err};
-use serde::{Deserialize, Serialize};
-use std::future::Future;
+pub mod embedding;
 
-pub trait EmbeddingCache {
-    fn get(
-        &self,
-        key: &EmbeddingCacheKey,
-    ) -> impl Future<Output = Result<Option<CachedEmbeddings>, ChonkitError>> + Send;
+// #[cfg(feature = "cache-redis")] -  if we ever enable multiple caching backends
+pub use {redis::init, redis::ImageEmbeddingCache, redis::TextEmbeddingCache};
 
-    /// Cache the given embeddings. Implementations should take care of setting
-    /// the embedding source to [Cache][super::embeddings::EmbeddingSource::Cache].
-    fn set(
-        &self,
-        key: &EmbeddingCacheKey,
-        embeddings: CachedEmbeddings,
-    ) -> impl Future<Output = Result<(), ChonkitError>> + Send;
+mod redis {
+    use crate::{
+        core::{
+            cache::embedding::{CachedEmbeddings, EmbeddingCacheKey},
+            image::Image,
+        },
+        error::ChonkitError,
+        map_err,
+    };
+    use deadpool_redis::redis;
 
-    fn exists(
-        &self,
-        key: &EmbeddingCacheKey,
-    ) -> impl Future<Output = Result<bool, ChonkitError>> + Send;
+    #[derive(Clone)]
+    pub struct TextEmbeddingCache(deadpool_redis::Pool);
 
-    fn clear(&self) -> impl Future<Output = Result<(), ChonkitError>> + Send;
-}
-
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct CachedEmbeddings {
-    pub embeddings: Vec<Vec<f64>>,
-    pub tokens_used: Option<usize>,
-    pub chunks: Vec<String>,
-}
-
-impl CachedEmbeddings {
-    pub fn new(embeddings: Vec<Vec<f64>>, tokens_used: Option<usize>, chunks: Vec<String>) -> Self {
-        CachedEmbeddings {
-            embeddings,
-            tokens_used,
-            chunks,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct EmbeddingCacheKey(String);
-
-impl EmbeddingCacheKey {
-    pub fn new(
-        document_hash: &str,
-        chunk_config: Option<&ChunkConfig>,
-        parse_config: &ParseConfig,
-    ) -> Result<Self, ChonkitError> {
-        Ok(EmbeddingCacheKey(
-            EmbeddingCacheKeyInner::new(document_hash, chunk_config, parse_config)
-                .into_cache_key()?,
-        ))
-    }
-
-    pub fn key(&self) -> &str {
-        &self.0
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct EmbeddingCacheKeyInner<'a> {
-    document_hash: &'a str,
-    chunk_config: Option<&'a ChunkConfig>,
-    parse_config: &'a ParseConfig,
-}
-
-impl<'a> EmbeddingCacheKeyInner<'a> {
-    fn new(
-        document_hash: &'a str,
-        chunk_config: Option<&'a ChunkConfig>,
-        parse_config: &'a ParseConfig,
-    ) -> Self {
-        EmbeddingCacheKeyInner {
-            document_hash,
-            chunk_config,
-            parse_config,
+    impl TextEmbeddingCache {
+        pub fn new(pool: deadpool_redis::Pool) -> Self {
+            Self(pool)
         }
     }
 
-    /// Transforms this key into a JSON string then hashes it with sha256.
-    /// FIXME: There is *definitely* a more efficient way to do this, but it works for now.
-    fn into_cache_key(self) -> Result<String, ChonkitError> {
-        Ok(sha256(map_err!(serde_json::to_string(&self)).as_bytes()))
+    #[derive(Clone)]
+    pub struct ImageEmbeddingCache(deadpool_redis::Pool);
+
+    impl ImageEmbeddingCache {
+        pub fn new(pool: deadpool_redis::Pool) -> Self {
+            Self(pool)
+        }
+    }
+
+    pub async fn init(url: &str, db: &str) -> deadpool_redis::Pool {
+        deadpool_redis::Config::from_url(format!("{url}/{db}"))
+            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+            .unwrap_or_else(|_| panic!("unable to create redis connection pool for db {db}"))
+    }
+
+    impl TextEmbeddingCache {
+        pub async fn get(
+            &self,
+            key: &EmbeddingCacheKey,
+        ) -> Result<Option<CachedEmbeddings>, ChonkitError> {
+            let __start = std::time::Instant::now();
+
+            let mut conn = map_err!(self.0.get().await);
+            let data: Option<String> = map_err!(
+                redis::cmd("GET")
+                    .arg(key.key())
+                    .query_async(&mut conn)
+                    .await
+            );
+
+            let Some(data) = data else {
+                return Ok(None);
+            };
+
+            let data = map_err!(serde_json::from_str::<CachedEmbeddings>(&data));
+
+            tracing::debug!(
+                "embedding retrieval took {}ms ({} vectors)",
+                __start.elapsed().as_millis(),
+                data.embeddings.len()
+            );
+
+            Ok(Some(data))
+        }
+
+        pub async fn set(
+            &self,
+            key: &EmbeddingCacheKey,
+            value: CachedEmbeddings,
+        ) -> Result<(), crate::error::ChonkitError> {
+            let data = map_err!(serde_json::to_string(&value));
+            let mut conn = map_err!(self.0.get().await);
+            map_err!(
+                redis::cmd("SET")
+                    .arg(key.key())
+                    .arg(data)
+                    .query_async::<()>(&mut conn)
+                    .await
+            );
+
+            Ok(())
+        }
+
+        pub async fn exists(&self, key: &EmbeddingCacheKey) -> Result<bool, ChonkitError> {
+            let mut conn = map_err!(self.0.get().await);
+
+            Ok(map_err!(
+                redis::cmd("EXISTS")
+                    .arg(key.key())
+                    .query_async::<u64>(&mut conn)
+                    .await
+            ) == 1)
+        }
+
+        pub async fn clear(&self) -> Result<(), ChonkitError> {
+            let mut conn = map_err!(self.0.get().await);
+            map_err!(redis::cmd("FLUSHDB").query_async::<()>(&mut conn).await);
+            Ok(())
+        }
+    }
+
+    impl ImageEmbeddingCache {
+        pub async fn get(&self, _key: &str) -> Result<Image, ChonkitError> {
+            todo!()
+        }
+
+        pub async fn set(&self, _key: &str, _value: Image) -> Result<(), ChonkitError> {
+            todo!()
+        }
+
+        pub async fn exists(&self, key: &str) -> Result<bool, ChonkitError> {
+            let mut conn = map_err!(self.0.get().await);
+            Ok(map_err!(
+                redis::cmd("EXISTS")
+                    .arg(key)
+                    .query_async::<u64>(&mut conn)
+                    .await
+            ) == 1)
+        }
+
+        pub async fn clear(&self) -> Result<(), ChonkitError> {
+            let mut conn = map_err!(self.0.get().await);
+            map_err!(redis::cmd("FLUSHDB").query_async::<()>(&mut conn).await);
+            Ok(())
+        }
     }
 }

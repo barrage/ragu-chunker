@@ -2,7 +2,7 @@ use crate::{
     core::{
         chunk::ChunkConfig,
         document::{
-            parser::{GenericParseConfig, ParseConfig, Parser},
+            parser::{parse, ParseConfig},
             sha256,
             store::external::ExternalDocumentStorage,
         },
@@ -49,7 +49,7 @@ where
         file_ids: Vec<String>,
         force_download: bool,
     ) -> Result<ImportResult, ChonkitError> {
-        let storage = &self.providers.storage.get_provider(self.api.id())?;
+        let storage = &self.providers.document.get_provider(self.api.id())?;
 
         let mut result = ImportResult::default();
 
@@ -111,7 +111,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = Parser::default().parse(file.ext, content.as_slice()) {
+                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice()).await {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -194,7 +194,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = Parser::default().parse(file.ext, content.as_slice()) {
+                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice()).await {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -211,7 +211,7 @@ where
                         .repo
                         .insert_document_with_configs(
                             insert,
-                            ParseConfig::Generic(GenericParseConfig::default()),
+                            ParseConfig::default(),
                             ChunkConfig::snapping_default(),
                             tx,
                         )
@@ -252,7 +252,7 @@ where
         force_download: bool,
     ) -> Result<Document, ChonkitError> {
         let file = self.api.get_file(file_id).await?;
-        let storage = match self.providers.storage.get_provider(self.api.id()) {
+        let storage = match self.providers.document.get_provider(self.api.id()) {
             Ok(store) => store,
             Err(e) => {
                 tracing::error!(
@@ -291,7 +291,7 @@ where
         let content = self.api.download(file_id).await?;
 
         // Attempt to parse with defaults to check for empty documents.
-        Parser::default().parse(file.ext, content.as_slice())?;
+        parse(ParseConfig::default(), file.ext, content.as_slice()).await?;
 
         let hash = sha256(&content);
         storage.write(&local_path, &content, force_download).await?;
@@ -318,7 +318,7 @@ where
 
         let ext_documents = self.api.list_files(None).await?;
 
-        let storage = self.providers.storage.get_provider(self.api.id())?;
+        let storage = self.providers.document.get_provider(self.api.id())?;
 
         let mut outdated = vec![];
 

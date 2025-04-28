@@ -1,9 +1,9 @@
-use super::GenericParseConfig;
+use super::StringParseConfig;
 use crate::{err, error::ChonkitError, map_err};
 use calamine::{Reader, Xlsx};
 use std::fmt::Write;
 
-pub fn parse(input: &[u8], config: &GenericParseConfig) -> Result<String, ChonkitError> {
+pub(super) fn parse(config: &StringParseConfig, input: &[u8]) -> Result<String, ChonkitError> {
     let cursor = std::io::Cursor::new(input);
     let mut reader = map_err!(Xlsx::new(cursor));
     let sheets = reader.worksheets();

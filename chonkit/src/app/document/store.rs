@@ -186,7 +186,11 @@ impl TokioDirectory {
 mod tests {
     use super::FsDocumentStore;
     use crate::core::{
-        document::{parser::Parser, store::DocumentStorage, DocumentType},
+        document::{
+            parser::{parse, ParseConfig, ParseOutput},
+            store::DocumentStorage,
+            DocumentType,
+        },
         model::document::Document,
     };
 
@@ -214,9 +218,15 @@ mod tests {
         assert_eq!(CONTENT, file);
 
         let read = store.read(&path).await.unwrap();
-        let content = Parser::default().parse(ext, &read).unwrap();
+        let content = parse(ParseConfig::default(), ext, &read).await.unwrap();
 
-        assert_eq!(CONTENT, content);
+        assert_eq!(
+            ParseOutput::String {
+                text: CONTENT.to_string(),
+                images: vec![]
+            },
+            content
+        );
 
         store.delete(&path).await.unwrap();
 
