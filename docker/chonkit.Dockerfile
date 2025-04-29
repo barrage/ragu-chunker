@@ -20,7 +20,7 @@ RUN mkdir onnxruntime && curl -sL https://github.com/microsoft/onnxruntime/relea
 WORKDIR /app/chonkit
 
 RUN echo "Building with: ${FEATURES}"
-RUN cargo build --no-default-features -F "${FEATURES}" --release --target-dir ./target
+RUN cargo build --workspace --no-default-features -F "${FEATURES}" --release --target-dir ./target
 
 FROM debian:latest
 
