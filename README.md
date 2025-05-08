@@ -352,4 +352,3 @@ Chonkit, a part of Ragu, is a product produced from this open source software, e
 Others are allowed to make their own distribution of the software, but they cannot use any of the Ragu trademarks, cloud services, etc.
 
 We explicitly grant permission for you to make a build that includes our trademarks while developing Ragu itself. You may not publish or share the build, and you may not use that build to run Ragu for any other purpose.
-
