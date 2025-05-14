@@ -229,7 +229,7 @@ pub(super) async fn update_document_config(
     post,
     path = "/documents/{id}/chunk/preview",
     responses(
-        (status = 200, description = "Preview document chunks", body = inline(Vec<ChunkPreview>)),
+        (status = 200, description = "Preview document chunks", body = ChunkPreview),
         (status = 404, description = "Document not found"),
         (status = 500, description = "Internal server error")
     ),

@@ -46,7 +46,7 @@ use crate::{
     app::{server::router::collection::SyncParams, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
-        document::parser::{DocumentPage, DocumentSection, PageRange, ParseMode, SectionParseConfig, StringParseConfig},
+        document::parser::{DocumentPage, DocumentSection, ParseConfig, PageRange, ParseMode, SectionParseConfig, StringParseConfig},
         model::{
             collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort},
             document::{
@@ -139,6 +139,7 @@ use utoipa::OpenApi;
         ParseMode,
         SectionParseConfig,
         StringParseConfig,
+        ParseConfig,
         ParsePreview,
         ParseOutputPreview,
         PageRange,
