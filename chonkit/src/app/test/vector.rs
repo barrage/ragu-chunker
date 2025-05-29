@@ -137,7 +137,7 @@ mod vector_service_integration_tests {
                 .unwrap();
 
             let params = CreateCollectionPayload {
-                model: model.0.clone(),
+                model: model.name.clone(),
                 name: name.to_string(),
                 vector_provider: vector_db.id().to_string(),
                 embedding_provider: embedder.id().to_string(),
@@ -147,7 +147,7 @@ mod vector_service_integration_tests {
             let collection = service.create_collection(params).await.unwrap();
 
             assert_eq!(collection.name, name);
-            assert_eq!(collection.model, model.0);
+            assert_eq!(collection.model, model.name);
             assert_eq!(collection.embedder, embedder.id());
             assert_eq!(collection.provider, vector_db.id());
 

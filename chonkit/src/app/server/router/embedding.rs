@@ -23,8 +23,9 @@ use axum::{
     response::{sse::Event, Sse},
     Json,
 };
+use chonkit_embedders::EmbeddingModel;
 use futures_util::Stream;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 use validify::Validate;
@@ -43,14 +44,12 @@ use validify::Validate;
 pub(super) async fn list_embedding_models(
     State(state): State<AppState>,
     Path(provider): Path<String>,
-) -> Result<Json<HashMap<String, usize>>, ChonkitError> {
+) -> Result<Json<Vec<EmbeddingModel>>, ChonkitError> {
     let models = state
         .services
         .embedding
         .list_embedding_models(&provider)
-        .await?
-        .into_iter()
-        .collect::<HashMap<String, usize>>();
+        .await?;
     Ok(Json(models))
 }
 

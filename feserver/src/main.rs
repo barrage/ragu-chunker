@@ -9,7 +9,7 @@ use chonkit_embedders::fembed::local::LocalFastEmbedder as FastEmbedder;
 use clap::Parser;
 use serde::Deserialize;
 use serde_json::json;
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{info, Span};
 use tracing_subscriber::EnvFilter;
@@ -78,11 +78,7 @@ async fn embed(
 async fn list_embedding_models(
     state: axum::extract::State<Arc<FastEmbedder>>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    let models = state
-        .list_models()
-        .into_iter()
-        .map(|model| (model.model_code, model.dim))
-        .collect::<HashMap<String, usize>>();
+    let models = state.list_models();
 
     (StatusCode::OK, Json(json! { models }))
 }

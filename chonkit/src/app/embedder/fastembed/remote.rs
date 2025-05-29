@@ -9,6 +9,8 @@ use crate::{
     error::ChonkitError,
     map_err,
 };
+use chonkit_embedders::EmbeddingModel;
+
 pub use chonkit_embedders::fembed::remote::RemoteFastEmbedder;
 
 impl Identity for RemoteFastEmbedder {
@@ -26,11 +28,11 @@ impl Embedder for RemoteFastEmbedder {
         )
     }
 
-    async fn list_embedding_models(&self) -> Result<Vec<(String, usize)>, ChonkitError> {
+    async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError> {
         Ok(map_err!(self.list_models().await))
     }
 
-    async fn embed(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
+    async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
         // TODO: Token usage
         Ok(Embeddings::new(
             map_err!(self.embed(content, model).await),

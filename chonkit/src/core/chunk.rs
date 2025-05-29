@@ -292,7 +292,7 @@ impl chunx::semantic::Embedder for SemanticEmbedder {
     type Error = ChonkitError;
 
     async fn embed(&self, input: &[&str], model: &str) -> Result<Vec<Vec<f64>>, Self::Error> {
-        let embeddings = self.0.embed(input, model).await?;
+        let embeddings = self.0.embed_text(input, model).await?;
         Ok(embeddings.embeddings)
     }
 }

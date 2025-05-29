@@ -1,6 +1,6 @@
 use crate::EmbeddingError;
+use crate::EmbeddingModel;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Embedder implementation for communicating with a feserver on a remote
 /// machine supporting CUDA.
@@ -19,10 +19,11 @@ impl RemoteFastEmbedder {
             .expect("error while building http client");
         RemoteFastEmbedder { client, url }
     }
-    pub async fn list_models(&self) -> Result<Vec<(String, usize)>, EmbeddingError> {
+
+    pub async fn list_models(&self) -> Result<Vec<EmbeddingModel>, EmbeddingError> {
         let url = self.url("list");
-        let response: HashMap<String, usize> = self.client.get(&url).send().await?.json().await?;
-        Ok(response.into_iter().collect())
+        let response: Vec<EmbeddingModel> = self.client.get(&url).send().await?.json().await?;
+        Ok(response)
     }
 
     pub async fn embed(

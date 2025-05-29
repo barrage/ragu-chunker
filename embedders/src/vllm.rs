@@ -4,7 +4,7 @@ use crate::{
     openai_common::{
         handle_request_error, EmbeddingRequest, EmbeddingResponse, OpenAIEmbeddingResponse,
     },
-    EmbeddingError,
+    EmbeddingError, EmbeddingModel,
 };
 
 pub struct VllmEmbeddings {
@@ -72,7 +72,12 @@ impl VllmEmbeddings {
         })
     }
 
-    pub fn list_embedding_models(&self) -> &[(&str, usize)] {
-        &[("qwen2-dse", 1536)]
+    pub fn list_models(&self) -> Vec<EmbeddingModel> {
+        vec![EmbeddingModel {
+            name: "qwen2-dse".to_string(),
+            size: 1536,
+            provider: "vllm".to_string(),
+            multimodal: true,
+        }]
     }
 }

@@ -7,6 +7,7 @@ use crate::{
     error::ChonkitError,
     map_err,
 };
+use chonkit_embedders::EmbeddingModel;
 
 pub use chonkit_embedders::vllm::VllmEmbeddings;
 
@@ -22,15 +23,11 @@ impl Embedder for VllmEmbeddings {
         (String::from("text-embedding-ada-002"), 1536)
     }
 
-    async fn list_embedding_models(&self) -> Result<Vec<(String, usize)>, ChonkitError> {
-        Ok(self
-            .list_embedding_models()
-            .iter()
-            .map(|(m, s)| (m.to_string(), *s))
-            .collect())
+    async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError> {
+        Ok(self.list_models())
     }
 
-    async fn embed(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
+    async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
         let embeddings = map_err!(self.embed(content, model).await);
         Ok(Embeddings::new(
             embeddings.embeddings,

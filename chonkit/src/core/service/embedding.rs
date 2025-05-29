@@ -11,6 +11,7 @@ use crate::core::provider::ProviderState;
 use crate::core::repo::{Atomic, Repository};
 use crate::error::ChonkitError;
 use crate::{err, map_err, transaction};
+use chonkit_embedders::EmbeddingModel;
 use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -62,7 +63,7 @@ impl EmbeddingService {
     pub async fn list_embedding_models(
         &self,
         embedder: &str,
-    ) -> Result<Vec<(String, usize)>, ChonkitError> {
+    ) -> Result<Vec<EmbeddingModel>, ChonkitError> {
         let embedder = self.providers.embedding.get_provider(embedder)?;
         embedder.list_embedding_models().await
     }
@@ -243,7 +244,7 @@ impl EmbeddingService {
                             chunks.len()
                         );
 
-                        let embeddings = embedder.embed(&chunks, &collection.model).await?;
+                        let embeddings = embedder.embed_text(&chunks, &collection.model).await?;
 
                         (
                             chunks
@@ -254,7 +255,7 @@ impl EmbeddingService {
                         )
                     }
                     None => {
-                        let embeddings = embedder.embed(&[&text], &collection.model).await?;
+                        let embeddings = embedder.embed_text(&[&text], &collection.model).await?;
                         (vec![text], embeddings)
                     }
                 }
@@ -282,7 +283,7 @@ impl EmbeddingService {
                     chunks.len()
                 );
 
-                let embeddings = embedder.embed(&chunks, &collection.model).await?;
+                let embeddings = embedder.embed_text(&chunks, &collection.model).await?;
 
                 (
                     chunks

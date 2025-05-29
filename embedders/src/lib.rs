@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 /// Local or remote fastembed embeddings.
 pub mod fembed;
 
@@ -14,12 +16,10 @@ pub mod vllm;
 
 #[cfg(any(feature = "azure", feature = "openai"))]
 mod openai_common {
-    use std::error::Error;
-
+    use crate::EmbeddingError;
     use reqwest::Response;
     use serde::{Deserialize, Serialize};
-
-    use crate::EmbeddingError;
+    use std::error::Error;
 
     #[derive(Debug, Serialize)]
     pub struct EmbeddingResponse {
@@ -120,6 +120,14 @@ mod openai_common {
 
         EmbeddingError::OpenAI(response)
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddingModel {
+    pub name: String,
+    pub size: usize,
+    pub provider: String,
+    pub multimodal: bool,
 }
 
 #[derive(Debug, thiserror::Error)]

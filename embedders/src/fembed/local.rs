@@ -1,5 +1,5 @@
-use crate::EmbeddingError;
-use fastembed::{EmbeddingModel, ModelInfo};
+use crate::{EmbeddingError, EmbeddingModel};
+use fastembed::{EmbeddingModel as FastEmbedModel, ModelInfo};
 use ort::execution_providers::CPUExecutionProvider;
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
@@ -71,8 +71,16 @@ impl LocalFastEmbedder {
         LocalFastEmbedder { models }
     }
 
-    pub fn list_models(&self) -> Vec<ModelInfo<EmbeddingModel>> {
+    pub fn list_models(&self) -> Vec<EmbeddingModel> {
         list_models()
+            .into_iter()
+            .map(|m| EmbeddingModel {
+                name: m.model_code,
+                size: m.dim,
+                provider: "fastembed".to_string(),
+                multimodal: false,
+            })
+            .collect()
     }
 
     pub fn embed(&self, content: &[&str], model: &str) -> Result<Vec<Vec<f64>>, EmbeddingError> {
@@ -95,13 +103,13 @@ impl LocalFastEmbedder {
     }
 }
 
-fn list_models() -> Vec<ModelInfo<EmbeddingModel>> {
-    const MODEL_LIST: &[EmbeddingModel] = &[
-        EmbeddingModel::BGESmallENV15,
-        EmbeddingModel::BGELargeENV15,
-        EmbeddingModel::BGEBaseENV15,
-        EmbeddingModel::AllMiniLML6V2,
-        EmbeddingModel::AllMiniLML12V2,
+fn list_models() -> Vec<ModelInfo<FastEmbedModel>> {
+    const MODEL_LIST: &[FastEmbedModel] = &[
+        FastEmbedModel::BGESmallENV15,
+        FastEmbedModel::BGELargeENV15,
+        FastEmbedModel::BGEBaseENV15,
+        FastEmbedModel::AllMiniLML6V2,
+        FastEmbedModel::AllMiniLML12V2,
     ];
 
     fastembed::TextEmbedding::list_supported_models()

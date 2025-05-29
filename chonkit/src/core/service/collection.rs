@@ -272,7 +272,9 @@ impl CollectionService {
             .embedding
             .get_provider(&collection.embedder)?;
 
-        let mut embeddings = embedder.embed(&[&search.query], &collection.model).await?;
+        let mut embeddings = embedder
+            .embed_text(&[&search.query], &collection.model)
+            .await?;
 
         debug_assert_eq!(1, embeddings.embeddings.len());
 

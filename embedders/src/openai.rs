@@ -1,3 +1,4 @@
+use super::EmbeddingModel;
 use crate::{
     openai_common::{
         handle_request_error, EmbeddingResponse, OpenAIEmbeddingResponse, EMBEDDING_MODELS,
@@ -24,8 +25,16 @@ impl OpenAiEmbeddings {
         }
     }
 
-    pub fn list_embedding_models(&self) -> &[(&str, usize)] {
+    pub fn list_models(&self) -> Vec<EmbeddingModel> {
         EMBEDDING_MODELS
+            .iter()
+            .map(|(m, s)| EmbeddingModel {
+                name: m.to_string(),
+                size: *s,
+                provider: "openai".to_string(),
+                multimodal: false,
+            })
+            .collect()
     }
 
     pub async fn embed(

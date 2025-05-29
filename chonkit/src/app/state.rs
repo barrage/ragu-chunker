@@ -22,6 +22,7 @@ use crate::{
     },
     error::ChonkitError,
 };
+use chonkit_embedders::EmbeddingModel;
 use serde::Serialize;
 use std::{collections::HashMap, sync::Arc};
 use tracing_subscriber::EnvFilter;
@@ -258,11 +259,7 @@ impl AppState {
                 default_model,
             ));
 
-            let models = embedder
-                .list_embedding_models()
-                .await?
-                .into_iter()
-                .collect();
+            let models = embedder.list_embedding_models().await?;
 
             embedding_providers.insert(provider.to_string(), models);
         }
@@ -319,14 +316,14 @@ impl From<AppProviderState> for ProviderState {
     }
 }
 
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     /// A list of available vector providers.
     pub vector_providers: Vec<String>,
 
     /// A map of available embedding providers, their models and their respective model sizes.
-    pub embedding_providers: HashMap<String, HashMap<String, usize>>,
+    pub embedding_providers: HashMap<String, Vec<EmbeddingModel>>,
 
     /// A list of available document storage providers.
     pub document_providers: Vec<String>,

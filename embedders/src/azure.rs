@@ -1,3 +1,4 @@
+use super::EmbeddingModel;
 use crate::{
     openai_common::{
         handle_request_error, EmbeddingRequest, EmbeddingResponse, OpenAIEmbeddingResponse,
@@ -25,8 +26,13 @@ impl AzureEmbeddings {
         }
     }
 
-    pub async fn list_embedding_models(&self) -> &[(&str, usize)] {
-        &[(TEXT_EMBEDDING_ADA_002, TEXT_EMBEDDING_ADA_002_SIZE)]
+    pub fn list_models(&self) -> Vec<EmbeddingModel> {
+        vec![EmbeddingModel {
+            name: TEXT_EMBEDDING_ADA_002.to_string(),
+            size: TEXT_EMBEDDING_ADA_002_SIZE,
+            provider: "azure".to_string(),
+            multimodal: false,
+        }]
     }
 
     pub async fn embed(
