@@ -15,6 +15,8 @@ pub const FEMBED_EMBEDDER_ID: &str = "fembed";
 pub const OPENAI_EMBEDDER_ID: &str = "openai";
 #[cfg(feature = "azure")]
 pub const AZURE_EMBEDDER_ID: &str = "azure";
+#[cfg(feature = "vllm")]
+pub const VLLM_EMBEDDER_ID: &str = "vllm";
 
 /// The ID for the default collection created on application startup.
 pub const DEFAULT_COLLECTION_ID: uuid::Uuid = uuid::Uuid::nil();
@@ -108,6 +110,17 @@ pub struct StartArgs {
     #[cfg(feature = "azure")]
     #[arg(long)]
     azure_api_version: Option<String>,
+
+    /// If using the [VllmEmbeddings][crate::app::embedder::vllm::VllmEmbeddings] module, set its
+    /// endpoint.
+    #[cfg(feature = "vllm")]
+    #[arg(long)]
+    vllm_endpoint: Option<String>,
+
+    /// If using the [VllmEmbeddings][crate::app::embedder::vllm::VllmEmbeddings] module, set its API key.
+    #[cfg(feature = "vllm")]
+    #[arg(long)]
+    vllm_api_key: Option<String>,
 
     /// If using the fastembedder remote embedding module, set its endpoint.
     #[cfg(feature = "fe-remote")]
@@ -206,6 +219,11 @@ impl StartArgs {
     pub fn azure_key(&self) -> String {
         std::env::var("AZURE_KEY").expect("Missing AZURE_KEY in env")
     }
+
+    #[cfg(feature = "vllm")]
+    pub fn vllm_key(&self) -> Option<String> {
+        std::env::var("VLLM_KEY").ok()
+    }
 }
 
 arg!(log,             "RUST_LOG",        default "info".to_string());
@@ -260,6 +278,16 @@ arg!(azure_api_version,  "AZURE_API_VERSION",  panic   "Azure api version not fo
 
 #[cfg(feature = "fe-remote")]
 arg!(fembed_url,      "FEMBED_URL",      panic   "Fembed url not found; Pass --fembed-url or set FEMBED_URL");
+
+// vllm
+
+#[cfg(feature = "vllm")]
+arg!(
+    vllm_endpoint,
+    "VLLM_ENDPOINT",
+    panic
+    "VLLM endpoint not found; Pass --vllm-endpoint or set VLLM_ENDPOINT"
+);
 
 // auth-jwt
 

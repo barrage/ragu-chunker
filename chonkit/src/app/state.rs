@@ -185,12 +185,23 @@ impl AppState {
         #[cfg(feature = "azure")]
         {
             let azure = Arc::new(crate::app::embedder::azure::AzureEmbeddings::new(
-                &_args.azure_endpoint(),
-                &_args.azure_key(),
-                &_args.azure_api_version(),
+                _args.azure_endpoint(),
+                _args.azure_key(),
+                _args.azure_api_version(),
             ));
             tracing::info!("Registered embedding provider: {}", azure.id());
             provider.register(azure);
+        }
+
+        #[cfg(feature = "vllm")]
+        {
+            let vllm = Arc::new(crate::app::embedder::vllm::VllmEmbeddings::new(
+                _args.vllm_endpoint(),
+                _args.vllm_key(),
+            ));
+
+            tracing::info!("Registered embedding provider: {}", vllm.id());
+            provider.register(vllm);
         }
 
         provider

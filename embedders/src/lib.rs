@@ -9,9 +9,17 @@ pub mod openai;
 #[cfg(feature = "azure")]
 pub mod azure;
 
+#[cfg(feature = "vllm")]
+pub mod vllm;
+
 #[cfg(any(feature = "azure", feature = "openai"))]
 mod openai_common {
+    use std::error::Error;
+
+    use reqwest::Response;
     use serde::{Deserialize, Serialize};
+
+    use crate::EmbeddingError;
 
     #[derive(Debug, Serialize)]
     pub struct EmbeddingResponse {
@@ -66,6 +74,52 @@ mod openai_common {
         (TEXT_EMBEDDING_3_SMALL, TEXT_EMBEDDING_3_SMALL_SIZE),
         (TEXT_EMBEDDING_ADA_002, TEXT_EMBEDDING_ADA_002_SIZE),
     ];
+
+    #[derive(Debug, Serialize)]
+    pub struct EmbeddingRequest<'i> {
+        pub input: &'i [&'i str],
+    }
+
+    pub async fn handle_request_error(response: Response) -> EmbeddingError {
+        tracing::error!(
+            "Request to {} failed with status {}",
+            response.url(),
+            response.status()
+        );
+
+        let Some(ct) = response.headers().get(reqwest::header::CONTENT_TYPE) else {
+            return EmbeddingError::Response("missing content-type header in response".to_owned());
+        };
+
+        let ct = match ct.to_str() {
+            Ok(ct) => ct,
+            Err(e) => {
+                tracing::error!("Error reading content-type header: {}", e);
+                return EmbeddingError::Response("malformed content-type header".to_owned());
+            }
+        };
+
+        if !ct.contains("application/json") {
+            let response = match response.text().await {
+                Ok(r) => r,
+                Err(e) => return EmbeddingError::Reqwest(e),
+            };
+            return EmbeddingError::Response(response);
+        }
+
+        let response = match response.json::<OpenAIError>().await {
+            Ok(res) => res,
+            Err(e) => {
+                tracing::error!("Error reading response: {}", e);
+                tracing::error!("Source: {:?}", e.source());
+                return EmbeddingError::Reqwest(e);
+            }
+        };
+
+        tracing::error!("Response: {response:?}");
+
+        EmbeddingError::OpenAI(response)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

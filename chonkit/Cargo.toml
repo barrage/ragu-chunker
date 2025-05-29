@@ -75,12 +75,13 @@ base64 = "0.22.1"
 rust-s3 = { git = "https://github.com/durch/rust-s3.git", rev = "7c6fdc0646704eac315c11eb60bf9f125975159b" }
 
 [features]
-default = ["weaviate", "qdrant", "fe-local", "openai", "azure", "gdrive", "auth-jwt"]
+default = ["weaviate", "qdrant", "fe-local", "openai", "azure", "vllm", "gdrive", "auth-jwt"]
 fe-local = ["chonkit-embedders", "chonkit-embedders?/fe-local"]
 fe-remote = ["chonkit-embedders", "chonkit-embedders?/fe-remote"]
 cuda = ["chonkit-embedders?/cuda"]
 openai = ["chonkit-embedders", "chonkit-embedders?/openai"]
 azure = ["chonkit-embedders", "chonkit-embedders?/azure"]
+vllm = ["chonkit-embedders", "chonkit-embedders?/vllm"]
 weaviate = ["weaviate-community"]
 qdrant = ["qdrant-client"]
 gdrive = []

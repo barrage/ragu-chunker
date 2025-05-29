@@ -16,9 +16,10 @@ ort = { version = "2.0.0-rc.5", features = ["load-dynamic"], optional = true }
 reqwest = { version = "0.12.7", features = ["json"], optional = true }
 
 [features]
-default = ["fe-local", "fe-remote", "openai", "azure"]
+default = ["fe-local", "fe-remote", "openai", "azure", "vllm"]
 fe-local = ["fastembed", "ort"]
 cuda = ["ort?/cuda"]
 fe-remote = ["reqwest"]
 openai = ["reqwest"]
 azure = ["reqwest"]
+vllm = ["reqwest"]

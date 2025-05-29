@@ -1,10 +1,11 @@
 use crate::{
-    openai_common::{EmbeddingResponse, OpenAIEmbeddingResponse, OpenAIError, EMBEDDING_MODELS},
+    openai_common::{
+        handle_request_error, EmbeddingResponse, OpenAIEmbeddingResponse, EMBEDDING_MODELS,
+    },
     EmbeddingError,
 };
 use serde::Serialize;
 use std::error::Error;
-use tracing::debug;
 
 const DEFAULT_OPENAI_ENDPOINT: &str = "https://api.openai.com";
 
@@ -57,48 +58,7 @@ impl OpenAiEmbeddings {
         };
 
         if response.status() != 200 {
-            tracing::error!(
-                "Request to {} failed with status {}",
-                response.url(),
-                response.status()
-            );
-
-            let Some(ct) = response.headers().get(reqwest::header::CONTENT_TYPE) else {
-                return Err(EmbeddingError::Response(
-                    "missing content-type header in response".to_owned(),
-                ));
-            };
-
-            let ct = match ct.to_str() {
-                Ok(ct) => ct,
-                Err(e) => {
-                    tracing::error!("Error reading content-type header: {}", e);
-                    return Err(EmbeddingError::Response(
-                        "malformed content-type header".to_owned(),
-                    ));
-                }
-            };
-
-            if !ct.contains("application/json") {
-                let response = match response.text().await {
-                    Ok(r) => r,
-                    Err(e) => return Err(EmbeddingError::Reqwest(e)),
-                };
-                return Err(EmbeddingError::Response(response));
-            }
-
-            let response = match response.json::<OpenAIError>().await {
-                Ok(res) => res,
-                Err(e) => {
-                    tracing::error!("Error reading OpenAI response: {}", e);
-                    tracing::error!("Source: {:?}", e.source());
-                    return Err(EmbeddingError::Reqwest(e));
-                }
-            };
-
-            tracing::error!("Response: {response:?}");
-
-            return Err(EmbeddingError::OpenAI(response));
+            return Err(handle_request_error(response).await);
         }
 
         let response = match response.json::<OpenAIEmbeddingResponse>().await {
@@ -110,7 +70,7 @@ impl OpenAiEmbeddings {
             }
         };
 
-        debug!(
+        tracing::debug!(
             "Embedded {} chunk(s) with '{}', used tokens {}-{} (prompt-total)",
             input.len(),
             response.model,

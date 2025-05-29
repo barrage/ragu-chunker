@@ -1,54 +1,42 @@
+use std::error::Error;
+
 use crate::{
     openai_common::{
         handle_request_error, EmbeddingRequest, EmbeddingResponse, OpenAIEmbeddingResponse,
-        TEXT_EMBEDDING_ADA_002, TEXT_EMBEDDING_ADA_002_SIZE,
     },
     EmbeddingError,
 };
-use std::error::Error;
-use tracing::debug;
 
-pub struct AzureEmbeddings {
+pub struct VllmEmbeddings {
     endpoint: String,
-    key: String,
-    api_version: String,
+    key: Option<String>,
     client: reqwest::Client,
 }
 
-impl AzureEmbeddings {
-    pub fn new(endpoint: String, api_key: String, api_version: String) -> Self {
+impl VllmEmbeddings {
+    pub fn new(endpoint: String, key: Option<String>) -> Self {
         Self {
             endpoint,
-            key: api_key,
-            api_version,
+            key,
             client: reqwest::Client::new(),
         }
-    }
-
-    pub async fn list_embedding_models(&self) -> &[(&str, usize)] {
-        &[(TEXT_EMBEDDING_ADA_002, TEXT_EMBEDDING_ADA_002_SIZE)]
     }
 
     pub async fn embed(
         &self,
         input: &[&str],
-        deployment: &str,
+        model: &str,
     ) -> Result<EmbeddingResponse, EmbeddingError> {
         let request = EmbeddingRequest { input };
-        let url = format!(
-            "{}/openai/deployments/{deployment}/embeddings",
-            self.endpoint
-        );
+        let url = format!("{}/{model}/v1/embeddings", self.endpoint);
 
-        let response = match self
-            .client
-            .post(url)
-            .header("api-key", &self.key)
-            .query(&[("api-version", &self.api_version)])
-            .json(&request)
-            .send()
-            .await
-        {
+        let mut req = self.client.post(url);
+
+        if let Some(key) = &self.key {
+            req = req.bearer_auth(key);
+        }
+
+        let response = match req.json(&request).send().await {
             Ok(res) => res,
             Err(e) => {
                 tracing::error!("Error in Azure response: {e}");
@@ -69,7 +57,7 @@ impl AzureEmbeddings {
             }
         };
 
-        debug!(
+        tracing::debug!(
             "Embedded {} chunk(s) with '{}', used tokens {}-{} (prompt-total)",
             input.len(),
             response.model,
@@ -82,5 +70,9 @@ impl AzureEmbeddings {
             prompt_tokens: response.usage.prompt_tokens,
             total_tokens: response.usage.total_tokens,
         })
+    }
+
+    pub fn list_embedding_models(&self) -> &[(&str, usize)] {
+        &[("qwen2-dse", 1536)]
     }
 }
