@@ -23,12 +23,12 @@ hex = "0.4.3"
 rayon = "1.10.0"
 futures-util = "0.3.30"
 sqlx = { version = "0.8.3", features = [
-	"postgres",
-	"chrono",
-	"macros",
-	"any",
-	"runtime-tokio-native-tls",
-	"uuid",
+  "postgres",
+  "chrono",
+  "macros",
+  "any",
+  "runtime-tokio-native-tls",
+  "uuid",
 ] }
 tonic = "0.12.3"
 validify = "2.0.0"
@@ -38,7 +38,11 @@ suitest = "0.1.4"
 pdfium-render = { version = "0.8.28", features = ["image"] }
 calamine = "0.27.0"
 testcontainers = "0.22.0"
-testcontainers-modules = { version = "0.10.0", features = ["postgres", "redis", "minio"] }
+testcontainers-modules = { version = "0.10.0", features = [
+  "postgres",
+  "redis",
+  "minio",
+] }
 
 # weaviate
 weaviate-community = { version = "0.2.2", optional = true }
@@ -50,16 +54,16 @@ qdrant-client = { version = "1.13.0", optional = true }
 axum = { version = "0.7.4", features = ["multipart"] }
 axum-macros = { version = "0.4.1" }
 tower-http = { version = "0.5.0", features = [
-	"fs",
-	"tracing",
-	"trace",
-	"cors",
+  "fs",
+  "tracing",
+  "trace",
+  "cors",
 ] }
 cookie = "0.18.1"
 axum-extra = { version = "0.9.3", features = [
-	"cookie",
-	"typed-header",
-	"cookie-private",
+  "cookie",
+  "typed-header",
+  "cookie-private",
 ] }
 utoipa = { version = "4.2.3", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "7.1.0", features = ["axum"] }
@@ -74,8 +78,18 @@ image = { version = "0.25.6", features = ["webp", "serde"] }
 base64 = "0.22.1"
 rust-s3 = { git = "https://github.com/durch/rust-s3.git", rev = "7c6fdc0646704eac315c11eb60bf9f125975159b" }
 
+
 [features]
-default = ["weaviate", "qdrant", "fe-local", "openai", "azure", "vllm", "gdrive", "auth-jwt"]
+default = [
+  "weaviate",
+  "qdrant",
+  "fe-local",
+  "openai",
+  "azure",
+  "vllm",
+  "gdrive",
+  "auth-jwt",
+]
 fe-local = ["chonkit-embedders", "chonkit-embedders?/fe-local"]
 fe-remote = ["chonkit-embedders", "chonkit-embedders?/fe-remote"]
 cuda = ["chonkit-embedders?/cuda"]
