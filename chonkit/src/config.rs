@@ -23,11 +23,9 @@ pub const DEFAULT_COLLECTION_ID: uuid::Uuid = uuid::Uuid::nil();
 /// The name for the default collection created on application startup.
 pub const DEFAULT_COLLECTION_NAME: &str = "Chonkit_Default_Collection";
 /// The size for the default collection created on application startup.
-pub const DEFAULT_COLLECTION_SIZE: usize = 768;
 /// The embedding provider for the default collection created on application startup.
 pub const DEFAULT_COLLECTION_EMBEDDING_PROVIDER: &str = "fastembed";
 /// The embedding model for the default collection created on application startup.
-pub const DEFAULT_COLLECTION_EMBEDDING_MODEL: &str = "Xenova/bge-base-en-v1.5";
 pub const DEFAULT_DOCUMENT_NAME: &str = "RaguruLabamba.txt";
 pub const DEFAULT_DOCUMENT_CONTENT: &str = r#"Raguru Labamba, the pride of planet Gura, is celebrated as the finest ragu chef in the galaxy. With an innate mastery of Guran spices and interstellar ingredients, his ragus blend cosmic flavors into harmonies never tasted before. From his floating kitchen orbiting Gura’s twin moons, Raguru crafts dishes that draw food pilgrims from across the universe, cementing his legacy as the culinary star of his world."#;
 /// The default upload path for the `fs` document storage provider.

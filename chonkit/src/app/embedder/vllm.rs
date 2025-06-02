@@ -1,7 +1,7 @@
 use crate::{
     config::VLLM_EMBEDDER_ID,
     core::{
-        embeddings::{Embedder, Embeddings},
+        embeddings::{Embedder, EmbeddingModelRegistry, Embeddings},
         provider::Identity,
     },
     error::ChonkitError,
@@ -18,15 +18,14 @@ impl Identity for VllmEmbeddings {
 }
 
 #[async_trait::async_trait]
-impl Embedder for VllmEmbeddings {
-    fn default_model(&self) -> (String, usize) {
-        (String::from("text-embedding-ada-002"), 1536)
-    }
-
+impl EmbeddingModelRegistry for VllmEmbeddings {
     async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError> {
         Ok(self.list_models())
     }
+}
 
+#[async_trait::async_trait]
+impl Embedder for VllmEmbeddings {
     async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
         let embeddings = map_err!(self.embed(content, model).await);
         Ok(Embeddings::new(

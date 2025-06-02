@@ -7,7 +7,6 @@ use crate::{
     EmbeddingError,
 };
 use std::error::Error;
-use tracing::debug;
 
 pub struct AzureEmbeddings {
     endpoint: String,
@@ -75,7 +74,7 @@ impl AzureEmbeddings {
             }
         };
 
-        debug!(
+        tracing::debug!(
             "Embedded {} chunk(s) with '{}', used tokens {}-{} (prompt-total)",
             input.len(),
             response.model,

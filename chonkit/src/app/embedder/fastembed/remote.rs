@@ -1,9 +1,7 @@
-use crate::config::{
-    DEFAULT_COLLECTION_EMBEDDING_MODEL, DEFAULT_COLLECTION_SIZE, FEMBED_EMBEDDER_ID,
-};
+use crate::config::FEMBED_EMBEDDER_ID;
 use crate::{
     core::{
-        embeddings::{Embedder, Embeddings},
+        embeddings::{Embedder, EmbeddingModelRegistry, Embeddings},
         provider::Identity,
     },
     error::ChonkitError,
@@ -20,18 +18,14 @@ impl Identity for RemoteFastEmbedder {
 }
 
 #[async_trait::async_trait]
-impl Embedder for RemoteFastEmbedder {
-    fn default_model(&self) -> (String, usize) {
-        (
-            String::from(DEFAULT_COLLECTION_EMBEDDING_MODEL),
-            DEFAULT_COLLECTION_SIZE,
-        )
-    }
-
+impl EmbeddingModelRegistry for RemoteFastEmbedder {
     async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError> {
         Ok(map_err!(self.list_models().await))
     }
+}
 
+#[async_trait::async_trait]
+impl Embedder for RemoteFastEmbedder {
     async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
         // TODO: Token usage
         Ok(Embeddings::new(

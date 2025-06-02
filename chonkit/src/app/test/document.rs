@@ -3,7 +3,7 @@
 #[suitest::suite_cfg(sequential = true)]
 mod document_service_integration_tests {
     use crate::{
-        app::test::{TestState, TestStateConfig},
+        app::test::{TestState, TestStateConfig, DEFAULT_MODELS},
         core::{
             document::{
                 parser::{parse, ParseConfig, ParseMode, StringParseConfig},
@@ -31,6 +31,11 @@ mod document_service_integration_tests {
             _gdrive_download_path: TEST_GDRIVE_PATH.to_string(),
         })
         .await;
+
+        // azure
+        // fn default_model(&self) -> (String, usize) {
+        //     (String::from("text-embedding-ada-002"), 1536)
+        // }
 
         test_state
     }
@@ -316,7 +321,13 @@ mod document_service_integration_tests {
 
                 let collection_1 = CreateCollectionPayload {
                     name: "DeleteDocumentTestCollection1".to_string(),
-                    model: embedder.default_model().0,
+                    model: DEFAULT_MODELS
+                        .get()
+                        .unwrap()
+                        .get(embedder.id())
+                        .unwrap()
+                        .name
+                        .clone(),
                     vector_provider: vector_db.id().to_string(),
                     embedding_provider: embedder.id().to_string(),
                     groups: None,
@@ -324,7 +335,13 @@ mod document_service_integration_tests {
 
                 let collection_2 = CreateCollectionPayload {
                     name: "DeleteDocumentTestCollection2".to_string(),
-                    model: embedder.default_model().0,
+                    model: DEFAULT_MODELS
+                        .get()
+                        .unwrap()
+                        .get(embedder.id())
+                        .unwrap()
+                        .name
+                        .clone(),
                     vector_provider: vector_db.id().to_string(),
                     embedding_provider: embedder.id().to_string(),
                     groups: None,

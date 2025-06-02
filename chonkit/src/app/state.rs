@@ -245,22 +245,10 @@ impl AppState {
     /// Used for metadata display.
     pub async fn get_configuration(&self) -> Result<AppConfig, ChonkitError> {
         let mut embedding_providers = HashMap::new();
-        let mut default_chunkers = vec![
-            ChunkConfig::sliding_default(),
-            ChunkConfig::snapping_default(),
-        ];
 
         for provider in self.providers.embedding.list_provider_ids() {
             let embedder = self.providers.embedding.get_provider(provider)?;
-            let default_model = embedder.default_model().0;
-
-            default_chunkers.push(ChunkConfig::semantic_default(
-                embedder.id().to_string(),
-                default_model,
-            ));
-
             let models = embedder.list_embedding_models().await?;
-
             embedding_providers.insert(provider.to_string(), models);
         }
 
@@ -279,7 +267,10 @@ impl AppState {
                 .map(|s| s.to_string())
                 .collect(),
             embedding_providers,
-            default_chunkers,
+            default_chunkers: vec![
+                ChunkConfig::sliding_default(),
+                ChunkConfig::snapping_default(),
+            ],
             document_providers,
             supported_document_types: vec![
                 DocumentType::Text(TextDocumentType::Md).to_string(),

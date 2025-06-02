@@ -6,7 +6,7 @@
 #[suitest::suite(integration_tests)]
 mod vector_service_integration_tests {
     use crate::{
-        app::test::{TestState, TestStateConfig},
+        app::test::{TestState, TestStateConfig, DEFAULT_MODELS},
         config::{DEFAULT_COLLECTION_NAME, FEMBED_EMBEDDER_ID},
         core::{
             document::{DocumentType, TextDocumentType},
@@ -37,6 +37,11 @@ mod vector_service_integration_tests {
         })
         .await;
 
+        // azure
+        // fn default_model(&self) -> (String, usize) {
+        //     (String::from("text-embedding-ada-002"), 1536)
+        // }
+
         for provider in test_state.active_vector_providers.iter() {
             let embedder = test_state
                 .app
@@ -47,7 +52,13 @@ mod vector_service_integration_tests {
 
             let create = CreateCollectionPayload {
                 name: format!("{DEFAULT_COLLECTION_NAME}_{}_{}", provider, embedder.id()),
-                model: embedder.default_model().0,
+                model: DEFAULT_MODELS
+                    .get()
+                    .unwrap()
+                    .get(embedder.id())
+                    .unwrap()
+                    .name
+                    .clone(),
                 vector_provider: provider.to_string(),
                 embedding_provider: embedder.id().to_string(),
                 groups: None,
@@ -101,7 +112,16 @@ mod vector_service_integration_tests {
                 .unwrap();
 
             assert_eq!(collection.name, collection_name);
-            assert_eq!(collection.model, embedder.default_model().0);
+            assert_eq!(
+                collection.model,
+                DEFAULT_MODELS
+                    .get()
+                    .unwrap()
+                    .get(embedder.id())
+                    .unwrap()
+                    .name
+                    .clone(),
+            );
             assert_eq!(collection.embedder, embedder.id());
             assert_eq!(collection.provider, *provider);
 
@@ -206,7 +226,13 @@ mod vector_service_integration_tests {
                 format!("{DEFAULT_COLLECTION_NAME}_{}_{}", provider, embedder.id());
 
             let params = CreateCollectionPayload {
-                model: embedder.default_model().0,
+                model: DEFAULT_MODELS
+                    .get()
+                    .unwrap()
+                    .get(embedder.id())
+                    .unwrap()
+                    .name
+                    .clone(),
                 name: collection_name,
                 vector_provider: vector_db.id().to_string(),
                 embedding_provider: embedder.id().to_string(),
@@ -326,7 +352,13 @@ mod vector_service_integration_tests {
                 .collection
                 .create_collection(CreateCollectionPayload {
                     name: collection_name.to_string(),
-                    model: embedder.default_model().0,
+                    model: DEFAULT_MODELS
+                        .get()
+                        .unwrap()
+                        .get(embedder.id())
+                        .unwrap()
+                        .name
+                        .clone(),
                     vector_provider: vector_db.id().to_string(),
                     embedding_provider: embedder.id().to_string(),
                     groups: None,

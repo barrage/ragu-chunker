@@ -3,16 +3,13 @@ use crate::error::ChonkitError;
 use chonkit_embedders::EmbeddingModel;
 use serde::{Deserialize, Serialize};
 
-/// Operations related to text embeddings and their models.
+/// An embedder registry.
 #[async_trait::async_trait]
-pub trait Embedder: Identity {
-    /// Used for creating the initial collection.
-    fn default_model(&self) -> (String, usize);
-
-    /// List all available models in the embedder and their sizes.
+pub trait EmbeddingModelRegistry {
+    /// List all available models in the registry.
     async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError>;
 
-    /// Return the size (dimensions) of the given model's embedding space if it is supported by the embedder.
+    /// Return the size (dimensions) of the given model's embedding space if it is supported by the embedding registry.
     ///
     /// * `model`: The model whose size to return.
     async fn size(&self, model: &str) -> Result<Option<usize>, ChonkitError> {
@@ -23,7 +20,11 @@ pub trait Embedder: Identity {
             .find(|m| m.name == model)
             .map(|m| m.size))
     }
+}
 
+/// Operations related to text.
+#[async_trait::async_trait]
+pub trait Embedder: Identity + EmbeddingModelRegistry {
     /// Get the vectors for the elements in `content`.
     /// The content passed in can be a user's query,
     /// or a chunked document.
@@ -31,6 +32,17 @@ pub trait Embedder: Identity {
     /// * `content`: The text to embed.
     /// * `model`: The embedding model to use.
     async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError>;
+}
+
+#[async_trait::async_trait]
+pub trait ImageEmbedder: Identity + EmbeddingModelRegistry {
+    async fn embed_image(
+        &self,
+        system: Option<&str>,
+        text: Option<&str>,
+        image: &str,
+        model: &str,
+    ) -> Result<Embeddings, ChonkitError>;
 }
 
 /// The result of embedding chunks.

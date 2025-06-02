@@ -7,6 +7,7 @@ use super::{
     document::store::FsDocumentStore,
     state::{AppProviderState, AppState},
 };
+use crate::core::provider::Identity;
 use crate::core::{
     cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
@@ -17,8 +18,11 @@ use crate::core::{
     },
     token::Tokenizer,
 };
-use crate::{config::DEFAULT_COLLECTION_EMBEDDING_MODEL, core::provider::Identity};
-use std::sync::Arc;
+use chonkit_embedders::EmbeddingModel;
+use std::{
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 use testcontainers::{runners::AsyncRunner, ContainerAsync, GenericImage};
 use testcontainers_modules::{postgres::Postgres, redis::Redis};
 
@@ -26,6 +30,8 @@ pub type PostgresContainer = ContainerAsync<Postgres>;
 pub type AsyncContainer = ContainerAsync<GenericImage>;
 pub type RedisContainer = ContainerAsync<Redis>;
 pub type MinioContainer = ContainerAsync<testcontainers_modules::minio::MinIO>;
+
+static DEFAULT_MODELS: OnceLock<HashMap<&'static str, EmbeddingModel>> = OnceLock::new();
 
 struct TestState {
     /// Holds test containers so they don't get dropped.
@@ -45,6 +51,8 @@ struct TestState {
 
 impl TestState {
     pub async fn init(config: TestStateConfig) -> Self {
+        let mut models = HashMap::new();
+
         // Set up test containers
 
         let (postgres, postgres_img) = init_repository().await;
@@ -101,10 +109,22 @@ impl TestState {
         {
             let fastembed = Arc::new(
                 crate::app::embedder::fastembed::local::LocalFastEmbedder::new_with_model(
-                    DEFAULT_COLLECTION_EMBEDDING_MODEL,
+                    "Xenova/bge-base-en-v1.5",
                 ),
             );
+
             active_embedding_providers.push(fastembed.id());
+
+            models.insert(
+                fastembed.id(),
+                EmbeddingModel {
+                    name: "Xenova/bge-base-en-v1.5".to_string(),
+                    size: 768,
+                    provider: fastembed.id().to_string(),
+                    multimodal: false,
+                },
+            );
+
             embedding.register(fastembed);
         }
 
@@ -116,9 +136,21 @@ impl TestState {
                     String::new(), /* TODO */
                 ),
             );
+
             if !active_embedding_providers.contains(&fastembed.id()) {
                 active_embedding_providers.push(fastembed.id());
             }
+
+            models.insert(
+                fastembed.id(),
+                EmbeddingModel {
+                    name: "Xenova/bge-base-en-v1.5".to_string(),
+                    size: 768,
+                    provider: fastembed.id().to_string(),
+                    multimodal: false,
+                },
+            );
+
             embedding.register(fastembed);
         }
 
@@ -156,6 +188,8 @@ impl TestState {
         };
 
         let app = AppState::new_test(services, providers);
+
+        DEFAULT_MODELS.get_or_init(|| models);
 
         TestState {
             _containers,
