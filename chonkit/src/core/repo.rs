@@ -5,6 +5,7 @@ use std::future::Future;
 pub mod collection;
 pub mod document;
 pub mod embedding;
+pub mod image;
 
 /// Thin wrapper around a database connection pool.
 /// Theoretically, this should be a generic repository not tied to SQL.

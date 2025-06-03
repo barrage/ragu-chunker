@@ -1,13 +1,12 @@
 pub mod embedding;
 
-// #[cfg(feature = "cache-redis")] -  if we ever enable multiple caching backends
-pub use {redis::init, redis::ImageEmbeddingCache, redis::TextEmbeddingCache};
+pub use {redis::init, redis::ImageCache, redis::TextEmbeddingCache};
 
 mod redis {
     use crate::{
         core::{
             cache::embedding::{CachedEmbeddings, EmbeddingCacheKey},
-            image::Image,
+            model::image::Image,
         },
         error::ChonkitError,
         map_err,
@@ -24,9 +23,9 @@ mod redis {
     }
 
     #[derive(Clone)]
-    pub struct ImageEmbeddingCache(deadpool_redis::Pool);
+    pub struct ImageCache(deadpool_redis::Pool);
 
-    impl ImageEmbeddingCache {
+    impl ImageCache {
         pub fn new(pool: deadpool_redis::Pool) -> Self {
             Self(pool)
         }
@@ -104,7 +103,7 @@ mod redis {
         }
     }
 
-    impl ImageEmbeddingCache {
+    impl ImageCache {
         pub async fn get(&self, _key: &str) -> Result<Image, ChonkitError> {
             todo!()
         }

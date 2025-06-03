@@ -1,84 +1,48 @@
-use std::sync::Arc;
-
 use super::provider::Identity;
-use crate::error::ChonkitError;
-use base64::Engine;
+use crate::{
+    core::model::image::{Image, ImageModel},
+    error::ChonkitError,
+};
+use std::sync::Arc;
+use uuid::Uuid;
 
 pub type ImageStore = Arc<dyn ImageStorage + Send + Sync>;
-
-/// An encoded image.
-pub struct Image {
-    /// The ID of the image, relevant to [ImageStorage].
-    ///
-    /// Since we are usually extracting images from documents, this field will be set by the
-    /// parser.
-    pub path: String,
-
-    /// Encoded image bytes.
-    pub bytes: Vec<u8>,
-
-    /// Image format.
-    pub format: image::ImageFormat,
-}
-
-impl Image {
-    pub fn new(path: String, bytes: Vec<u8>, format: image::ImageFormat) -> Self {
-        Self {
-            path,
-            bytes,
-            format,
-        }
-    }
-
-    pub fn to_b64(&self) -> String {
-        base64::engine::general_purpose::STANDARD.encode(self.bytes.as_slice())
-    }
-
-    pub fn to_b64_data_uri(&self) -> String {
-        format!(
-            "data:{};base64,{}",
-            self.format.to_mime_type(),
-            base64::engine::general_purpose::STANDARD.encode(self.bytes.as_slice())
-        )
-    }
-
-    pub fn size_in_mb(&self) -> usize {
-        (self.bytes.len() as f64 / 1024.0 / 1024.0) as usize
-    }
-}
-
-impl std::fmt::Display for Image {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "RawImage {{ path: {}, size_MB: {}, format: {} }} ",
-            self.path,
-            self.size_in_mb(),
-            self.format.to_mime_type()
-        )
-    }
-}
-
-impl std::fmt::Debug for Image {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self)
-    }
-}
 
 #[async_trait::async_trait]
 pub trait ImageStorage: Identity {
     async fn get_image(&self, path: &str) -> Result<Image, ChonkitError>;
 
-    async fn store_image(&self, image: &Image) -> Result<(), ChonkitError>;
+    async fn store_image(
+        &self,
+        document_id: Uuid,
+        image: &Image,
+    ) -> Result<ImageModel, ChonkitError>;
 
     async fn exists(&self, path: &str) -> Result<bool, ChonkitError>;
 }
 
 pub mod minio {
     use super::{Image, ImageStorage};
-    use crate::{core::provider::Identity, error::ChonkitError, map_err};
+    use crate::{
+        core::{model::image::ImageModel, provider::Identity, repo::Repository},
+        error::ChonkitError,
+        map_err, transaction,
+    };
     use s3::{creds::Credentials, Bucket, Region};
     use std::sync::Arc;
+    use uuid::Uuid;
+
+    #[derive(Clone)]
+    pub struct MinioImageStorage {
+        client: MinioClient,
+        repository: Repository,
+    }
+
+    impl MinioImageStorage {
+        pub fn new(client: MinioClient, repository: Repository) -> Self {
+            Self { client, repository }
+        }
+    }
 
     #[derive(Clone)]
     pub struct MinioClient {
@@ -86,7 +50,19 @@ pub mod minio {
         prefix: String,
     }
 
-    impl Identity for MinioClient {
+    impl MinioClient {
+        async fn store_image(&self, image: &Image) -> Result<(), ChonkitError> {
+            map_err!(
+                self.bucket
+                    .put_object(format!("{}/{}", self.prefix, image.path), &image.bytes)
+                    .await
+            );
+
+            Ok(())
+        }
+    }
+
+    impl Identity for MinioImageStorage {
         fn id(&self) -> &'static str {
             "minio"
         }
@@ -128,34 +104,53 @@ pub mod minio {
     }
 
     #[async_trait::async_trait]
-    impl ImageStorage for MinioClient {
+    impl ImageStorage for MinioImageStorage {
         async fn get_image(&self, path: &str) -> Result<Image, ChonkitError> {
             let bytes = map_err!(
-                self.bucket
-                    .get_object(format!("{}/{path}", self.prefix))
+                self.client
+                    .bucket
+                    .get_object(format!("{}/{path}", self.client.prefix))
                     .await
             );
+
+            let description = self.repository.get_image_description(path).await?;
 
             Ok(Image {
                 path: path.to_owned(),
                 bytes: bytes.to_vec(),
                 format: image::ImageFormat::WebP,
+                description,
             })
         }
 
-        async fn store_image(&self, image: &Image) -> Result<(), ChonkitError> {
-            map_err!(
-                self.bucket
-                    .put_object(format!("{}/{}", self.prefix, image.path), &image.bytes)
-                    .await
-            );
-            Ok(())
+        async fn store_image(
+            &self,
+            document_id: Uuid,
+            image: &Image,
+        ) -> Result<ImageModel, ChonkitError> {
+            use crate::core::repo::Atomic;
+
+            transaction!(self.repository, |tx| async move {
+                let img = self
+                    .repository
+                    .insert_image(
+                        document_id,
+                        self.id(),
+                        &image.path,
+                        image.description.as_deref(),
+                        Some(tx),
+                    )
+                    .await?;
+                self.client.store_image(image).await?;
+                Ok(img)
+            })
         }
 
         async fn exists(&self, path: &str) -> Result<bool, ChonkitError> {
             Ok(map_err!(
-                self.bucket
-                    .object_exists(format!("{}/{}", self.prefix, path))
+                self.client
+                    .bucket
+                    .object_exists(format!("{}/{}", self.client.prefix, path))
                     .await
             ))
         }

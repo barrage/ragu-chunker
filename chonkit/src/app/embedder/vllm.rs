@@ -1,7 +1,7 @@
 use crate::{
     config::VLLM_EMBEDDER_ID,
     core::{
-        embeddings::{Embedder, EmbeddingModelRegistry, Embeddings},
+        embeddings::{Embedder, EmbeddingModelRegistry, Embeddings, ImageEmbedder},
         provider::Identity,
     },
     error::ChonkitError,
@@ -28,6 +28,23 @@ impl EmbeddingModelRegistry for VllmEmbeddings {
 impl Embedder for VllmEmbeddings {
     async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError> {
         let embeddings = map_err!(self.embed(content, model).await);
+        Ok(Embeddings::new(
+            embeddings.embeddings,
+            Some(embeddings.total_tokens),
+        ))
+    }
+}
+
+#[async_trait::async_trait]
+impl ImageEmbedder for VllmEmbeddings {
+    async fn embed_image(
+        &self,
+        system: Option<&str>,
+        text: Option<&str>,
+        image: &str,
+        model: &str,
+    ) -> Result<Embeddings, ChonkitError> {
+        let embeddings = map_err!(self.embed_image(system, text, image, model).await);
         Ok(Embeddings::new(
             embeddings.embeddings,
             Some(embeddings.total_tokens),

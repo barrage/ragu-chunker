@@ -43,23 +43,20 @@ use super::router::{
 
 use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, UploadResult};
 use crate::{
-    app::{server::router::collection::SyncParams, state::AppConfig},
+    app::{server::{dto::UpdateImageDescription, router::collection::SyncParams}, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
-        document::parser::{DocumentPage, DocumentSection, ParseConfig, PageRange, ParseMode, SectionParseConfig, StringParseConfig},
+        document::parser::{PageRange, ParseConfig, ParseMode, SectionParseConfig, StringParseConfig},
         model::{
-            collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort},
-            document::{
+            collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort}, document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentSearchColumn, DocumentShort,
-            },
-            embedding::{
+            }, embedding::{
                 Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
                 EmbeddingReportSearchColumn,
-            },
-            List, Pagination, PaginationSort, Search, SortDirection,
+            }, image::ImageModel, List, Pagination, PaginationSort, Search, SortDirection
         },
         service::{
-            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload, ParseOutputPreview, ParsePreview}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
+            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload, ParseOutputPreview, ParsePreview, ParsedDocumentContent, ParsedDocumentPage, ParsedDocumentSection}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
         },
         token::TokenCount,
         vector::{CollectionSearchItem, VectorCollection},
@@ -143,8 +140,11 @@ use utoipa::OpenApi;
         ParsePreview,
         ParseOutputPreview,
         PageRange,
-        DocumentSection,
-        DocumentPage,
+        ParsedDocumentSection,
+        ParsedDocumentPage,
+        ParsedDocumentContent,
+        ImageModel,
+        UpdateImageDescription,
 
         CreateCollectionPayload,
         CollectionSearchResult,

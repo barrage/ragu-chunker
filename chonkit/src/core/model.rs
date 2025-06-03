@@ -13,6 +13,9 @@ pub mod embedding;
 /// Document models.
 pub mod document;
 
+/// Image models for storage and DB.
+pub mod image;
+
 /// Used to obtain paginated lists with a total number of items in
 /// the tables.
 #[derive(Debug, Serialize)]
@@ -252,6 +255,7 @@ fn ascii_alphanumeric_column(s: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+/// Creates an enum with the specified variants that implements [ToSearchColumn].
 #[macro_export]
 macro_rules! search_column {
     ($name:ident, $($variant:ident => $column:literal),+ $(,)?) => {

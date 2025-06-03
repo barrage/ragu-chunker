@@ -1,11 +1,15 @@
 use super::{
-    document::store::DocumentStorage, embeddings::Embedder, image::ImageStore, vector::VectorDb,
+    document::store::DocumentStorage,
+    embeddings::{Embedder, ImageEmbedder},
+    image::ImageStore,
+    vector::VectorDb,
 };
 use crate::{err, error::ChonkitError};
 use std::{collections::HashMap, sync::Arc};
 
 pub type VectorDbProvider = ProviderFactory<Arc<dyn VectorDb + Send + Sync>>;
-pub type EmbeddingProvider = ProviderFactory<Arc<dyn Embedder + Send + Sync>>;
+pub type TextEmbeddingProvider = ProviderFactory<Arc<dyn Embedder + Send + Sync>>;
+pub type ImageEmbeddingProvider = ProviderFactory<Arc<dyn ImageEmbedder + Send + Sync>>;
 pub type DocumentStorageProvider = ProviderFactory<Arc<dyn DocumentStorage + Send + Sync>>;
 
 /// Used to track provider IDs.
@@ -61,13 +65,16 @@ impl<T> ProviderFactory<T> {
 #[derive(Clone)]
 pub struct ProviderState {
     /// Vector database providers.
-    pub vector: ProviderFactory<Arc<dyn VectorDb + Send + Sync>>,
+    pub vector: VectorDbProvider,
 
-    /// Embedding providers.
-    pub embedding: ProviderFactory<Arc<dyn Embedder + Send + Sync>>,
+    /// Text embedding providers.
+    pub embedding: TextEmbeddingProvider,
+
+    /// Image (multimodal) embedding providers.
+    pub image_embedding: ImageEmbeddingProvider,
 
     // Document storage providers.
-    pub document: ProviderFactory<Arc<dyn DocumentStorage + Send + Sync>>,
+    pub document: DocumentStorageProvider,
 
     /// Image storage providers.
     pub image: ImageStore,
@@ -94,4 +101,4 @@ macro_rules! impl_identity {
     };
 }
 
-impl_identity!(VectorDb, Embedder, DocumentStorage);
+impl_identity!(VectorDb, Embedder, ImageEmbedder, DocumentStorage);

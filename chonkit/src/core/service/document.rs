@@ -1,5 +1,9 @@
 use crate::core::document::parser::{parse, ParseConfig, ParseOutput};
 use crate::core::model::document::DocumentSearchColumn;
+use crate::core::model::image::{Image, ImageModel};
+use crate::core::service::document::dto::{
+    ParsedDocumentContent, ParsedDocumentPage, ParsedDocumentSection,
+};
 use crate::core::token::{TokenCount, Tokenizer};
 use crate::{
     config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
@@ -139,7 +143,16 @@ impl DocumentService {
 
         // The default parser parses the whole input so we use it
         // to check whether the document has any content. Reject if empty.
-        parse(ParseConfig::default(), ty, file).await?;
+        let output = parse(ParseConfig::default(), ty, file).await?;
+
+        let images = match output {
+            ParseOutput::String { text: _, images } => images,
+            ParseOutput::Sections(sections) => sections
+                .into_iter()
+                .flat_map(|s| s.pages)
+                .flat_map(|p| p.images)
+                .collect(),
+        };
 
         // Always return errors if there is a hash collision
         if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
@@ -162,10 +175,12 @@ impl DocumentService {
             }
 
             store.write(&path, file, true).await?;
-            let update = DocumentParameterUpdate::new(&path, &hash);
+
+            self.process_images(existing.id, images).await?;
+
             return self
                 .repo
-                .update_document_parameters(existing.id, update)
+                .update_document_parameters(existing.id, DocumentParameterUpdate::new(&path, &hash))
                 .await;
         };
 
@@ -181,6 +196,8 @@ impl DocumentService {
                     tx,
                 )
                 .await?;
+
+            self.process_images(document.id, images).await?;
 
             store.write(&path, file, false).await?;
 
@@ -245,20 +262,20 @@ impl DocumentService {
 
         let parse_config = match config.parse_config {
             Some(cfg) => cfg,
-            None => match self.get_config(document_id).await?.parse_config {
-                Some(config) => config,
-                None => return err!(DoesNotExist, "Parsing configuration for {document_id}"),
-            },
+            None => self
+                .get_config(document_id)
+                .await?
+                .parse_config
+                .unwrap_or_default(),
         };
 
         let ParsePreview {
-            text,
-            images,
+            content: text,
             total_tokens,
         } = self.parse_preview(document_id, parse_config).await?;
 
         match text {
-            ParseOutputPreview::String(content) => {
+            ParseOutputPreview::String(ParsedDocumentContent { text, images }) => {
                 let Some(chunker) = config.chunker else {
                     return err!(InvalidParameter, "Chunking configuration must be specified when previewing with generic parser");
                 };
@@ -266,7 +283,7 @@ impl DocumentService {
                 let mut total_tokens_post = TokenCount::default();
 
                 let chunks =
-                    match crate::core::chunk::chunk(&self.providers, chunker, &content).await? {
+                    match crate::core::chunk::chunk(&self.providers, chunker, &text).await? {
                         ChunkedDocument::Ref(chunked) => chunked
                             .into_iter()
                             .map(|s| {
@@ -301,24 +318,24 @@ impl DocumentService {
             ParseOutputPreview::Sections(sections) => {
                 // TODO: configure section merge strategy
                 // currently we are merging them, but we should also enable storing page by page
-                let sections = sections
-                    .into_iter()
-                    .map(|s| {
-                        s.pages.into_iter().fold(String::new(), |mut acc, el| {
-                            acc.push_str(&el.content);
-                            acc.push('\n');
-                            acc
-                        })
-                    })
-                    .collect::<Vec<String>>();
+                let mut total_tokens = TokenCount::default();
+                let mut chunks = vec![];
+                let mut images = vec![];
 
-                let chunks = sections
-                    .into_iter()
-                    .map(|section| ChunkForPreview {
-                        token_count: self.tokenizer.count(&section),
-                        chunk: section,
-                    })
-                    .collect::<Vec<_>>();
+                for section in sections.into_iter() {
+                    let content = section.pages.iter().fold(String::new(), |mut acc, el| {
+                        acc.push_str(&el.content);
+                        acc.push('\n');
+                        acc
+                    });
+                    let count = self.tokenizer.count(&content);
+                    chunks.push(ChunkForPreview {
+                        token_count: count,
+                        chunk: content,
+                    });
+                    images.extend(section.pages.into_iter().flat_map(|p| p.images));
+                    total_tokens += count;
+                }
 
                 Ok(ChunkPreview {
                     chunks,
@@ -330,7 +347,11 @@ impl DocumentService {
         }
     }
 
-    /// Parse specific sections of the document.
+    /// Preview the output of parsing a document. This uses the [parse] function internally,
+    /// but remaps the output for display purposes.
+    ///
+    /// During preview, users can describe images found in documents and can adjust the parser
+    /// to enhance the output.
     ///
     /// * `id`: Document ID.
     /// * `config`: Parsing configuration.
@@ -345,44 +366,37 @@ impl DocumentService {
 
         match output {
             ParseOutput::String { text, images } => {
-                let mut image_paths = vec![];
-                for image in images.into_iter() {
-                    if self.providers.image.exists(&image.path).await? {
-                        tracing::debug!("Image '{}' in document {id} already exists", image.path);
-                        image_paths.push(image.path);
-                        continue;
-                    }
+                let parsed_images = self.process_images(id, images).await?;
+                Ok(ParsePreview {
+                    total_tokens: self.tokenizer.count(&text),
+                    content: dto::ParseOutputPreview::String(ParsedDocumentContent {
+                        text,
+                        images: parsed_images,
+                    }),
+                })
+            }
+            ParseOutput::Sections(document_sections) => {
+                let mut total_tokens = TokenCount::default();
+                let mut sections = vec![];
 
-                    if let Err(e) = self.providers.image.store_image(&image).await {
-                        tracing::error!(
-                            "Unable to store image ({}) in document {id}: {e}",
-                            image.path
-                        );
-                        continue;
+                for section in document_sections {
+                    let mut pages = vec![];
+                    for page in section.pages {
+                        total_tokens += self.tokenizer.count(&page.content);
+                        pages.push(ParsedDocumentPage {
+                            content: page.content,
+                            number: page.number,
+                            images: self.process_images(id, page.images).await?,
+                        });
                     }
-
-                    image_paths.push(image.path);
+                    sections.push(ParsedDocumentSection { pages })
                 }
 
                 Ok(ParsePreview {
-                    total_tokens: self.tokenizer.count(&text),
-                    text: dto::ParseOutputPreview::String(text),
-                    images: image_paths,
+                    total_tokens,
+                    content: dto::ParseOutputPreview::Sections(sections),
                 })
             }
-            ParseOutput::Sections(document_sections) => Ok(ParsePreview {
-                total_tokens: document_sections.iter().fold(
-                    TokenCount::default(),
-                    |mut acc, el| {
-                        el.pages
-                            .iter()
-                            .for_each(|page| acc += self.tokenizer.count(&page.content));
-                        acc
-                    },
-                ),
-                text: dto::ParseOutputPreview::Sections(document_sections),
-                images: vec![],
-            }),
         }
     }
 
@@ -461,16 +475,76 @@ impl DocumentService {
 
         Ok((document, content))
     }
+
+    pub async fn list_images(&self, document_id: Uuid) -> Result<List<ImageModel>, ChonkitError> {
+        self.repo
+            .list_document_images(document_id, self.providers.image.id())
+            .await
+    }
+
+    pub async fn update_image_description(
+        &self,
+        document_id: Uuid,
+        image_path: &str,
+        description: Option<&str>,
+    ) -> Result<(), ChonkitError> {
+        self.repo
+            .update_image_description(document_id, image_path, description)
+            .await
+    }
+
+    async fn process_images(
+        &self,
+        document_id: Uuid,
+        images: Vec<Image>,
+    ) -> Result<Vec<ImageModel>, ChonkitError> {
+        let total = images.len();
+        tracing::debug!("Processing {} images in document {document_id}", total);
+
+        let mut parsed_images = vec![];
+
+        let existing_paths = self
+            .repo
+            .list_document_image_paths(document_id, self.providers.image.id())
+            .await?;
+
+        for (i, image) in images.into_iter().enumerate() {
+            if existing_paths.contains(&image.path) {
+                parsed_images.push(ImageModel {
+                    description: image.description,
+                    path: image.path,
+                    document_id,
+                    src: self.providers.image.id().to_string(),
+                });
+                continue;
+            }
+
+            let img = match self.providers.image.store_image(document_id, &image).await {
+                Ok(img) => img,
+                Err(e) => {
+                    tracing::error!(
+                        "Unable to store image ({}) in document {document_id}: {e}",
+                        image.path
+                    );
+                    continue;
+                }
+            };
+
+            parsed_images.push(img);
+
+            tracing::debug!("Uploaded image {}/{}", i + 1, total);
+        }
+
+        Ok(parsed_images)
+    }
 }
 
 /// Document service DTOs.
 pub mod dto {
     use crate::core::{
         chunk::ChunkConfig,
-        document::{
-            parser::{DocumentSection, ParseConfig},
-            DocumentType,
-        },
+        document::{parser::ParseConfig, DocumentType},
+        model::image::ImageModel,
         token::TokenCount,
     };
     use serde::{Deserialize, Serialize};
@@ -519,7 +593,7 @@ pub mod dto {
     #[serde(rename_all = "camelCase")]
     pub struct ChunkPreview {
         pub chunks: Vec<ChunkForPreview>,
-        pub images: Vec<String>,
+        pub images: Vec<ImageModel>,
         pub total_tokens_pre: TokenCount,
         pub total_tokens_post: TokenCount,
     }
@@ -527,15 +601,42 @@ pub mod dto {
     #[derive(Debug, Serialize, utoipa::ToSchema)]
     #[serde(rename_all = "camelCase")]
     pub struct ParsePreview {
-        pub text: ParseOutputPreview,
-        pub images: Vec<String>,
+        pub content: ParseOutputPreview,
         pub total_tokens: TokenCount,
     }
 
     #[derive(Debug, Serialize, utoipa::ToSchema)]
     #[serde(rename_all = "camelCase")]
     pub enum ParseOutputPreview {
-        String(String),
-        Sections(Vec<DocumentSection>),
+        String(ParsedDocumentContent),
+        Sections(Vec<ParsedDocumentSection>),
+    }
+
+    /// Service level DTO for representing parsed document content with images.
+    #[derive(Debug, Serialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ParsedDocumentContent {
+        pub text: String,
+        pub images: Vec<ImageModel>,
+    }
+
+    /// Service level [DocumentSection][crate::core::document::parser::DocumentSection].
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ParsedDocumentSection {
+        pub pages: Vec<ParsedDocumentPage>,
+    }
+
+    /// Service level [DocumentPage][crate::core::document::parser::DocumentPage].
+    #[derive(Debug, Default, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ParsedDocumentPage {
+        /// The text contents of the page.
+        pub content: String,
+
+        /// The page number.
+        pub number: usize,
+
+        pub images: Vec<ImageModel>,
     }
 }

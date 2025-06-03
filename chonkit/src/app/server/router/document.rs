@@ -1,13 +1,16 @@
 use super::Force;
 use crate::{
     app::{
-        server::dto::{ConfigUpdatePayload, ListDocumentsPayload, UploadResult},
+        server::dto::{
+            ConfigUpdatePayload, ListDocumentsPayload, UpdateImageDescription, UploadResult,
+        },
         state::AppState,
     },
     core::{
         document::{parser::ParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
+            image::ImageModel,
             List,
         },
         service::document::dto::{ChunkPreview, ChunkPreviewPayload, DocumentUpload, ParsePreview},
@@ -286,5 +289,53 @@ pub(super) async fn sync(
     Path(provider): Path<String>,
 ) -> Result<StatusCode, ChonkitError> {
     state.services.document.sync(&provider).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    get,
+    path = "/documents/{id}/images",
+    responses(
+        (status = 200, description = "List document images", body = List<ImageModel>),
+        (status = 404, description = "Document not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Document ID")
+    )
+)]
+pub(super) async fn list_document_images(
+    State(state): State<AppState>,
+    Path(document_id): Path<Uuid>,
+) -> Result<Json<List<ImageModel>>, ChonkitError> {
+    Ok(Json(
+        state.services.document.list_images(document_id).await?,
+    ))
+}
+
+#[utoipa::path(
+    put,
+    path = "/documents/{id}/images/{image_path}/description",
+    responses(
+        (status = 204, description = "Update document description"),
+        (status = 404, description = "Document not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Document ID"),
+    ),
+    request_body = UpdateImageDescription
+)]
+pub(super) async fn update_image_description(
+    State(state): State<AppState>,
+    Path((document_id, image_path)): Path<(Uuid, String)>,
+    Json(payload): Json<UpdateImageDescription>,
+) -> Result<StatusCode, ChonkitError> {
+    state
+        .services
+        .document
+        .update_image_description(document_id, &image_path, payload.description.as_deref())
+        .await?;
+
     Ok(StatusCode::NO_CONTENT)
 }

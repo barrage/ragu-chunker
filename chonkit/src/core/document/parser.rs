@@ -1,5 +1,5 @@
 use super::DocumentType;
-use crate::{core::image::Image, err, error::ChonkitError, map_err};
+use crate::{core::model::image::Image, err, error::ChonkitError, map_err};
 use serde::{Deserialize, Serialize};
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 
@@ -213,19 +213,19 @@ impl PageRange {
 }
 
 /// A document section that has been parsed with a parser using [SectionParseConfig].
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Default, PartialEq)]
 pub struct DocumentSection {
     pub pages: Vec<DocumentPage>,
 }
 
 /// A document page that has been parsed with a parser using [SectionParseConfig].
-#[derive(Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, PartialEq)]
 pub struct DocumentPage {
     /// The text contents of the page.
     pub content: String,
 
     /// The page number.
     pub number: usize,
+
+    pub images: Vec<Image>,
 }

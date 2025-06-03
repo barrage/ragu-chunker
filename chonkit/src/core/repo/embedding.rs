@@ -1,3 +1,4 @@
+use super::Atomic;
 use crate::{
     core::{
         model::{
@@ -15,8 +16,6 @@ use crate::{
 };
 use sqlx::Postgres;
 use uuid::Uuid;
-
-use super::Atomic;
 
 impl Repository {
     pub async fn insert_embeddings(

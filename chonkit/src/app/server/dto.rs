@@ -89,3 +89,8 @@ pub(super) struct ListDocumentsPayload {
     /// their parser and chunker configured.
     pub ready: Option<bool>,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(super) struct UpdateImageDescription {
+    pub description: Option<String>,
+}

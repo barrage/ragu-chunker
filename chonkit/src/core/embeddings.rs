@@ -22,7 +22,7 @@ pub trait EmbeddingModelRegistry {
     }
 }
 
-/// Operations related to text.
+/// Operations for text embeddings.
 #[async_trait::async_trait]
 pub trait Embedder: Identity + EmbeddingModelRegistry {
     /// Get the vectors for the elements in `content`.
@@ -34,8 +34,9 @@ pub trait Embedder: Identity + EmbeddingModelRegistry {
     async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError>;
 }
 
+/// Operations for multimodal image embeddings.
 #[async_trait::async_trait]
-pub trait ImageEmbedder: Identity + EmbeddingModelRegistry {
+pub trait ImageEmbedder: Identity + EmbeddingModelRegistry + Embedder {
     async fn embed_image(
         &self,
         system: Option<&str>,

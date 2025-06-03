@@ -55,7 +55,7 @@ pub(super) async fn list_collections_display(
 
 #[utoipa::path(
     get,
-    path = "/collections/{id}/display",
+    path = "/collections/display/{id}",
     responses(
         (status = 200, description = "Get collection by id", body = CollectionDisplayAggregate),
         (status = 404, description = "Collection not found"),

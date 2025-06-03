@@ -2,12 +2,12 @@ use super::{DocumentPage, DocumentSection, SectionParseConfig, StringParseConfig
 use crate::{
     core::{
         document::{parser::PageRange, sha256},
-        image::Image,
+        model::image::Image,
     },
     error::ChonkitError,
     map_err,
 };
-use pdfium_render::prelude::{PdfPageObject, PdfPageObjectsCommon, Pdfium};
+use pdfium_render::prelude::{PdfPage, PdfPageObject, PdfPageObjectsCommon, Pdfium};
 use regex::Regex;
 use std::{fmt::Write, time::Instant};
 use tracing::debug;
@@ -52,15 +52,15 @@ pub async fn parse_to_string(
         config.start
     };
 
-    let end_condition: Box<dyn Fn(usize) -> bool> = if config.range {
-        Box::new(|page_num| page_num == config.end.saturating_sub(1))
+    let end_condition: &dyn Fn(usize) -> bool = if config.range {
+        &|page_num| page_num == config.end.saturating_sub(1)
     } else {
-        Box::new(|page_num| {
+        &|page_num| {
             total_pages
                 .saturating_sub(page_num as u16)
                 .saturating_sub(config.end as u16)
                 == 0
-        })
+        }
     };
 
     // page_num is 0 indexed
@@ -89,41 +89,7 @@ pub async fn parse_to_string(
             continue;
         };
 
-        // Process images
-        for (i, object) in page.objects().iter().enumerate() {
-            let PdfPageObject::Image(ref pdf_page_image_object) = object else {
-                continue;
-            };
-
-            let img_path = format!("{}_{}_{}.webp", hash, page_num, i);
-
-            match pdf_page_image_object.get_raw_bitmap() {
-                Ok(bitmap) => {
-                    let mut bytes = vec![];
-                    let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut bytes);
-                    encoder
-                        .encode(
-                            &bitmap.as_rgba_bytes(),
-                            bitmap.width() as u32,
-                            bitmap.height() as u32,
-                            image::ExtendedColorType::Rgba8,
-                        )
-                        .unwrap();
-
-                    let image = Image::new(img_path, bytes, image::ImageFormat::WebP);
-
-                    if image.size_in_mb() > 20 {
-                        tracing::warn!("Image too large: {image} bytes (page: {})", page_num + 1);
-                        continue;
-                    }
-
-                    images.push(image);
-                }
-                Err(err) => {
-                    debug!("Error getting image: {err}");
-                }
-            }
-        }
+        process_page_images(&page, &hash, page_num, &mut images);
     }
 
     debug!(
@@ -150,6 +116,7 @@ pub async fn parse_to_sections(
         .collect();
 
     let pdfium = Pdfium::default();
+    let hash = sha256(input);
     let input = map_err!(pdfium.load_pdf_from_byte_slice(input, None));
 
     let pages = input.pages();
@@ -168,8 +135,8 @@ pub async fn parse_to_sections(
                 break;
             }
 
-            let page = map_err!(pages.get(i as u16));
-            let text = map_err!(page.text());
+            let pdf_page = map_err!(pages.get(i as u16));
+            let text = map_err!(pdf_page.text());
             let mut out = String::new();
 
             'lines: for line in text.all().lines() {
@@ -184,10 +151,18 @@ pub async fn parse_to_sections(
                 let _ = writeln!(out, "{line}");
             }
 
-            section.pages.push(DocumentPage {
+            let mut page = DocumentPage {
                 content: out,
                 number: i + 1,
-            });
+                images: vec![],
+            };
+
+            if !include_images {
+                section.pages.push(page);
+                continue;
+            };
+
+            process_page_images(&pdf_page, &hash, i + 1, &mut page.images);
         }
 
         sections.push(section);
@@ -200,4 +175,42 @@ pub async fn parse_to_sections(
     );
 
     Ok(sections)
+}
+
+fn process_page_images(page: &PdfPage<'_>, hash: &str, page_num: usize, images: &mut Vec<Image>) {
+    // Process images
+    for (i, object) in page.objects().iter().enumerate() {
+        let PdfPageObject::Image(ref pdf_page_image_object) = object else {
+            continue;
+        };
+
+        let img_path = format!("{}_{}_{}.webp", hash, page_num, i);
+
+        match pdf_page_image_object.get_raw_bitmap() {
+            Ok(bitmap) => {
+                let mut bytes = vec![];
+                let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut bytes);
+                encoder
+                    .encode(
+                        &bitmap.as_rgba_bytes(),
+                        bitmap.width() as u32,
+                        bitmap.height() as u32,
+                        image::ExtendedColorType::Rgba8,
+                    )
+                    .unwrap();
+
+                let image = Image::new(img_path, bytes, image::ImageFormat::WebP);
+
+                if image.size_in_mb() > 20 {
+                    tracing::warn!("Image too large: {image} bytes (page: {})", page_num + 1);
+                    continue;
+                }
+
+                images.push(image);
+            }
+            Err(err) => {
+                debug!("Error getting image: {err}");
+            }
+        }
+    }
 }

@@ -9,9 +9,13 @@ use crate::{
         cache::{init, TextEmbeddingCache},
         chunk::ChunkConfig,
         document::{DocumentType, TextDocumentType},
-        image::{minio::MinioClient, ImageStore},
+        image::{
+            minio::{MinioClient, MinioImageStorage},
+            ImageStore,
+        },
         provider::{
-            DocumentStorageProvider, EmbeddingProvider, Identity, ProviderState, VectorDbProvider,
+            DocumentStorageProvider, Identity, ImageEmbeddingProvider, ProviderState,
+            TextEmbeddingProvider, VectorDbProvider,
         },
         repo::Repository,
         service::{
@@ -68,7 +72,8 @@ impl AppState {
             vector: Self::init_vector_providers(args),
             embedding: Self::init_embedding_providers(args),
             document: Self::init_storage(args).await,
-            image: Self::init_image_storage(args).await,
+            image: Self::init_image_storage(args, repository.clone()).await,
+            image_embedding: Self::init_image_embedding_providers(args),
         };
 
         let services = ServiceState {
@@ -147,11 +152,11 @@ impl AppState {
         provider
     }
 
-    fn init_embedding_providers(_args: &crate::config::StartArgs) -> EmbeddingProvider {
+    fn init_embedding_providers(_args: &crate::config::StartArgs) -> TextEmbeddingProvider {
         #[cfg(not(any(feature = "fe-local", feature = "fe-remote", feature = "openai")))]
         compile_error!("one of `fe-local`, `fe-remote` or `openai` features must be enabled");
 
-        let mut provider = EmbeddingProvider::default();
+        let mut provider = TextEmbeddingProvider::default();
 
         #[cfg(feature = "fe-local")]
         {
@@ -208,6 +213,23 @@ impl AppState {
         provider
     }
 
+    fn init_image_embedding_providers(_args: &crate::config::StartArgs) -> ImageEmbeddingProvider {
+        let mut provider = ImageEmbeddingProvider::default();
+
+        #[cfg(feature = "vllm")]
+        {
+            let vllm = Arc::new(crate::app::embedder::vllm::VllmEmbeddings::new(
+                _args.vllm_endpoint(),
+                _args.vllm_key(),
+            ));
+
+            tracing::info!("Registered image embedding provider: {}", vllm.id());
+            provider.register(vllm);
+        }
+
+        provider
+    }
+
     async fn init_storage(args: &crate::config::StartArgs) -> DocumentStorageProvider {
         let mut storage = DocumentStorageProvider::default();
 
@@ -230,16 +252,18 @@ impl AppState {
         storage
     }
 
-    async fn init_image_storage(args: &crate::config::StartArgs) -> ImageStore {
-        Arc::new(
-            MinioClient::new(
-                args.minio_url(),
-                args.minio_bucket(),
-                args.minio_access_key(),
-                args.minio_secret_key(),
-            )
-            .await,
+    async fn init_image_storage(
+        args: &crate::config::StartArgs,
+        repository: Repository,
+    ) -> ImageStore {
+        let client = MinioClient::new(
+            args.minio_url(),
+            args.minio_bucket(),
+            args.minio_access_key(),
+            args.minio_secret_key(),
         )
+        .await;
+        Arc::new(MinioImageStorage::new(client, repository))
     }
 
     /// Used for metadata display.
@@ -248,6 +272,12 @@ impl AppState {
 
         for provider in self.providers.embedding.list_provider_ids() {
             let embedder = self.providers.embedding.get_provider(provider)?;
+            let models = embedder.list_embedding_models().await?;
+            embedding_providers.insert(provider.to_string(), models);
+        }
+
+        for provider in self.providers.image_embedding.list_provider_ids() {
+            let embedder = self.providers.image_embedding.get_provider(provider)?;
             let models = embedder.list_embedding_models().await?;
             embedding_providers.insert(provider.to_string(), models);
         }
@@ -267,10 +297,7 @@ impl AppState {
                 .map(|s| s.to_string())
                 .collect(),
             embedding_providers,
-            default_chunkers: vec![
-                ChunkConfig::sliding_default(),
-                ChunkConfig::snapping_default(),
-            ],
+            default_chunker: ChunkConfig::snapping_default(),
             document_providers,
             supported_document_types: vec![
                 DocumentType::Text(TextDocumentType::Md).to_string(),
@@ -291,7 +318,8 @@ impl AppState {
 pub struct AppProviderState {
     pub database: Repository,
     pub vector: VectorDbProvider,
-    pub embedding: EmbeddingProvider,
+    pub embedding: TextEmbeddingProvider,
+    pub image_embedding: ImageEmbeddingProvider,
     pub document: DocumentStorageProvider,
     pub image: ImageStore,
 }
@@ -301,6 +329,7 @@ impl From<AppProviderState> for ProviderState {
         ProviderState {
             vector: value.vector,
             embedding: value.embedding,
+            image_embedding: value.image_embedding,
             document: value.document,
             image: value.image,
         }
@@ -320,7 +349,7 @@ pub struct AppConfig {
     pub document_providers: Vec<String>,
 
     /// A list of default chunking configurations.
-    pub default_chunkers: Vec<ChunkConfig>,
+    pub default_chunker: ChunkConfig,
 
     /// A list of extensions supported by chonkit.
     pub supported_document_types: Vec<String>,

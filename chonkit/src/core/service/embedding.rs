@@ -260,11 +260,11 @@ impl EmbeddingService {
                     }
                 }
             }
-            ParseOutput::Sections(document_sections) => {
+            ParseOutput::Sections(sections) => {
                 tracing::info!("{} - parsed sections", document.name);
 
                 // In case of sectioned parsers, we define the sections as chunks
-                let sections = document_sections
+                let sections = sections
                     .into_iter()
                     .map(|s| {
                         s.pages.into_iter().fold(String::new(), |mut acc, el| {

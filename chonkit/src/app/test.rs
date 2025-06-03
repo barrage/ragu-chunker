@@ -7,10 +7,11 @@ use super::{
     document::store::FsDocumentStore,
     state::{AppProviderState, AppState},
 };
-use crate::core::provider::Identity;
 use crate::core::{
-    cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
-    provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
+    cache::{init, ImageCache, TextEmbeddingCache},
+    provider::{
+        DocumentStorageProvider, ImageEmbeddingProvider, TextEmbeddingProvider, VectorDbProvider,
+    },
     repo::Repository,
     service::{
         collection::CollectionService, document::DocumentService, embedding::EmbeddingService,
@@ -18,6 +19,7 @@ use crate::core::{
     },
     token::Tokenizer,
 };
+use crate::core::{image::minio::MinioImageStorage, provider::Identity};
 use chonkit_embedders::EmbeddingModel;
 use std::{
     collections::HashMap,
@@ -57,7 +59,7 @@ impl TestState {
 
         let (postgres, postgres_img) = init_repository().await;
         let (embedding_cache, _, redis_img) = init_cache().await;
-        let (minio, minio_img) = init_minio().await;
+        let (minio, minio_img) = init_minio(postgres.clone()).await;
 
         #[cfg(feature = "qdrant")]
         let (qdrant, qdrant_img) = init_qdrant().await;
@@ -102,7 +104,7 @@ impl TestState {
 
         // Set up embedders
 
-        let mut embedding = EmbeddingProvider::default();
+        let mut embedding = TextEmbeddingProvider::default();
         let mut active_embedding_providers = vec![];
 
         #[cfg(feature = "fe-local")]
@@ -162,6 +164,7 @@ impl TestState {
             database: postgres.clone(),
             vector: vector.clone(),
             embedding,
+            image_embedding: ImageEmbeddingProvider::default(),
             document: document_storage,
             image,
         };
@@ -266,19 +269,21 @@ pub async fn init_repository() -> (Repository, PostgresContainer) {
 /// Setup a redis test container and connect to it using RedisPool.
 /// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
 /// container will get dropped and cleaned up.
-pub async fn init_cache() -> (TextEmbeddingCache, ImageEmbeddingCache, RedisContainer) {
+pub async fn init_cache() -> (TextEmbeddingCache, ImageCache, RedisContainer) {
     let redis_image = Redis.start().await.unwrap();
     let redis_host = redis_image.get_host().await.unwrap();
     let redis_port = redis_image.get_host_port_ipv4(6379).await.unwrap();
     let redis_url = format!("redis://{redis_host}:{redis_port}");
 
     let embedding_cache = TextEmbeddingCache::new(init(&redis_url, "0").await);
-    let image_cache = ImageEmbeddingCache::new(init(&redis_url, "1").await);
+    let image_cache = ImageCache::new(init(&redis_url, "1").await);
 
     (embedding_cache, image_cache, redis_image)
 }
 
-pub async fn init_minio() -> (crate::core::image::minio::MinioClient, MinioContainer) {
+pub async fn init_minio(
+    repository: Repository,
+) -> (crate::core::image::minio::MinioImageStorage, MinioContainer) {
     let minio_image = testcontainers_modules::minio::MinIO::default()
         .start()
         .await
@@ -318,7 +323,10 @@ pub async fn init_minio() -> (crate::core::image::minio::MinioClient, MinioConta
     )
     .await;
 
-    (minio_client, minio_image)
+    (
+        MinioImageStorage::new(minio_client, repository),
+        minio_image,
+    )
 }
 
 /// Setup a qdrant test container and connect to it using QdrantDb.
