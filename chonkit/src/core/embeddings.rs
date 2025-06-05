@@ -3,28 +3,9 @@ use crate::error::ChonkitError;
 use chonkit_embedders::EmbeddingModel;
 use serde::{Deserialize, Serialize};
 
-/// An embedder registry.
+/// Operations for embeddings.
 #[async_trait::async_trait]
-pub trait EmbeddingModelRegistry {
-    /// List all available models in the registry.
-    async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError>;
-
-    /// Return the size (dimensions) of the given model's embedding space if it is supported by the embedding registry.
-    ///
-    /// * `model`: The model whose size to return.
-    async fn size(&self, model: &str) -> Result<Option<usize>, ChonkitError> {
-        Ok(self
-            .list_embedding_models()
-            .await?
-            .into_iter()
-            .find(|m| m.name == model)
-            .map(|m| m.size))
-    }
-}
-
-/// Operations for text embeddings.
-#[async_trait::async_trait]
-pub trait Embedder: Identity + EmbeddingModelRegistry {
+pub trait Embedder: Identity {
     /// Get the vectors for the elements in `content`.
     /// The content passed in can be a user's query,
     /// or a chunked document.
@@ -32,11 +13,7 @@ pub trait Embedder: Identity + EmbeddingModelRegistry {
     /// * `content`: The text to embed.
     /// * `model`: The embedding model to use.
     async fn embed_text(&self, content: &[&str], model: &str) -> Result<Embeddings, ChonkitError>;
-}
 
-/// Operations for multimodal image embeddings.
-#[async_trait::async_trait]
-pub trait ImageEmbedder: Identity + EmbeddingModelRegistry + Embedder {
     async fn embed_image(
         &self,
         system: Option<&str>,
@@ -44,6 +21,20 @@ pub trait ImageEmbedder: Identity + EmbeddingModelRegistry + Embedder {
         image: &str,
         model: &str,
     ) -> Result<Embeddings, ChonkitError>;
+
+    /// List all available models in the registry.
+    async fn list_embedding_models(&self) -> Result<Vec<EmbeddingModel>, ChonkitError>;
+
+    /// Return the size (dimensions) of the given model's embedding space if it is supported by the embedding registry.
+    ///
+    /// * `model`: The model whose size to return.
+    async fn model_details(&self, model: &str) -> Result<Option<EmbeddingModel>, ChonkitError> {
+        Ok(self
+            .list_embedding_models()
+            .await?
+            .into_iter()
+            .find(|m| m.name == model))
+    }
 }
 
 /// The result of embedding chunks.

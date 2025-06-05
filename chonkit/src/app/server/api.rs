@@ -59,7 +59,7 @@ use crate::{
             collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload, ParseOutputPreview, ParsePreview, ParsedDocumentContent, ParsedDocumentPage, ParsedDocumentSection}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
         },
         token::TokenCount,
-        vector::{CollectionSearchItem, VectorCollection},
+        vector::{CollectionSearchItem, CollectionItemPayload, VectorCollection},
     },
 };
 use utoipa::OpenApi;
@@ -149,6 +149,7 @@ use utoipa::OpenApi;
         CreateCollectionPayload,
         CollectionSearchResult,
         CollectionSearchItem,
+        CollectionItemPayload,
         CollectionData,
         SyncIncompatibilityResolution,
         SyncParams,

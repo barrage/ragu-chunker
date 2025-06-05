@@ -69,8 +69,8 @@ mod document_service_integration_tests {
             config.clone(),
             document.ext.as_str().try_into().unwrap(),
             content,
+            &[],
         )
-        .await
         .unwrap();
 
         let text_from_store = parse(
@@ -85,8 +85,8 @@ mod document_service_integration_tests {
                 .read(&document.path)
                 .await
                 .unwrap(),
+            &[],
         )
-        .await
         .unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
@@ -117,8 +117,8 @@ mod document_service_integration_tests {
             config.clone(),
             document.ext.as_str().try_into().unwrap(),
             content,
+            &[],
         )
-        .await
         .unwrap();
 
         let text_from_store = parse(
@@ -133,8 +133,8 @@ mod document_service_integration_tests {
                 .read(&document.path)
                 .await
                 .unwrap(),
+            &[],
         )
-        .await
         .unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);
@@ -163,8 +163,8 @@ mod document_service_integration_tests {
             ParseConfig::default(),
             document.ext.as_str().try_into().unwrap(),
             content,
+            &[],
         )
-        .await
         .unwrap();
 
         let text_from_store = parse(
@@ -179,8 +179,8 @@ mod document_service_integration_tests {
                 .read(&document.path)
                 .await
                 .unwrap(),
+            &[],
         )
-        .await
         .unwrap();
 
         assert_eq!(text_from_bytes, text_from_store);

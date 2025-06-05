@@ -6,7 +6,7 @@ use crate::{
     app::document::store::FsDocumentStore,
     config::FS_STORE_ID,
     core::{
-        cache::{init, TextEmbeddingCache},
+        cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
         chunk::ChunkConfig,
         document::{DocumentType, TextDocumentType},
         image::{
@@ -14,8 +14,7 @@ use crate::{
             ImageStore,
         },
         provider::{
-            DocumentStorageProvider, Identity, ImageEmbeddingProvider, ProviderState,
-            TextEmbeddingProvider, VectorDbProvider,
+            DocumentStorageProvider, EmbeddingProvider, Identity, ProviderState, VectorDbProvider,
         },
         repo::Repository,
         service::{
@@ -64,8 +63,12 @@ impl AppState {
             .init();
 
         let repository = crate::core::repo::Repository::new(&args.db_url()).await;
+
         let embedding_cache =
             TextEmbeddingCache::new(init(&args.redis_url(), &args.redis_embedding_db()).await);
+
+        let image_embedding_cache =
+            ImageEmbeddingCache::new(init(&args.redis_url(), &args.redis_image_db()).await);
 
         let providers = AppProviderState {
             database: repository.clone(),
@@ -73,7 +76,6 @@ impl AppState {
             embedding: Self::init_embedding_providers(args),
             document: Self::init_storage(args).await,
             image: Self::init_image_storage(args, repository.clone()).await,
-            image_embedding: Self::init_image_embedding_providers(args),
         };
 
         let services = ServiceState {
@@ -84,7 +86,12 @@ impl AppState {
             ),
             collection: CollectionService::new(repository.clone(), providers.clone().into()),
             external: ServiceFactory::new(repository.clone(), providers.clone().into()),
-            embedding: EmbeddingService::new(repository, providers.clone().into(), embedding_cache),
+            embedding: EmbeddingService::new(
+                repository,
+                providers.clone().into(),
+                embedding_cache,
+                image_embedding_cache,
+            ),
         };
 
         services.document.create_default_document().await;
@@ -152,11 +159,11 @@ impl AppState {
         provider
     }
 
-    fn init_embedding_providers(_args: &crate::config::StartArgs) -> TextEmbeddingProvider {
+    fn init_embedding_providers(_args: &crate::config::StartArgs) -> EmbeddingProvider {
         #[cfg(not(any(feature = "fe-local", feature = "fe-remote", feature = "openai")))]
         compile_error!("one of `fe-local`, `fe-remote` or `openai` features must be enabled");
 
-        let mut provider = TextEmbeddingProvider::default();
+        let mut provider = EmbeddingProvider::default();
 
         #[cfg(feature = "fe-local")]
         {
@@ -213,23 +220,6 @@ impl AppState {
         provider
     }
 
-    fn init_image_embedding_providers(_args: &crate::config::StartArgs) -> ImageEmbeddingProvider {
-        let mut provider = ImageEmbeddingProvider::default();
-
-        #[cfg(feature = "vllm")]
-        {
-            let vllm = Arc::new(crate::app::embedder::vllm::VllmEmbeddings::new(
-                _args.vllm_endpoint(),
-                _args.vllm_key(),
-            ));
-
-            tracing::info!("Registered image embedding provider: {}", vllm.id());
-            provider.register(vllm);
-        }
-
-        provider
-    }
-
     async fn init_storage(args: &crate::config::StartArgs) -> DocumentStorageProvider {
         let mut storage = DocumentStorageProvider::default();
 
@@ -276,12 +266,6 @@ impl AppState {
             embedding_providers.insert(provider.to_string(), models);
         }
 
-        for provider in self.providers.image_embedding.list_provider_ids() {
-            let embedder = self.providers.image_embedding.get_provider(provider)?;
-            let models = embedder.list_embedding_models().await?;
-            embedding_providers.insert(provider.to_string(), models);
-        }
-
         let document_providers = vec![
             FS_STORE_ID.to_string(),
             #[cfg(feature = "gdrive")]
@@ -318,8 +302,7 @@ impl AppState {
 pub struct AppProviderState {
     pub database: Repository,
     pub vector: VectorDbProvider,
-    pub embedding: TextEmbeddingProvider,
-    pub image_embedding: ImageEmbeddingProvider,
+    pub embedding: EmbeddingProvider,
     pub document: DocumentStorageProvider,
     pub image: ImageStore,
 }
@@ -329,7 +312,6 @@ impl From<AppProviderState> for ProviderState {
         ProviderState {
             vector: value.vector,
             embedding: value.embedding,
-            image_embedding: value.image_embedding,
             document: value.document,
             image: value.image,
         }

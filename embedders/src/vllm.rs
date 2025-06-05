@@ -92,7 +92,7 @@ impl VllmEmbeddings {
         let content = vec![
             EmbeddingInput::Image(ImageInput {
                 r#type: "image_url",
-                url: image,
+                image_url: ImageInputInner { url: image },
             }),
             EmbeddingInput::Text(TextInput {
                 r#type: "text",
@@ -143,12 +143,22 @@ impl VllmEmbeddings {
     }
 
     pub fn list_models(&self) -> Vec<EmbeddingModel> {
-        vec![EmbeddingModel {
-            name: "qwen2-dse".to_string(),
-            size: 1536,
-            provider: "vllm".to_string(),
-            multimodal: true,
-        }]
+        vec![
+            EmbeddingModel {
+                name: "qwen2-dse".to_string(),
+                size: 1536,
+                provider: "vllm".to_string(),
+                multimodal: true,
+                max_input_tokens: 8192,
+            },
+            EmbeddingModel {
+                name: "vlm2vec".to_string(),
+                size: 3072,
+                provider: "vllm".to_string(),
+                multimodal: true,
+                max_input_tokens: 4096,
+            },
+        ]
     }
 }
 
@@ -186,5 +196,10 @@ struct TextInput<'a> {
 #[derive(Debug, Serialize)]
 struct ImageInput<'a> {
     r#type: &'static str,
+    image_url: ImageInputInner<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct ImageInputInner<'a> {
     url: &'a str,
 }

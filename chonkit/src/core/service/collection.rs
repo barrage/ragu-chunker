@@ -128,7 +128,7 @@ impl CollectionService {
         let vector_db = self.providers.vector.get_provider(&vector_provider)?;
         let embedder = self.providers.embedding.get_provider(&embedding_provider)?;
 
-        let Some(size) = embedder.size(&model).await? else {
+        let Some(model_details) = embedder.model_details(&model).await? else {
             let embedder_id = embedder.id();
             return err!(
                 InvalidEmbeddingModel,
@@ -136,7 +136,10 @@ impl CollectionService {
             );
         };
 
-        info!("Creating collection '{name}' of size '{size}'",);
+        info!(
+            "Creating collection '{name}' of size '{}'",
+            model_details.size
+        );
 
         transaction!(self.repo, |tx| async move {
             let insert = CollectionInsert::new(&name, &model, embedder.id(), vector_db.id());
@@ -145,7 +148,7 @@ impl CollectionService {
             let data = CreateVectorCollection::new(
                 collection.id,
                 &name,
-                size,
+                model_details.size,
                 &embedding_provider,
                 &model,
                 groups,

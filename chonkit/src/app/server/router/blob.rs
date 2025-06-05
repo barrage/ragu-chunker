@@ -25,16 +25,17 @@ pub(super) async fn get_image(
 
     header_map.insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_str(image.format.to_mime_type()).expect("invalid content-type header"),
+        HeaderValue::from_str(image.image.format.to_mime_type())
+            .expect("invalid content-type header"),
     );
     header_map.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!("inline; filename={:?}", image.path))
+        HeaderValue::from_str(&format!("inline; filename={:?}", path))
             .expect("invalid content-disposition header"),
     );
 
     // TODO: Make streaming
-    Ok((header_map, image.bytes))
+    Ok((header_map, image.image.bytes))
 }
 
 #[utoipa::path(

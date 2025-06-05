@@ -28,8 +28,11 @@ impl ChonkitError {
             | E::Batch
             | E::Calamine(_)
             | E::Xlsx(_)
-            | E::SerdeJson(_) => SC::INTERNAL_SERVER_ERROR,
-            E::Axum(_) => SC::INTERNAL_SERVER_ERROR,
+            | E::SerdeJson(_)
+            | E::S3(_)
+            | E::CachePool(_)
+            | E::Tokio(_)
+            | E::Axum(_) => SC::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "qdrant")]
             E::QdrantDb(_) => SC::INTERNAL_SERVER_ERROR,
             #[cfg(feature = "qdrant")]
@@ -47,8 +50,6 @@ impl ChonkitError {
             E::OperationUnsupported(_) => SC::BAD_REQUEST,
             E::InvalidHeader(_) => SC::INTERNAL_SERVER_ERROR,
             E::Cache(_) => SC::BAD_REQUEST,
-            E::CachePool(_) => SC::INTERNAL_SERVER_ERROR,
-            E::S3(_) => SC::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -108,17 +109,6 @@ impl IntoResponse for ChonkitError {
                 ResponseError::new(ET::Internal, "Batch embedding error".to_string()),
             )
                 .into_response(),
-            CE::IO(_)
-            | CE::Regex(_)
-            | CE::Embedding(_)
-            | CE::UnsupportedFileType(_)
-            | CE::Fmt(_)
-            | CE::ParseInt(_)
-            | CE::Utf8(_)
-            | CE::Sqlx(_)
-            | CE::InvalidFile(_)
-            | CE::InvalidHeader(_)
-            | CE::Http(_) => (status, "Internal".to_string()).into_response(),
             CE::ParsePdf(e) => (status, e.to_string()).into_response(),
             CE::DocxRead(e) => (status, e.to_string()).into_response(),
             CE::AlreadyExists(e) => (status, ResponseError::new(ET::Api, e)).into_response(),
@@ -150,6 +140,18 @@ impl IntoResponse for ChonkitError {
             CE::Cache(e) => (status, e.to_string()).into_response(),
             CE::CachePool(e) => (status, e.to_string()).into_response(),
             CE::S3(e) => (status, e.to_string()).into_response(),
+            CE::IO(_)
+            | CE::Tokio(_)
+            | CE::Regex(_)
+            | CE::Embedding(_)
+            | CE::UnsupportedFileType(_)
+            | CE::Fmt(_)
+            | CE::ParseInt(_)
+            | CE::Utf8(_)
+            | CE::Sqlx(_)
+            | CE::InvalidFile(_)
+            | CE::InvalidHeader(_)
+            | CE::Http(_) => (status, "Internal".to_string()).into_response(),
         }
     }
 }

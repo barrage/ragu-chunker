@@ -127,9 +127,13 @@ mod vector_service_integration_tests {
 
             let v_collection = vector_db.get_collection(&collection_name).await.unwrap();
 
-            let size = embedder.size(&collection.model).await.unwrap().unwrap();
+            let model = embedder
+                .model_details(&collection.model)
+                .await
+                .unwrap()
+                .unwrap();
 
-            assert_eq!(size, v_collection.size);
+            assert_eq!(model.size, v_collection.size);
         }
     }
 
@@ -173,9 +177,13 @@ mod vector_service_integration_tests {
 
             let v_collection = vector_db.get_collection(name).await.unwrap();
 
-            let size = embedder.size(&collection.model).await.unwrap().unwrap();
+            let model = embedder
+                .model_details(&collection.model)
+                .await
+                .unwrap()
+                .unwrap();
 
-            assert_eq!(size, v_collection.size);
+            assert_eq!(model.size, v_collection.size);
         }
     }
 
@@ -310,7 +318,7 @@ mod vector_service_integration_tests {
             let results = services.collection.search(search).await.unwrap();
 
             assert_eq!(1, results.items.len());
-            assert_eq!(content, results.items[0].content);
+            assert_eq!(content, results.items[0].item.payload.as_content());
 
             let embeddings = postgres
                 .get_embeddings_by_name(document.id, &collection_name, vector_db.id())

@@ -9,7 +9,7 @@ use crate::{
 };
 use pdfium_render::prelude::{PdfPage, PdfPageObject, PdfPageObjectsCommon, Pdfium};
 use regex::Regex;
-use std::{fmt::Write, time::Instant};
+use std::{collections::HashSet, fmt::Write, time::Instant};
 use tracing::debug;
 
 /// Parser implementation that reads the _whole_ PDF document and extracts its text to a single string.
@@ -20,14 +20,15 @@ use tracing::debug;
 /// * `end`: The amount of pages to omit from the back of the document.
 /// * `range`: If `true`, `skip_start` and `skip_end` are treated as a range.
 /// * `filters`: Line based, i.e. lines matching a filter will be skipped.
-pub async fn parse_to_string(
+pub fn parse_to_string(
     config: &StringParseConfig,
     input: &[u8],
     include_images: bool,
+    existing_image_paths: &[String],
 ) -> Result<(String, Vec<Image>), ChonkitError> {
-    // For debugging
-    let mut _page_count = 0;
     let _start = Instant::now();
+    let existing_image_set = existing_image_paths.iter().collect::<HashSet<_>>();
+    let mut _page_count = 0;
 
     let hash = sha256(input);
     let pdfium = Pdfium::default();
@@ -89,7 +90,16 @@ pub async fn parse_to_string(
             continue;
         };
 
-        process_page_images(&page, &hash, page_num, &mut images);
+        let len_pre = images.len();
+
+        process_page_images(&page, &hash, page_num, &mut images, &existing_image_set);
+
+        if images.len() > len_pre {
+            tracing::debug!(
+                "Page {page_num}/{total_pages} - parsed {} images",
+                images.len() - len_pre
+            );
+        }
     }
 
     debug!(
@@ -102,12 +112,15 @@ pub async fn parse_to_string(
 
 /// Parser implementation that reads PDF sections (pages) and outputs their text content in
 /// a paginated format, i.e. [DocumentSection].
-pub async fn parse_to_sections(
+pub fn parse_to_sections(
     config: &SectionParseConfig,
     input: &[u8],
     include_images: bool,
+    existing_image_paths: &[String],
 ) -> Result<Vec<DocumentSection>, ChonkitError> {
     let _start = Instant::now();
+
+    let existing_image_set = existing_image_paths.iter().collect::<HashSet<_>>();
 
     let filters: Vec<Regex> = config
         .filters
@@ -162,7 +175,13 @@ pub async fn parse_to_sections(
                 continue;
             };
 
-            process_page_images(&pdf_page, &hash, i + 1, &mut page.images);
+            process_page_images(
+                &pdf_page,
+                &hash,
+                i + 1,
+                &mut page.images,
+                &existing_image_set,
+            );
         }
 
         sections.push(section);
@@ -177,36 +196,59 @@ pub async fn parse_to_sections(
     Ok(sections)
 }
 
-fn process_page_images(page: &PdfPage<'_>, hash: &str, page_num: usize, images: &mut Vec<Image>) {
-    // Process images
-    for (i, object) in page.objects().iter().enumerate() {
+fn process_page_images(
+    page: &PdfPage<'_>,
+    hash: &str,
+    page_num: usize,
+    images: &mut Vec<Image>,
+    existing_image_paths: &HashSet<&String>,
+) {
+    let mut image_num = 0;
+    for object in page.objects().iter() {
         let PdfPageObject::Image(ref pdf_page_image_object) = object else {
             continue;
         };
 
-        let img_path = format!("{}_{}_{}.webp", hash, page_num, i);
+        let img_path = format!("{}_{}_{}", hash, page_num, image_num);
+
+        if existing_image_paths.contains(&img_path) {
+            continue;
+        }
 
         match pdf_page_image_object.get_raw_bitmap() {
             Ok(bitmap) => {
                 let mut bytes = vec![];
                 let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut bytes);
+                let width = bitmap.width() as u32;
+                let height = bitmap.height() as u32;
                 encoder
                     .encode(
                         &bitmap.as_rgba_bytes(),
-                        bitmap.width() as u32,
-                        bitmap.height() as u32,
+                        width,
+                        height,
                         image::ExtendedColorType::Rgba8,
                     )
                     .unwrap();
 
-                let image = Image::new(img_path, bytes, image::ImageFormat::WebP);
+                let image = Image::new(
+                    hash.to_string(),
+                    page_num,
+                    image_num,
+                    bytes,
+                    image::ImageFormat::WebP,
+                    width,
+                    height,
+                );
 
-                if image.size_in_mb() > 20 {
+                // 20 is the max MB size for OpenAI chat multimodal.
+                if image.image.size_in_mb() > 20 {
                     tracing::warn!("Image too large: {image} bytes (page: {})", page_num + 1);
                     continue;
                 }
 
                 images.push(image);
+
+                image_num += 1;
             }
             Err(err) => {
                 debug!("Error getting image: {err}");

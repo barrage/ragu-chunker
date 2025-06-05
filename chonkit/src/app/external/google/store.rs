@@ -108,9 +108,7 @@ mod tests {
         assert_eq!(CONTENT, file);
         let read = store.read(&path).await.unwrap();
 
-        let content = parse(ParseConfig::default(), ext, read.as_slice())
-            .await
-            .unwrap();
+        let content = parse(ParseConfig::default(), ext, read.as_slice(), &[]).unwrap();
 
         assert_eq!(
             content,

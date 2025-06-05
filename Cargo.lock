@@ -721,6 +721,7 @@ dependencies = [
  "ort-sys",
  "reqwest 0.12.18",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
  "tracing",
 ]

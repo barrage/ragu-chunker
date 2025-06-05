@@ -8,10 +8,20 @@ pub mod excel;
 pub mod pdf;
 pub mod text;
 
-pub async fn parse(
+/// Parsing entry point.
+///
+/// * `config`: Parsing configuration for the document.
+/// * `ext`: Document extension.
+/// * `input`: Document bytes.
+/// * `existing_image_paths`: Paths to images found in the document. This is useful during parse
+///    previews to avoid parsing the same images twice as parsing can be slow. Since this function
+///    only knows which images to skip, it is up to the caller to ensure that the existing images
+///    are loaded and displayed.
+pub fn parse(
     config: ParseConfig,
     ext: DocumentType,
     input: &[u8],
+    existing_image_paths: &[String],
 ) -> Result<ParseOutput, ChonkitError> {
     map_err!(config.validate());
 
@@ -23,7 +33,8 @@ pub async fn parse(
     match mode {
         ParseMode::String(config) => {
             if let DocumentType::Pdf = ext {
-                let (text, images) = pdf::parse_to_string(&config, input, include_images).await?;
+                let (text, images) =
+                    pdf::parse_to_string(&config, input, include_images, existing_image_paths)?;
 
                 if text.trim().is_empty() && images.is_empty() {
                     return err!(InvalidFile, "Parsing resulted in empty output");
@@ -50,7 +61,8 @@ pub async fn parse(
         }
         ParseMode::Section(config) => match ext {
             DocumentType::Pdf => {
-                let out = pdf::parse_to_sections(&config, input, include_images).await?;
+                let out =
+                    pdf::parse_to_sections(&config, input, include_images, existing_image_paths)?;
 
                 if out.is_empty() {
                     return err!(InvalidFile, "Parsing resulted in empty output");
@@ -67,6 +79,8 @@ pub async fn parse(
 }
 
 /// Parsing configuration for a document.
+///
+/// [Default] implementation does not include images.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ParseConfig {

@@ -49,7 +49,7 @@ pub async fn chunk<'i>(
 
             let embedder = providers.embedding.get_provider(&embedding_provider)?;
 
-            if embedder.size(&embedding_model).await?.is_none() {
+            if embedder.model_details(&embedding_model).await?.is_none() {
                 return err!(
                     InvalidEmbeddingModel,
                     "Model '{embedding_model}' not supported by '{embedding_provider}'"

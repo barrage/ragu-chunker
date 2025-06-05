@@ -24,7 +24,12 @@ pub trait ImageStorage: Identity {
 pub mod minio {
     use super::{Image, ImageStorage};
     use crate::{
-        core::{model::image::ImageModel, provider::Identity, repo::Repository},
+        core::{
+            model::image::{ImageData, ImageModel, InsertImage},
+            provider::Identity,
+            repo::Repository,
+        },
+        err,
         error::ChonkitError,
         map_err, transaction,
     };
@@ -54,7 +59,10 @@ pub mod minio {
         async fn store_image(&self, image: &Image) -> Result<(), ChonkitError> {
             map_err!(
                 self.bucket
-                    .put_object(format!("{}/{}", self.prefix, image.path), &image.bytes)
+                    .put_object(
+                        format!("{}/{}", self.prefix, image.path()),
+                        &image.image.bytes
+                    )
                     .await
             );
 
@@ -113,13 +121,34 @@ pub mod minio {
                     .await
             );
 
-            let description = self.repository.get_image_description(path).await?;
+            let image = self.repository.get_image_by_path(path).await?;
+            let Some(document) = self
+                .repository
+                .get_document_by_id(image.document_id)
+                .await?
+            else {
+                return err!(DoesNotExist, "Document with ID {}", image.document_id);
+            };
+
+            let format = match image::ImageFormat::from_path(path) {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::error!("Failed to parse image format: {e}");
+                    return err!(InvalidFile, "Failed to parse image format: {e}");
+                }
+            };
 
             Ok(Image {
-                path: path.to_owned(),
-                bytes: bytes.to_vec(),
-                format: image::ImageFormat::WebP,
-                description,
+                image: ImageData {
+                    bytes: bytes.to_vec(),
+                    format,
+                    width: image.width as u32,
+                    height: image.height as u32,
+                },
+                document_hash: document.hash.clone(),
+                page_number: image.page_number as usize,
+                image_number: image.image_number as usize,
+                description: image.description.clone(),
             })
         }
 
@@ -131,16 +160,19 @@ pub mod minio {
             use crate::core::repo::Atomic;
 
             transaction!(self.repository, |tx| async move {
-                let img = self
-                    .repository
-                    .insert_image(
-                        document_id,
-                        self.id(),
-                        &image.path,
-                        image.description.as_deref(),
-                        Some(tx),
-                    )
-                    .await?;
+                let insert = InsertImage {
+                    document_id,
+                    page_number: image.page_number,
+                    image_number: image.image_number,
+                    path: &image.path(),
+                    hash: &image.hash(),
+                    src: self.id(),
+                    format: image.image.format.extensions_str()[0],
+                    description: image.description.as_deref(),
+                    width: image.image.width,
+                    height: image.image.height,
+                };
+                let img = self.repository.insert_image(insert, Some(tx)).await?;
                 self.client.store_image(image).await?;
                 Ok(img)
             })

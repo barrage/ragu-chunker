@@ -8,10 +8,8 @@ use super::{
     state::{AppProviderState, AppState},
 };
 use crate::core::{
-    cache::{init, ImageCache, TextEmbeddingCache},
-    provider::{
-        DocumentStorageProvider, ImageEmbeddingProvider, TextEmbeddingProvider, VectorDbProvider,
-    },
+    cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
+    provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
     repo::Repository,
     service::{
         collection::CollectionService, document::DocumentService, embedding::EmbeddingService,
@@ -43,6 +41,7 @@ struct TestState {
     pub app: AppState,
 
     pub embedding_cache: TextEmbeddingCache,
+    pub image_embedding_cache: ImageEmbeddingCache,
 
     /// Holds the list of active vector storage providers. Depends on feature flags.
     pub active_vector_providers: Vec<&'static str>,
@@ -58,7 +57,7 @@ impl TestState {
         // Set up test containers
 
         let (postgres, postgres_img) = init_repository().await;
-        let (embedding_cache, _, redis_img) = init_cache().await;
+        let (embedding_cache, image_embedding_cache, redis_img) = init_cache().await;
         let (minio, minio_img) = init_minio(postgres.clone()).await;
 
         #[cfg(feature = "qdrant")]
@@ -104,7 +103,7 @@ impl TestState {
 
         // Set up embedders
 
-        let mut embedding = TextEmbeddingProvider::default();
+        let mut embedding = EmbeddingProvider::default();
         let mut active_embedding_providers = vec![];
 
         #[cfg(feature = "fe-local")]
@@ -124,6 +123,7 @@ impl TestState {
                     size: 768,
                     provider: fastembed.id().to_string(),
                     multimodal: false,
+                    max_input_tokens: 8192,
                 },
             );
 
@@ -150,6 +150,7 @@ impl TestState {
                     size: 768,
                     provider: fastembed.id().to_string(),
                     multimodal: false,
+                    max_input_tokens: 8192,
                 },
             );
 
@@ -164,7 +165,6 @@ impl TestState {
             database: postgres.clone(),
             vector: vector.clone(),
             embedding,
-            image_embedding: ImageEmbeddingProvider::default(),
             document: document_storage,
             image,
         };
@@ -187,6 +187,7 @@ impl TestState {
                 postgres,
                 providers.clone().into(),
                 embedding_cache.clone(),
+                image_embedding_cache.clone(),
             ),
         };
 
@@ -200,6 +201,7 @@ impl TestState {
             active_vector_providers,
             active_embedding_providers,
             embedding_cache,
+            image_embedding_cache,
         }
     }
 }
@@ -269,14 +271,14 @@ pub async fn init_repository() -> (Repository, PostgresContainer) {
 /// Setup a redis test container and connect to it using RedisPool.
 /// When using suitest's [before_all][suitest::before_all], make sure you keep the TestState, othwerise the
 /// container will get dropped and cleaned up.
-pub async fn init_cache() -> (TextEmbeddingCache, ImageCache, RedisContainer) {
+pub async fn init_cache() -> (TextEmbeddingCache, ImageEmbeddingCache, RedisContainer) {
     let redis_image = Redis.start().await.unwrap();
     let redis_host = redis_image.get_host().await.unwrap();
     let redis_port = redis_image.get_host_port_ipv4(6379).await.unwrap();
     let redis_url = format!("redis://{redis_host}:{redis_port}");
 
     let embedding_cache = TextEmbeddingCache::new(init(&redis_url, "0").await);
-    let image_cache = ImageCache::new(init(&redis_url, "1").await);
+    let image_cache = ImageEmbeddingCache::new(init(&redis_url, "1").await);
 
     (embedding_cache, image_cache, redis_image)
 }

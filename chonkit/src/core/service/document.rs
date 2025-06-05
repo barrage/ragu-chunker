@@ -141,19 +141,6 @@ impl DocumentService {
         let path = store.absolute_path(name, ty);
         let hash = sha256(file);
 
-        // The default parser parses the whole input so we use it
-        // to check whether the document has any content. Reject if empty.
-        let output = parse(ParseConfig::default(), ty, file).await?;
-
-        let images = match output {
-            ParseOutput::String { text: _, images } => images,
-            ParseOutput::Sections(sections) => sections
-                .into_iter()
-                .flat_map(|s| s.pages)
-                .flat_map(|p| p.images)
-                .collect(),
-        };
-
         // Always return errors if there is a hash collision
         if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
             return err!(
@@ -162,6 +149,21 @@ impl DocumentService {
                 existing.name,
                 existing.id
             );
+        };
+
+        // The default parser parses the whole input so we use it
+        // to check whether the document has any content. Reject if empty.
+        // Also since we are sure that the document is new because of no hash collision,
+        // we know there are no images in the system belonging to it, so we pass an empty slice.
+        let output = parse(ParseConfig::default(), ty, file, &[])?;
+
+        let images = match output {
+            ParseOutput::String { text: _, images } => images,
+            ParseOutput::Sections(sections) => sections
+                .into_iter()
+                .flat_map(|s| s.pages)
+                .flat_map(|p| p.images)
+                .collect(),
         };
 
         if let Some(existing) = self.repo.get_document_by_path(&path, store.id()).await? {
@@ -362,16 +364,39 @@ impl DocumentService {
     ) -> Result<ParsePreview, ChonkitError> {
         let (document, content) = self.get_document_with_content(id).await?;
 
-        let output = parse(config, document.ext.as_str().try_into()?, &content).await?;
+        // Load existing images to prevent unnecessary parsing
+
+        let mut existing_images = self
+            .repo
+            .list_all_document_images(id, self.providers.image.id())
+            .await?;
+
+        // Remove the extension when doing lookup since we cannot know what it
+        // is in advance
+
+        let existing_image_paths = existing_images
+            .iter()
+            .filter_map(|i| Some(i.path.split_once('.')?.0.to_string()))
+            .collect::<Vec<_>>();
+
+        let ext = document.ext.as_str().try_into()?;
+
+        let output = map_err!(
+            tokio::task::spawn_blocking(move || {
+                parse(config, ext, &content, &existing_image_paths)
+            })
+            .await
+        )?;
 
         match output {
             ParseOutput::String { text, images } => {
                 let parsed_images = self.process_images(id, images).await?;
+                existing_images.extend(parsed_images);
                 Ok(ParsePreview {
                     total_tokens: self.tokenizer.count(&text),
                     content: dto::ParseOutputPreview::String(ParsedDocumentContent {
                         text,
-                        images: parsed_images,
+                        images: existing_images,
                     }),
                 })
             }
@@ -381,14 +406,25 @@ impl DocumentService {
 
                 for section in document_sections {
                     let mut pages = vec![];
+
                     for page in section.pages {
+                        let mut page_images = existing_images
+                            .iter()
+                            .filter(|image| image.page_number == page.number as i32)
+                            .cloned()
+                            .collect::<Vec<_>>();
+
+                        page_images.extend(self.process_images(id, page.images).await?);
+
                         total_tokens += self.tokenizer.count(&page.content);
+
                         pages.push(ParsedDocumentPage {
                             content: page.content,
                             number: page.number,
-                            images: self.process_images(id, page.images).await?,
+                            images: page_images,
                         });
                     }
+
                     sections.push(ParsedDocumentSection { pages })
                 }
 
@@ -498,6 +534,10 @@ impl DocumentService {
         document_id: Uuid,
         images: Vec<Image>,
     ) -> Result<Vec<ImageModel>, ChonkitError> {
+        if images.is_empty() {
+            return Ok(vec![]);
+        }
+
         let total = images.len();
         tracing::debug!("Processing {} images in document {document_id}", total);
 
@@ -509,12 +549,18 @@ impl DocumentService {
             .await?;
 
         for (i, image) in images.into_iter().enumerate() {
-            if existing_paths.contains(&image.path) {
+            if existing_paths.contains(&image.path()) {
                 parsed_images.push(ImageModel {
-                    description: image.description,
-                    path: image.path,
+                    path: image.path(),
+                    page_number: image.page_number as i32,
+                    image_number: image.image_number as i32,
+                    format: image.image.format.extensions_str()[0].to_string(),
+                    hash: image.hash(),
                     document_id,
                     src: self.providers.image.id().to_string(),
+                    description: image.description,
+                    width: image.image.width as i32,
+                    height: image.image.height as i32,
                 });
                 continue;
             }
@@ -524,7 +570,7 @@ impl DocumentService {
                 Err(e) => {
                     tracing::error!(
                         "Unable to store image ({}) in document {document_id}: {e}",
-                        image.path
+                        image.path()
                     );
                     continue;
                 }

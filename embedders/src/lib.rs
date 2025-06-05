@@ -107,12 +107,22 @@ mod openai_common {
             return EmbeddingError::Response(response);
         }
 
-        let response = match response.json::<OpenAIError>().await {
+        let response = match response.text().await {
             Ok(res) => res,
             Err(e) => {
                 tracing::error!("Error reading response: {}", e);
                 tracing::error!("Source: {:?}", e.source());
                 return EmbeddingError::Reqwest(e);
+            }
+        };
+
+        let response = match serde_json::from_str(&response) {
+            Ok(res) => res,
+            Err(e) => {
+                tracing::error!("Error decoding OpenAI response: {}", e);
+                tracing::error!("Source: {:?}", e.source());
+                tracing::error!("Response: {response}");
+                return EmbeddingError::Response(e.to_string());
             }
         };
 
@@ -128,6 +138,7 @@ pub struct EmbeddingModel {
     pub size: usize,
     pub provider: String,
     pub multimodal: bool,
+    pub max_input_tokens: usize,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -142,18 +153,28 @@ pub enum EmbeddingError {
     #[error(transparent)]
     Fastembed(#[from] fastembed::Error),
 
-    #[cfg(any(feature = "openai", feature = "fe-remote", feature = "azure"))]
+    #[cfg(any(
+        feature = "openai",
+        feature = "fe-remote",
+        feature = "azure",
+        feature = "vllm"
+    ))]
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
 
     /// Contains the error response text in case of OpenAI errors.
-    #[cfg(any(feature = "openai", feature = "azure"))]
+    #[cfg(any(feature = "openai", feature = "azure", feature = "vllm"))]
     #[error(transparent)]
     OpenAI(openai_common::OpenAIError),
 
     /// Contains an error message in case of unexpected responses from downstream services,
     /// such as no content type headers.
-    #[cfg(any(feature = "openai", feature = "fe-remote", feature = "azure"))]
+    #[cfg(any(
+        feature = "openai",
+        feature = "fe-remote",
+        feature = "azure",
+        feature = "vllm"
+    ))]
     #[error("{0}")]
     Response(String),
 }

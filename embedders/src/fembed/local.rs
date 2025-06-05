@@ -79,6 +79,8 @@ impl LocalFastEmbedder {
                 size: m.dim,
                 provider: "fastembed".to_string(),
                 multimodal: false,
+                // TODO: See if this is correct
+                max_input_tokens: 8192,
             })
             .collect()
     }

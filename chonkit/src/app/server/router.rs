@@ -211,7 +211,7 @@ async fn health_check() -> impl IntoResponse {
     StatusCode::OK
 }
 
-#[derive(Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 struct Force {
     force: bool,
 }

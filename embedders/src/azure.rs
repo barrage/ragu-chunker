@@ -31,6 +31,7 @@ impl AzureEmbeddings {
             size: TEXT_EMBEDDING_ADA_002_SIZE,
             provider: "azure".to_string(),
             multimodal: false,
+            max_input_tokens: 8191,
         }]
     }
 

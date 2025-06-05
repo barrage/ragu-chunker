@@ -127,6 +127,9 @@ pub enum ChonkitErr {
 
     #[error("s3: {0}")]
     S3(#[from] s3::error::S3Error),
+
+    #[error("tokio: {0}")]
+    Tokio(#[from] tokio::task::JoinError),
 }
 
 /// A wrapper around an error that includes the specific file, line and column it was created in.

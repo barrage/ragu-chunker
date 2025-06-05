@@ -1,7 +1,10 @@
 use super::Atomic;
 use crate::{
     core::{
-        model::{image::ImageModel, List},
+        model::{
+            image::{ImageModel, InsertImage},
+            List,
+        },
         repo::Repository,
     },
     err,
@@ -13,10 +16,7 @@ use uuid::Uuid;
 impl Repository {
     pub async fn insert_image(
         &self,
-        document_id: Uuid,
-        src: &str,
-        path: &str,
-        description: Option<&str>,
+        insert: InsertImage<'_>,
         tx: Option<&mut <Self as Atomic>::Tx>,
     ) -> Result<ImageModel, ChonkitError>
     where
@@ -24,20 +24,70 @@ impl Repository {
     {
         let query = sqlx::query_as!(
             ImageModel,
-            r#"INSERT INTO images (path, document_id, src, description)
-               VALUES ($1, $2, $3, $4)
-               RETURNING path, document_id, src, description
+            r#"INSERT INTO images (
+                document_id,
+                page_number,
+                image_number,
+                format,
+                path,
+                hash,
+                src,
+                description,
+                width,
+                height
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               RETURNING 
+                path,
+                page_number,
+                image_number,
+                format,
+                hash,
+                document_id,
+                src,
+                description,
+                width,
+                height
             "#,
-            path,
-            document_id,
-            src,
-            description
+            insert.document_id,
+            insert.page_number as i32,
+            insert.image_number as i32,
+            insert.format,
+            insert.path,
+            insert.hash,
+            insert.src,
+            insert.description,
+            insert.width as i32,
+            insert.height as i32
         );
 
         match tx {
             Some(tx) => Ok(map_err!(query.fetch_one(&mut **tx).await)),
             None => Ok(map_err!(query.fetch_one(&self.client).await)),
         }
+    }
+
+    pub async fn get_image_by_path(&self, path: &str) -> Result<ImageModel, ChonkitError> {
+        Ok(map_err!(
+            sqlx::query_as!(
+                ImageModel,
+                r#"SELECT
+                path,
+                page_number,
+                image_number,
+                format,
+                hash,
+                document_id,
+                src,
+                description,
+                width,
+                height
+                FROM images WHERE path = $1"#,
+                path
+            )
+            .fetch_one(&self.client)
+            .await
+        ))
     }
 
     pub async fn get_image_description(&self, path: &str) -> Result<Option<String>, ChonkitError> {
@@ -101,7 +151,20 @@ impl Repository {
         let images = map_err!(
             sqlx::query_as!(
                 ImageModel,
-                "SELECT path, document_id, src, description FROM images WHERE document_id = $1 AND src = $2",
+                r#"
+                SELECT
+                    path,
+                    page_number,
+                    image_number,
+                    format,
+                    hash,
+                    document_id,
+                    src,
+                    description,
+                    width,
+                    height
+                FROM images WHERE document_id = $1 AND src = $2
+                ORDER BY page_number, image_number"#,
                 document_id,
                 src
             )
@@ -110,6 +173,36 @@ impl Repository {
         );
 
         Ok(List::new(total, images))
+    }
+
+    pub async fn list_all_document_images(
+        &self,
+        document_id: Uuid,
+        src: &str,
+    ) -> Result<Vec<ImageModel>, ChonkitError> {
+        Ok(map_err!(
+            sqlx::query_as!(
+                ImageModel,
+                r#"
+                SELECT
+                    path,
+                    page_number,
+                    image_number,
+                    format,
+                    hash,
+                    document_id,
+                    src,
+                    description,
+                    width,
+                    height
+                FROM images WHERE document_id = $1 AND src = $2
+                ORDER BY page_number, image_number"#,
+                document_id,
+                src
+            )
+            .fetch_all(&self.client)
+            .await
+        ))
     }
 
     pub async fn list_document_image_paths(

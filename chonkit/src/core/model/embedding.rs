@@ -115,6 +115,7 @@ pub struct EmbeddingReportAddition {
     pub model_used: String,
     pub embedding_provider: String,
     pub vector_db: String,
+    pub image_vectors: Option<usize>,
     pub total_vectors: usize,
     pub tokens_used: Option<usize>,
     pub cache: bool,
@@ -141,6 +142,7 @@ pub struct EmbeddingReportBuilder {
     model_used: Option<String>,
     embedding_provider: Option<String>,
     vector_db: Option<String>,
+    image_vectors: Option<usize>,
     total_vectors: Option<usize>,
     tokens_used: Option<usize>,
     cache: bool,
@@ -168,6 +170,7 @@ impl EmbeddingReportBuilder {
             tokens_used: None,
             cache: false,
             finished_at: None,
+            image_vectors: None,
         }
     }
 
@@ -188,6 +191,11 @@ impl EmbeddingReportBuilder {
 
     pub fn finished_at(mut self, finished_at: chrono::DateTime<chrono::Utc>) -> Self {
         self.finished_at = Some(finished_at);
+        self
+    }
+
+    pub fn image_vectors(mut self, vectors: usize) -> Self {
+        self.image_vectors = Some(vectors);
         self
     }
 
@@ -216,6 +224,7 @@ impl EmbeddingReportBuilder {
             embedding_provider: self.embedding_provider.unwrap(),
             vector_db: self.vector_db.unwrap(),
             cache: self.cache,
+            image_vectors: self.image_vectors,
             total_vectors: self.total_vectors.unwrap(),
             tokens_used: self.tokens_used,
             started_at: self.started_at,

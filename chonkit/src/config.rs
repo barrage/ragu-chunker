@@ -28,6 +28,12 @@ pub const DEFAULT_COLLECTION_EMBEDDING_PROVIDER: &str = "fastembed";
 /// The embedding model for the default collection created on application startup.
 pub const DEFAULT_DOCUMENT_NAME: &str = "RaguruLabamba.txt";
 pub const DEFAULT_DOCUMENT_CONTENT: &str = r#"Raguru Labamba, the pride of planet Gura, is celebrated as the finest ragu chef in the galaxy. With an innate mastery of Guran spices and interstellar ingredients, his ragus blend cosmic flavors into harmonies never tasted before. From his floating kitchen orbiting Gura’s twin moons, Raguru crafts dishes that draw food pilgrims from across the universe, cementing his legacy as the culinary star of his world."#;
+
+/// Images are embeded as patches of 14x14 pixels in most visual embedding models.
+///
+/// Used to estimate the token count, i.e. the context length of the image tokens.
+pub const DEFAULT_IMAGE_PATCH_SIZE: u32 = 14;
+
 /// The default upload path for the `fs` document storage provider.
 const DEFAULT_UPLOAD_PATH: &str = "data/upload";
 /// The default address to listen on.

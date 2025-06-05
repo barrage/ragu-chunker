@@ -33,6 +33,8 @@ impl OpenAiEmbeddings {
                 size: *s,
                 provider: "openai".to_string(),
                 multimodal: false,
+                // All OpenAI embeddings models have a max input size of 8192
+                max_input_tokens: 8192,
             })
             .collect()
     }

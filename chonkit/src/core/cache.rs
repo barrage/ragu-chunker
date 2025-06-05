@@ -1,12 +1,18 @@
 pub mod embedding;
 
-pub use {redis::init, redis::ImageCache, redis::TextEmbeddingCache};
+pub use {redis::init, redis::ImageEmbeddingCache, redis::TextEmbeddingCache};
+
+#[derive(Clone)]
+pub struct AppCache {
+    pub text: TextEmbeddingCache,
+    pub image: ImageEmbeddingCache,
+}
 
 mod redis {
     use crate::{
-        core::{
-            cache::embedding::{CachedEmbeddings, EmbeddingCacheKey},
-            model::image::Image,
+        core::cache::embedding::{
+            CachedImageEmbeddings, CachedTextEmbeddings, ImageEmbeddingCacheKey,
+            TextEmbeddingCacheKey,
         },
         error::ChonkitError,
         map_err,
@@ -23,9 +29,9 @@ mod redis {
     }
 
     #[derive(Clone)]
-    pub struct ImageCache(deadpool_redis::Pool);
+    pub struct ImageEmbeddingCache(deadpool_redis::Pool);
 
-    impl ImageCache {
+    impl ImageEmbeddingCache {
         pub fn new(pool: deadpool_redis::Pool) -> Self {
             Self(pool)
         }
@@ -40,8 +46,8 @@ mod redis {
     impl TextEmbeddingCache {
         pub async fn get(
             &self,
-            key: &EmbeddingCacheKey,
-        ) -> Result<Option<CachedEmbeddings>, ChonkitError> {
+            key: &TextEmbeddingCacheKey,
+        ) -> Result<Option<CachedTextEmbeddings>, ChonkitError> {
             let __start = std::time::Instant::now();
 
             let mut conn = map_err!(self.0.get().await);
@@ -56,7 +62,7 @@ mod redis {
                 return Ok(None);
             };
 
-            let data = map_err!(serde_json::from_str::<CachedEmbeddings>(&data));
+            let data = map_err!(serde_json::from_str::<CachedTextEmbeddings>(&data));
 
             tracing::debug!(
                 "embedding retrieval took {}ms ({} vectors)",
@@ -69,8 +75,8 @@ mod redis {
 
         pub async fn set(
             &self,
-            key: &EmbeddingCacheKey,
-            value: CachedEmbeddings,
+            key: &TextEmbeddingCacheKey,
+            value: CachedTextEmbeddings,
         ) -> Result<(), crate::error::ChonkitError> {
             let data = map_err!(serde_json::to_string(&value));
             let mut conn = map_err!(self.0.get().await);
@@ -85,7 +91,7 @@ mod redis {
             Ok(())
         }
 
-        pub async fn exists(&self, key: &EmbeddingCacheKey) -> Result<bool, ChonkitError> {
+        pub async fn exists(&self, key: &TextEmbeddingCacheKey) -> Result<bool, ChonkitError> {
             let mut conn = map_err!(self.0.get().await);
 
             Ok(map_err!(
@@ -103,13 +109,53 @@ mod redis {
         }
     }
 
-    impl ImageCache {
-        pub async fn get(&self, _key: &str) -> Result<Image, ChonkitError> {
-            todo!()
+    impl ImageEmbeddingCache {
+        pub async fn get(
+            &self,
+            key: &ImageEmbeddingCacheKey,
+        ) -> Result<Option<CachedImageEmbeddings>, ChonkitError> {
+            let __start = std::time::Instant::now();
+
+            let mut conn = map_err!(self.0.get().await);
+            let data: Option<String> = map_err!(
+                redis::cmd("GET")
+                    .arg(key.key())
+                    .query_async(&mut conn)
+                    .await
+            );
+
+            let Some(data) = data else {
+                return Ok(None);
+            };
+
+            let data = map_err!(serde_json::from_str::<CachedImageEmbeddings>(&data));
+
+            tracing::debug!(
+                "image embeddings retrieved; key {}; {}ms",
+                key.key(),
+                __start.elapsed().as_millis(),
+            );
+
+            Ok(Some(data))
         }
 
-        pub async fn set(&self, _key: &str, _value: Image) -> Result<(), ChonkitError> {
-            todo!()
+        pub async fn set(
+            &self,
+            key: &ImageEmbeddingCacheKey,
+            value: CachedImageEmbeddings,
+        ) -> Result<(), ChonkitError> {
+            let data = map_err!(serde_json::to_string(&value));
+            let mut conn = map_err!(self.0.get().await);
+            tracing::debug!("Caching image embedding at key {}", key.key());
+            map_err!(
+                redis::cmd("SET")
+                    .arg(key.key())
+                    .arg(data)
+                    .query_async::<()>(&mut conn)
+                    .await
+            );
+
+            Ok(())
         }
 
         pub async fn exists(&self, key: &str) -> Result<bool, ChonkitError> {

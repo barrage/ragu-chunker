@@ -1,10 +1,10 @@
 use crate::config::QDRANT_ID;
 use crate::core::provider::Identity;
 use crate::core::vector::{
-    CollectionSearchItem, CreateVectorCollection, VectorCollection, VectorDb,
-    COLLECTION_EMBEDDING_MODEL_PROPERTY, COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
-    COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
-    COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
+    CollectionItemInsert, CollectionItemInsertPayload, CollectionSearchItem,
+    CreateVectorCollection, VectorCollection, VectorDb, COLLECTION_EMBEDDING_MODEL_PROPERTY,
+    COLLECTION_EMBEDDING_PROVIDER_PROPERTY, COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY,
+    COLLECTION_NAME_PROPERTY, COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
 };
 use crate::error::ChonkitError;
 use crate::{err, map_err};
@@ -187,8 +187,9 @@ impl VectorDb for Qdrant {
             .filter_map(|mut point| {
                 let content = point.payload.remove(CONTENT_PROPERTY)?.kind?;
                 match content {
+                    // TODO: qdrant impl needs some love
                     value::Kind::StringValue(s) => Some(CollectionSearchItem {
-                        content: s,
+                        item: todo!(),
                         distance: None,
                     }),
                     v => {
@@ -204,43 +205,17 @@ impl VectorDb for Qdrant {
 
     async fn insert_embeddings(
         &self,
-        document_id: Uuid,
-        collection: &str,
-        content: &[&str],
-        vectors: Vec<Vec<f64>>,
+        insert: CollectionItemInsert<'_>,
     ) -> Result<(), ChonkitError> {
-        debug!("Inserting vectors to {collection}");
-
-        debug_assert_eq!(
-            content.len(),
-            vectors.len(),
-            "Content length is different from embeddings!"
-        );
-
-        let points: Vec<PointStruct> = vectors
-            .into_iter()
-            .zip(content.iter())
-            .map(|(embedding, content)| {
-                let mut payload = Payload::new();
-                payload.insert(CONTENT_PROPERTY, content.to_string());
-                payload.insert(DOCUMENT_ID_PROPERTY, document_id.to_string());
-                PointStruct::new(
-                    uuid::Uuid::new_v4().to_string(),
-                    embedding
-                        .into_iter()
-                        .map(|x| x as f32)
-                        .collect::<Vec<f32>>(),
-                    payload,
-                )
-            })
-            .collect();
-
-        map_err!(
-            self.upsert_points(UpsertPointsBuilder::new(collection, points).wait(true))
-                .await
-        );
-
-        Ok(())
+        match insert.payload {
+            CollectionItemInsertPayload::Text { items, vectors } => {
+                insert_text_embeddings(self, todo!(), insert.collection, todo!(), vectors).await
+            }
+            CollectionItemInsertPayload::Image { item, vector } => {
+                insert_image_embeddings(self, todo!(), insert.collection, item.image_b64, vector)
+                    .await
+            }
+        }
     }
 
     async fn delete_embeddings(
@@ -285,6 +260,57 @@ impl VectorDb for Qdrant {
 
         Ok(scroll.result.len())
     }
+}
+async fn insert_text_embeddings(
+    client: &Qdrant,
+    document_id: Uuid,
+    collection: &str,
+    content: &[&str],
+    vectors: Vec<Vec<f64>>,
+) -> Result<(), ChonkitError> {
+    debug!("Inserting vectors to {collection}");
+
+    debug_assert_eq!(
+        content.len(),
+        vectors.len(),
+        "Content length is different from embeddings!"
+    );
+
+    let points: Vec<PointStruct> = vectors
+        .into_iter()
+        .zip(content.iter())
+        .map(|(embedding, content)| {
+            let mut payload = Payload::new();
+            payload.insert(CONTENT_PROPERTY, content.to_string());
+            payload.insert(DOCUMENT_ID_PROPERTY, document_id.to_string());
+            PointStruct::new(
+                uuid::Uuid::new_v4().to_string(),
+                embedding
+                    .into_iter()
+                    .map(|x| x as f32)
+                    .collect::<Vec<f32>>(),
+                payload,
+            )
+        })
+        .collect();
+
+    map_err!(
+        client
+            .upsert_points(UpsertPointsBuilder::new(collection, points).wait(true))
+            .await
+    );
+
+    Ok(())
+}
+
+async fn insert_image_embeddings(
+    client: &Qdrant,
+    document_id: Uuid,
+    collection: &str,
+    image_b64: &str,
+    vector: Vec<f64>,
+) -> Result<(), ChonkitError> {
+    todo!()
 }
 
 async fn upsert_id_vector(
@@ -458,7 +484,7 @@ mod qdrant_tests {
             test::{init_qdrant, AsyncContainer},
             vector::qdrant::QdrantDb,
         },
-        core::vector::{CreateVectorCollection, VectorDb},
+        core::vector::{CollectionItemInsert, CreateVectorCollection, VectorDb},
     };
     use suitest::before_all;
     use uuid::Uuid;
@@ -488,7 +514,7 @@ mod qdrant_tests {
 
         let collection = qdrant.get_collection(name).await.unwrap();
 
-        assert_eq!(id, collection.id);
+        assert_eq!(id, collection.collection_id);
         assert_eq!(name, collection.name);
         assert_eq!(420, collection.size);
         assert_eq!(groups, collection.groups.unwrap());
@@ -535,7 +561,12 @@ mod qdrant_tests {
         qdrant.create_vector_collection(collection).await.unwrap();
 
         qdrant
-            .insert_embeddings(document_id, name, &["foo"], vec![vec![0.420f64; 420]])
+            .insert_embeddings(CollectionItemInsert::new_text(
+                document_id,
+                name,
+                &["foo"],
+                vec![vec![0.420f64; 420]],
+            ))
             .await
             .unwrap();
 
@@ -544,7 +575,7 @@ mod qdrant_tests {
             .unwrap();
 
         assert_eq!(1, results.len());
-        assert_eq!("foo", results[0].content);
+        assert_eq!("foo", results[0].item.payload.as_content());
 
         qdrant.delete_vector_collection(name).await.unwrap();
     }

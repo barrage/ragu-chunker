@@ -85,6 +85,7 @@ where
 
             let document = if let Some(existing) = existing_by_path {
                 // Document at path already exists, attempt redownload
+
                 if !force_download {
                     tracing::info!(
                         "Document '{}' already exists ({})",
@@ -111,7 +112,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice()).await {
+                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice(), &[]) {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -194,7 +195,7 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice()).await {
+                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice(), &[]) {
                     result
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
@@ -291,7 +292,7 @@ where
         let content = self.api.download(file_id).await?;
 
         // Attempt to parse with defaults to check for empty documents.
-        parse(ParseConfig::default(), file.ext, content.as_slice()).await?;
+        parse(ParseConfig::default(), file.ext, content.as_slice(), &[])?;
 
         let hash = sha256(&content);
         storage.write(&local_path, &content, force_download).await?;
