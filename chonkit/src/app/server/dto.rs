@@ -2,7 +2,7 @@
 
 use crate::core::{
     chunk::ChunkConfig,
-    document::parser::ParseConfig,
+    document::parser::TextParseConfig,
     model::{
         document::{Document, DocumentSearchColumn},
         Pagination, PaginationSort,
@@ -27,7 +27,7 @@ pub(super) struct UploadResult {
 #[serde(rename_all = "camelCase")]
 pub(super) struct ConfigUpdatePayload {
     /// Parsing configuration.
-    pub parser: Option<ParseConfig>,
+    pub parser: Option<TextParseConfig>,
 
     /// Chunking configuration.
     pub chunker: Option<ChunkConfig>,

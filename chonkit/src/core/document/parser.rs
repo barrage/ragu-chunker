@@ -8,61 +8,36 @@ pub mod excel;
 pub mod pdf;
 pub mod text;
 
-/// Parsing entry point.
+/// Text parsing entry point.
 ///
 /// * `config`: Parsing configuration for the document.
 /// * `ext`: Document extension.
 /// * `input`: Document bytes.
-/// * `existing_image_paths`: Paths to images found in the document. This is useful during parse
-///    previews to avoid parsing the same images twice as parsing can be slow. Since this function
-///    only knows which images to skip, it is up to the caller to ensure that the existing images
-///    are loaded and displayed.
-pub fn parse(
-    config: ParseConfig,
+pub fn parse_text(
+    config: TextParseConfig,
     ext: DocumentType,
     input: &[u8],
-    existing_image_paths: &[String],
 ) -> Result<ParseOutput, ChonkitError> {
     map_err!(config.validate());
 
-    let ParseConfig {
-        mode,
-        include_images,
-    } = config;
-
-    match mode {
-        ParseMode::String(config) => {
-            if let DocumentType::Pdf = ext {
-                let (text, images) =
-                    pdf::parse_to_string(&config, input, include_images, existing_image_paths)?;
-
-                if text.trim().is_empty() && images.is_empty() {
-                    return err!(InvalidFile, "Parsing resulted in empty output");
-                }
-
-                return Ok(ParseOutput::String { text, images });
-            }
-
+    match config {
+        TextParseConfig::String(config) => {
             let out = match ext {
                 DocumentType::Text(_) => text::parse(&config, input)?,
                 DocumentType::Docx => docx::parse(&config, input)?,
                 DocumentType::Excel => excel::parse(&config, input)?,
-                _ => unreachable!(),
+                DocumentType::Pdf => pdf::parse_to_string(&config, input)?,
             };
 
             if out.trim().is_empty() {
                 return err!(InvalidFile, "Parsing resulted in empty output");
             }
 
-            Ok(ParseOutput::String {
-                text: out,
-                images: vec![],
-            })
+            Ok(ParseOutput::String(out))
         }
-        ParseMode::Section(config) => match ext {
+        TextParseConfig::Section(config) => match ext {
             DocumentType::Pdf => {
-                let out =
-                    pdf::parse_to_sections(&config, input, include_images, existing_image_paths)?;
+                let out = pdf::parse_to_sections(&config, input)?;
 
                 if out.is_empty() {
                     return err!(InvalidFile, "Parsing resulted in empty output");
@@ -72,53 +47,66 @@ pub fn parse(
             }
             _ => err!(
                 InvalidParameter,
-                "Sectioned parsing not supported for document type '{ext}'"
+                "Sectioned parsing not yet supported for document type '{ext}'"
             ),
         },
     }
 }
 
-/// Parsing configuration for a document.
-///
-/// [Default] implementation does not include images.
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ParseConfig {
-    #[validate]
-    pub mode: ParseMode,
-    pub include_images: bool,
+/// Parse all images of a document.
+pub fn parse_images(ext: DocumentType, input: &[u8]) -> Result<Vec<Image>, ChonkitError> {
+    match ext {
+        DocumentType::Pdf => pdf::parse_images(input),
+        _ => err!(
+            InvalidParameter,
+            "Image parsing not yet supported for document type '{ext}'"
+        ),
+    }
 }
 
 /// Parsing mode determines the output of the parser.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub enum ParseMode {
+pub enum TextParseConfig {
     String(#[validate] StringParseConfig),
     Section(#[validate] SectionParseConfig),
 }
 
-impl Default for ParseMode {
+impl Default for TextParseConfig {
     fn default() -> Self {
-        ParseMode::String(StringParseConfig::default())
+        TextParseConfig::String(StringParseConfig::default())
+    }
+}
+
+impl std::fmt::Display for TextParseConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TextParseConfig::String(_) => write!(f, "string"),
+            TextParseConfig::Section(_) => write!(f, "section"),
+        }
     }
 }
 
 /// Note: PartialEq implementation checks text only.
 #[derive(Debug)]
 pub enum ParseOutput {
-    String {
-        /// The parsed text.
-        text: String,
-        /// Base64 data uris for all images found in the document.
-        images: Vec<Image>,
-    },
+    String(String),
     Sections(Vec<DocumentSection>),
+}
+
+impl ParseOutput {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ParseOutput::String(s) => s.trim().is_empty(),
+            ParseOutput::Sections(s) => s.is_empty(),
+        }
+    }
 }
 
 impl PartialEq for ParseOutput {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (ParseOutput::String { text: a, .. }, ParseOutput::String { text: b, .. }) => a == b,
+            (ParseOutput::String(a), ParseOutput::String(b)) => a == b,
             (ParseOutput::Sections(a), ParseOutput::Sections(b)) => a == b,
             _ => false,
         }
@@ -240,6 +228,4 @@ pub struct DocumentPage {
 
     /// The page number.
     pub number: usize,
-
-    pub images: Vec<Image>,
 }

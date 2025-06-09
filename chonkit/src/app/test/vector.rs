@@ -13,7 +13,7 @@ mod vector_service_integration_tests {
             service::{
                 collection::dto::{CreateCollectionPayload, SearchPayload},
                 document::dto::DocumentUpload,
-                embedding::EmbedSingleInput,
+                embedding::EmbedTextInput,
             },
         },
         error::ChonkitErr,
@@ -291,7 +291,7 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let embeddings = EmbedSingleInput {
+            let embeddings = EmbedTextInput {
                 document: document.id,
                 collection: default.id,
             };
@@ -304,7 +304,7 @@ mod vector_service_integration_tests {
 
             services
                 .embedding
-                .create_embeddings(embeddings)
+                .create_text_embeddings(embeddings)
                 .await
                 .unwrap();
 
@@ -321,7 +321,7 @@ mod vector_service_integration_tests {
             assert_eq!(content, results.items[0].item.payload.as_content());
 
             let embeddings = postgres
-                .get_embeddings_by_name(document.id, &collection_name, vector_db.id())
+                .get_text_embeddings_by_name(document.id, &collection_name, vector_db.id())
                 .await
                 .unwrap()
                 .unwrap();
@@ -387,14 +387,14 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let embeddings = EmbedSingleInput {
+            let embeddings = EmbedTextInput {
                 document: document.id,
                 collection: collection.id,
             };
 
             services
                 .embedding
-                .create_embeddings(embeddings)
+                .create_text_embeddings(embeddings)
                 .await
                 .unwrap();
 
@@ -405,7 +405,7 @@ mod vector_service_integration_tests {
                 .unwrap();
 
             let embeddings = postgres
-                .get_embeddings(document.id, collection.id)
+                .get_text_embeddings(document.id, collection.id)
                 .await
                 .unwrap();
 
@@ -450,18 +450,18 @@ mod vector_service_integration_tests {
                 .await
                 .unwrap();
 
-            let create = EmbedSingleInput {
+            let create = EmbedTextInput {
                 document: document.id,
                 collection: default.id,
             };
 
             services
                 .embedding
-                .create_embeddings(create.clone())
+                .create_text_embeddings(create.clone())
                 .await
                 .unwrap();
 
-            let duplicate = services.embedding.create_embeddings(create).await;
+            let duplicate = services.embedding.create_text_embeddings(create).await;
             let error = duplicate.unwrap_err().error;
 
             assert!(matches!(error, ChonkitErr::AlreadyExists(_)));

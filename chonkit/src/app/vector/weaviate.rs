@@ -5,7 +5,8 @@ use crate::core::vector::{
     CollectionItemText, CollectionSearchItem, CreateVectorCollection, VectorCollection, VectorDb,
     COLLECTION_EMBEDDING_MODEL_PROPERTY, COLLECTION_EMBEDDING_PROVIDER_PROPERTY,
     COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY, COLLECTION_NAME_PROPERTY,
-    COLLECTION_SIZE_PROPERTY, DOCUMENT_ID_PROPERTY,
+    COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY, IMAGE_B64_PROPERTY,
+    IMAGE_DESCRIPTION_PROPERTY, IMAGE_ID_PROPERTY, IMAGE_PATH_PROPERTY,
 };
 use crate::{err, error::ChonkitError, map_err};
 use dto::{QueryResult, WeaviateError};
@@ -22,6 +23,16 @@ use weaviate_community::{
     },
     WeaviateClient,
 };
+
+/// Keep in sync with [CollectionItem].
+const WEAVIATE_VECTOR_PROPERTIES: &[(&str, &str)] = &[
+    (DOCUMENT_ID_PROPERTY, "uuid"),
+    (CONTENT_PROPERTY, "text"),
+    (IMAGE_ID_PROPERTY, "uuid"),
+    (IMAGE_B64_PROPERTY, "text"),
+    (IMAGE_PATH_PROPERTY, "text"),
+    (IMAGE_DESCRIPTION_PROPERTY, "text"),
+];
 
 /// Alias for an arced Weaviate instance.
 pub type WeaviateDb = Arc<WeaviateClient>;
@@ -69,28 +80,28 @@ impl VectorDb for WeaviateClient {
     ) -> Result<(), ChonkitError> {
         let class = Class::builder(data.name);
 
-        // Create properties for a collection (weaviate class). We need classes
+        // Create class properties for the collection (weaviate class). We need classes
         // to also have defined properties because otherwise some foul weaviate
         // treachery with wrong types will occur.
-        let id = PropertyBuilder::new(COLLECTION_ID_PROPERTY, vec!["uuid"]).build();
-        let size = PropertyBuilder::new(COLLECTION_SIZE_PROPERTY, vec!["int"]).build();
-        let name = PropertyBuilder::new(COLLECTION_NAME_PROPERTY, vec!["text"]).build();
-        let embedding_provider =
-            PropertyBuilder::new(COLLECTION_EMBEDDING_PROVIDER_PROPERTY, vec!["text"]).build();
-        let embedding_model =
-            PropertyBuilder::new(COLLECTION_EMBEDDING_MODEL_PROPERTY, vec!["text"]).build();
-        let groups = PropertyBuilder::new(COLLECTION_GROUPS_PROPERTY, vec!["text[]"]).build();
 
-        let props = Properties::new(vec![
-            id,
-            size,
-            name,
-            embedding_provider,
-            embedding_model,
-            groups,
-        ]);
+        let mut props = vec![
+            PropertyBuilder::new(COLLECTION_ID_PROPERTY, vec!["uuid"]).build(),
+            PropertyBuilder::new(COLLECTION_SIZE_PROPERTY, vec!["int"]).build(),
+            PropertyBuilder::new(COLLECTION_NAME_PROPERTY, vec!["text"]).build(),
+            PropertyBuilder::new(COLLECTION_EMBEDDING_PROVIDER_PROPERTY, vec!["text"]).build(),
+            PropertyBuilder::new(COLLECTION_EMBEDDING_MODEL_PROPERTY, vec!["text"]).build(),
+            PropertyBuilder::new(COLLECTION_GROUPS_PROPERTY, vec!["text[]"]).build(),
+        ];
 
-        let class = class.with_properties(props).build();
+        // We also need to specify the actual vector properties
+
+        props.extend(
+            WEAVIATE_VECTOR_PROPERTIES
+                .iter()
+                .map(|(p, ty)| PropertyBuilder::new(p, vec![ty]).build()),
+        );
+
+        let class = class.with_properties(Properties::new(props)).build();
 
         if let Err(e) = self.schema.create_class(&class).await {
             tracing::error!("error creating class: {}", e);
@@ -255,7 +266,7 @@ impl VectorDb for WeaviateClient {
         }
     }
 
-    async fn delete_embeddings(
+    async fn delete_text_embeddings(
         &self,
         collection: &str,
         document_id: Uuid,
@@ -266,6 +277,33 @@ impl VectorDb for WeaviateClient {
                 "path": [DOCUMENT_ID_PROPERTY],
                 "operator": "Equal",
                 "valueText": document_id.to_string()
+            }),
+        ))
+        .build();
+
+        if let Err(e) = self
+            .batch
+            .objects_batch_delete(delete, Some(ConsistencyLevel::ALL), None)
+            .await
+        {
+            tracing::error!("error deleting vectors: {}", e);
+            return err!(Weaviate, "{}", e);
+        }
+
+        Ok(())
+    }
+
+    async fn delete_image_embeddings(
+        &self,
+        collection: &str,
+        image_id: Uuid,
+    ) -> Result<(), ChonkitError> {
+        let delete = BatchDeleteRequest::builder(MatchConfig::new(
+            collection,
+            json!({
+                "path": [IMAGE_ID_PROPERTY],
+                "operator": "Equal",
+                "valueText": image_id.to_string()
             }),
         ))
         .build();

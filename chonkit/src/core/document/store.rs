@@ -1,4 +1,4 @@
-use super::{parser::ParseConfig, sha256, DocumentType};
+use super::{parser::TextParseConfig, sha256, DocumentType};
 use crate::{
     core::{
         chunk::ChunkConfig,
@@ -134,7 +134,7 @@ pub trait DocumentStorage: Identity {
                     }
 
                     if let Err(e) = repo
-                        .upsert_document_parse_config(id, ParseConfig::default())
+                        .upsert_document_parse_config(id, TextParseConfig::default())
                         .await
                     {
                         tracing::error!("{id} - error updating parsing config: {e}");
@@ -150,7 +150,7 @@ pub trait DocumentStorage: Identity {
                     DocumentInsert::new(&file.name, &file.path.0, file.ext, &hash, self.id());
                 repo.insert_document_with_configs(
                     insert,
-                    ParseConfig::default(),
+                    TextParseConfig::default(),
                     ChunkConfig::snapping_default(),
                     tx,
                 )

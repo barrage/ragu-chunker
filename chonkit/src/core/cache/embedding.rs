@@ -1,13 +1,18 @@
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::{parser::ParseMode, sha256},
+        document::{parser::TextParseConfig, sha256},
+        model::image::ImageHash,
     },
     error::ChonkitError,
     map_err,
 };
 use serde::{Deserialize, Serialize};
 
+/// Cached text embeddings with their chunks.
+///
+/// We keep the document chunks in the cache in order to skip processing it.
+/// This is especially handy when semantic embedders are used.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CachedTextEmbeddings {
     pub embeddings: Vec<Vec<f64>>,
@@ -36,7 +41,7 @@ impl TextEmbeddingCacheKey {
         model_name: &str,
         document_hash: &str,
         chunk_config: Option<&ChunkConfig>,
-        parse_config: &ParseMode,
+        parse_config: &TextParseConfig,
     ) -> Result<Self, ChonkitError> {
         Ok(TextEmbeddingCacheKey(
             TextEmbeddingCacheKeyInner::new(model_name, document_hash, chunk_config, parse_config)
@@ -44,7 +49,7 @@ impl TextEmbeddingCacheKey {
         ))
     }
 
-    pub fn key(&self) -> &str {
+    pub(super) fn key(&self) -> &str {
         &self.0
     }
 }
@@ -54,7 +59,7 @@ struct TextEmbeddingCacheKeyInner<'a> {
     model_name: &'a str,
     document_hash: &'a str,
     chunk_config: Option<&'a ChunkConfig>,
-    parse_config: &'a ParseMode,
+    parse_config: &'a TextParseConfig,
 }
 
 impl<'a> TextEmbeddingCacheKeyInner<'a> {
@@ -62,7 +67,7 @@ impl<'a> TextEmbeddingCacheKeyInner<'a> {
         model_name: &'a str,
         document_hash: &'a str,
         chunk_config: Option<&'a ChunkConfig>,
-        parse_config: &'a ParseMode,
+        parse_config: &'a TextParseConfig,
     ) -> Self {
         TextEmbeddingCacheKeyInner {
             model_name,
@@ -79,42 +84,42 @@ impl<'a> TextEmbeddingCacheKeyInner<'a> {
     }
 }
 
+/// Contains only the image embeddings. Obtained from the cache by [ImageEmbeddingCacheKey].
+///
+/// The image bytes must be obtained from storage.
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CachedImageEmbeddings {
     pub embeddings: Vec<f64>,
     pub tokens_used: Option<usize>,
-    pub image_b64: String,
-    pub image_path: String,
-    pub description: Option<String>,
 }
 
 impl CachedImageEmbeddings {
-    pub fn new(
-        embeddings: Vec<f64>,
-        tokens_used: Option<usize>,
-        image_b64: String,
-        image_path: String,
-        description: Option<String>,
-    ) -> Self {
+    pub fn new(embeddings: Vec<f64>, tokens_used: Option<usize>) -> Self {
         Self {
             embeddings,
             tokens_used,
-            image_b64,
-            image_path,
-            description,
         }
     }
 }
 
+/// The key used to retrieve the image embeddings from the cache.
+///
+/// See [ImageHash].
 #[derive(Debug)]
-pub struct ImageEmbeddingCacheKey(String, String);
+pub struct ImageEmbeddingCacheKey<'a> {
+    hash: &'a str,
+    model: &'a str,
+}
 
-impl ImageEmbeddingCacheKey {
-    pub fn new(image_path: String, model: String) -> Self {
-        Self(image_path, model)
+impl<'a> ImageEmbeddingCacheKey<'a> {
+    pub fn new(hash: &'a ImageHash, model: &'a str) -> Self {
+        Self {
+            hash: &hash.0,
+            model,
+        }
     }
 
-    pub fn key(&self) -> String {
-        format!("{}-{}", self.0, self.1)
+    pub(super) fn key(&self) -> String {
+        format!("{}-{}", self.hash, self.model)
     }
 }

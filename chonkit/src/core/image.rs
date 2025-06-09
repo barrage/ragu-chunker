@@ -10,14 +10,25 @@ pub type ImageStore = Arc<dyn ImageStorage + Send + Sync>;
 
 #[async_trait::async_trait]
 pub trait ImageStorage: Identity {
+    /// Get a full image from BLOB storage with its metadata from the repository.
     async fn get_image(&self, path: &str) -> Result<Image, ChonkitError>;
 
+    /// Insert the image to BLOB storage and the repository.
     async fn store_image(
         &self,
-        document_id: Uuid,
+        document_id: Option<Uuid>,
         image: &Image,
     ) -> Result<ImageModel, ChonkitError>;
 
+    /// Delete a single image from BLOB storage and the repository using its path.
+    async fn delete_image(&self, path: &str) -> Result<(), ChonkitError>;
+
+    /// Delete all image BLOBS and repository entries based on a document ID.
+    ///
+    /// Used when removing the document to ensure all its images are deleted as well.
+    async fn delete_all(&self, document_id: Uuid) -> Result<(), ChonkitError>;
+
+    /// Check whether the image exists in BLOB storage.
     async fn exists(&self, path: &str) -> Result<bool, ChonkitError>;
 }
 
@@ -31,7 +42,7 @@ pub mod minio {
         },
         err,
         error::ChonkitError,
-        map_err, transaction,
+        map_err,
     };
     use s3::{creds::Credentials, Bucket, Region};
     use std::sync::Arc;
@@ -121,15 +132,6 @@ pub mod minio {
                     .await
             );
 
-            let image = self.repository.get_image_by_path(path).await?;
-            let Some(document) = self
-                .repository
-                .get_document_by_id(image.document_id)
-                .await?
-            else {
-                return err!(DoesNotExist, "Document with ID {}", image.document_id);
-            };
-
             let format = match image::ImageFormat::from_path(path) {
                 Ok(f) => f,
                 Err(e) => {
@@ -137,6 +139,7 @@ pub mod minio {
                     return err!(InvalidFile, "Failed to parse image format: {e}");
                 }
             };
+            let image = self.repository.get_image_by_path(path).await?;
 
             Ok(Image {
                 image: ImageData {
@@ -145,37 +148,61 @@ pub mod minio {
                     width: image.width as u32,
                     height: image.height as u32,
                 },
-                document_hash: document.hash.clone(),
-                page_number: image.page_number as usize,
-                image_number: image.image_number as usize,
+                page_number: image.page_number.map(|p| p as usize),
+                image_number: image.image_number.map(|i| i as usize),
                 description: image.description.clone(),
             })
         }
 
         async fn store_image(
             &self,
-            document_id: Uuid,
+            document_id: Option<Uuid>,
             image: &Image,
         ) -> Result<ImageModel, ChonkitError> {
-            use crate::core::repo::Atomic;
+            self.client.store_image(image).await?;
+            self.repository
+                .insert_image(
+                    InsertImage {
+                        document_id,
+                        page_number: image.page_number,
+                        image_number: image.image_number,
+                        path: &image.path(),
+                        hash: &image.hash().0,
+                        src: self.id(),
+                        format: image.image.format.extensions_str()[0],
+                        description: image.description.as_deref(),
+                        width: image.image.width,
+                        height: image.image.height,
+                    },
+                    None,
+                )
+                .await
+        }
 
-            transaction!(self.repository, |tx| async move {
-                let insert = InsertImage {
-                    document_id,
-                    page_number: image.page_number,
-                    image_number: image.image_number,
-                    path: &image.path(),
-                    hash: &image.hash(),
-                    src: self.id(),
-                    format: image.image.format.extensions_str()[0],
-                    description: image.description.as_deref(),
-                    width: image.image.width,
-                    height: image.image.height,
-                };
-                let img = self.repository.insert_image(insert, Some(tx)).await?;
-                self.client.store_image(image).await?;
-                Ok(img)
-            })
+        async fn delete_image(&self, path: &str) -> Result<(), ChonkitError> {
+            map_err!(
+                self.client
+                    .bucket
+                    .delete_object(format!("{}/{}", self.client.prefix, path))
+                    .await
+            );
+            self.repository.delete_image_by_path(path).await?;
+
+            Ok(())
+        }
+
+        async fn delete_all(&self, document_id: Uuid) -> Result<(), ChonkitError> {
+            let images = self
+                .repository
+                .list_all_document_images(document_id, self.id())
+                .await?;
+
+            for image in images {
+                self.delete_image(&image.path).await?;
+                self.repository.delete_image_by_path(&image.path).await?;
+            }
+
+            Ok(())
         }
 
         async fn exists(&self, path: &str) -> Result<bool, ChonkitError> {

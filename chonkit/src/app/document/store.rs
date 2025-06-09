@@ -87,7 +87,6 @@ impl TokioDirectory {
     }
 
     pub async fn read(&self, path: &str) -> Result<Vec<u8>, ChonkitError> {
-        debug!("Reading {path}");
         Ok(map_err!(tokio::fs::read(&path).await))
     }
 
@@ -151,7 +150,6 @@ impl TokioDirectory {
     }
 
     pub async fn delete(&self, path: &str) -> Result<(), ChonkitError> {
-        debug!("Removing {path}");
         Ok(map_err!(tokio::fs::remove_file(path).await))
     }
 
@@ -187,7 +185,7 @@ mod tests {
     use super::FsDocumentStore;
     use crate::core::{
         document::{
-            parser::{parse, ParseConfig, ParseOutput},
+            parser::{parse_text, ParseOutput, TextParseConfig},
             store::DocumentStorage,
             DocumentType,
         },
@@ -218,15 +216,9 @@ mod tests {
         assert_eq!(CONTENT, file);
 
         let read = store.read(&path).await.unwrap();
-        let content = parse(ParseConfig::default(), ext, &read, &[]).unwrap();
+        let content = parse_text(TextParseConfig::default(), ext, &read).unwrap();
 
-        assert_eq!(
-            ParseOutput::String {
-                text: CONTENT.to_string(),
-                images: vec![]
-            },
-            content
-        );
+        assert_eq!(ParseOutput::String(CONTENT.to_string()), content);
 
         store.delete(&path).await.unwrap();
 

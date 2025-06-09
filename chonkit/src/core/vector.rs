@@ -18,6 +18,8 @@ pub const COLLECTION_GROUPS_PROPERTY: &str = "groups";
 pub const DOCUMENT_ID_PROPERTY: &str = "document_id";
 
 /// Keep in sync with [CollectionItem].
+pub const IMAGE_ID_PROPERTY: &str = "image_id";
+/// Keep in sync with [CollectionItem].
 pub const IMAGE_B64_PROPERTY: &str = "image_b64";
 /// Keep in sync with [CollectionItem].
 pub const IMAGE_PATH_PROPERTY: &str = "image_path";
@@ -88,14 +90,24 @@ pub trait VectorDb: Identity {
     async fn insert_embeddings(&self, insert: CollectionItemInsert<'_>)
         -> Result<(), ChonkitError>;
 
-    /// Delete the vectors tagged with the given `document_id`.
+    /// Delete the text embedding vectors tagged with the given `document_id`.
     ///
     /// * `collection`: The collection to delete from.
     /// * `document_id`: The id of the document whose vectors to delete.
-    async fn delete_embeddings(
+    async fn delete_text_embeddings(
         &self,
         collection: &str,
         document_id: Uuid,
+    ) -> Result<(), ChonkitError>;
+
+    /// Delete the text embedding vectors tagged with the given `document_id`.
+    ///
+    /// * `collection`: The collection to delete from.
+    /// * `document_id`: The id of the document whose vectors to delete.
+    async fn delete_image_embeddings(
+        &self,
+        collection: &str,
+        image_id: Uuid,
     ) -> Result<(), ChonkitError>;
 
     /// Returns the amount of vectors tagged with the given `document_id`.
@@ -279,6 +291,7 @@ impl<'a> CollectionItemInsert<'a> {
     pub fn new_image(
         document_id: Option<Uuid>,
         collection: &'a str,
+        image_id: Uuid,
         image_b64: &'a str,
         image_path: &'a str,
         image_description: Option<&'a str>,
@@ -289,6 +302,7 @@ impl<'a> CollectionItemInsert<'a> {
             payload: CollectionItemInsertPayload::Image {
                 item: CollectionItemImage {
                     document_id,
+                    image_id,
                     image_b64,
                     image_path,
                     image_description,
@@ -329,6 +343,7 @@ pub struct CollectionItemText<'a> {
 #[derive(Debug, Serialize)]
 pub struct CollectionItemImage<'a> {
     pub document_id: Option<Uuid>,
+    pub image_id: Uuid,
     pub image_b64: &'a str,
     pub image_path: &'a str,
     pub image_description: Option<&'a str>,
@@ -361,6 +376,7 @@ impl CollectionItem {
             DOCUMENT_ID_PROPERTY,
             CONTENT_PROPERTY,
             // IMAGE_B64_PROPERTY,
+            IMAGE_ID_PROPERTY,
             IMAGE_PATH_PROPERTY,
             IMAGE_DESCRIPTION_PROPERTY,
         ]
@@ -374,6 +390,7 @@ pub enum CollectionItemPayload {
         content: String,
     },
     Image {
+        image_id: Uuid,
         image_b64: Option<String>,
         image_path: String,
         image_description: Option<String>,
@@ -386,6 +403,7 @@ impl CollectionItemPayload {
         match self {
             CollectionItemPayload::Image {
                 image_b64,
+                image_id: _,
                 image_path: _,
                 image_description: _,
             } => image_b64.as_ref().unwrap().clone(),

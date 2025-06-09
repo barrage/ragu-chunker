@@ -7,13 +7,15 @@ use crate::{
         state::AppState,
     },
     core::{
-        document::{parser::ParseConfig, DocumentType},
+        document::{parser::TextParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
             image::ImageModel,
             List,
         },
-        service::document::dto::{ChunkPreview, ChunkPreviewPayload, DocumentUpload, ParsePreview},
+        service::document::dto::{
+            ChunkPreview, ChunkPreviewPayload, DocumentUpload, ListImagesParameters, ParsePreview,
+        },
     },
     error::ChonkitError,
 };
@@ -266,7 +268,7 @@ pub(super) async fn chunk_preview(
 pub(super) async fn parse_preview(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(config): Json<ParseConfig>,
+    Json(config): Json<TextParseConfig>,
 ) -> Result<Json<ParsePreview>, ChonkitError> {
     Ok(Json(
         state.services.document.parse_preview(id, config).await?,
@@ -294,7 +296,7 @@ pub(super) async fn sync(
 
 #[utoipa::path(
     get,
-    path = "/documents/{id}/images",
+    path = "/images",
     responses(
         (status = 200, description = "List document images", body = List<ImageModel>),
         (status = 404, description = "Document not found"),
@@ -304,18 +306,16 @@ pub(super) async fn sync(
         ("id" = Uuid, Path, description = "Document ID")
     )
 )]
-pub(super) async fn list_document_images(
+pub(super) async fn list_images(
     State(state): State<AppState>,
-    Path(document_id): Path<Uuid>,
+    Query(parameters): Query<ListImagesParameters>,
 ) -> Result<Json<List<ImageModel>>, ChonkitError> {
-    Ok(Json(
-        state.services.document.list_images(document_id).await?,
-    ))
+    Ok(Json(state.services.document.list_images(parameters).await?))
 }
 
 #[utoipa::path(
     put,
-    path = "/documents/{id}/images/{image_path}/description",
+    path = "/images/{id}",
     responses(
         (status = 204, description = "Update document description"),
         (status = 404, description = "Document not found"),
@@ -328,13 +328,13 @@ pub(super) async fn list_document_images(
 )]
 pub(super) async fn update_image_description(
     State(state): State<AppState>,
-    Path((document_id, image_path)): Path<(Uuid, String)>,
+    Path(image_id): Path<Uuid>,
     Json(payload): Json<UpdateImageDescription>,
 ) -> Result<StatusCode, ChonkitError> {
     state
         .services
         .document
-        .update_image_description(document_id, &image_path, payload.description.as_deref())
+        .update_image_description(image_id, payload.description.as_deref())
         .await?;
 
     Ok(StatusCode::NO_CONTENT)

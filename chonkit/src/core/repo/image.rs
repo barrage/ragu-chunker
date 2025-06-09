@@ -6,6 +6,7 @@ use crate::{
             List,
         },
         repo::Repository,
+        service::document::dto::ListImagesParameters,
     },
     err,
     error::ChonkitError,
@@ -38,20 +39,21 @@ impl Repository {
                )
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                RETURNING 
+                id,
                 path,
-                page_number,
-                image_number,
                 format,
                 hash,
-                document_id,
                 src,
-                description,
                 width,
-                height
+                height,
+                description,
+                document_id,
+                page_number,
+                image_number
             "#,
             insert.document_id,
-            insert.page_number as i32,
-            insert.image_number as i32,
+            insert.page_number.map(|n| n as i32),
+            insert.image_number.map(|n| n as i32),
             insert.format,
             insert.path,
             insert.hash,
@@ -72,6 +74,7 @@ impl Repository {
             sqlx::query_as!(
                 ImageModel,
                 r#"SELECT
+                id,
                 path,
                 page_number,
                 image_number,
@@ -102,26 +105,14 @@ impl Repository {
 
     pub async fn update_image_description(
         &self,
-        document_id: Uuid,
-        image_path: &str,
+        image_id: Uuid,
         description: Option<&str>,
     ) -> Result<(), ChonkitError> {
-        if sqlx::query!("SELECT COUNT(*) FROM documents WHERE id = $1", document_id,)
-            .fetch_one(&self.client)
-            .await
-            .unwrap()
-            .count
-            .is_some_and(|count| count == 0)
-        {
-            return err!(DoesNotExist, "Document does not exist");
-        }
-
         let count = map_err!(
             sqlx::query!(
-                "UPDATE images SET description = $1 WHERE document_id = $2 AND path = $3",
+                "UPDATE images SET description = $1 WHERE id = $2",
                 description,
-                document_id,
-                image_path
+                image_id
             )
             .execute(&self.client)
             .await
@@ -134,45 +125,58 @@ impl Repository {
         Ok(())
     }
 
+    /// List the images found in the document with pagination.
+    ///
+    /// Never use `src` from external sources; It is only used internally to include only images
+    /// for the currently set image provider.
     pub async fn list_document_images(
         &self,
-        document_id: Uuid,
         src: &str,
+        parameters: ListImagesParameters,
     ) -> Result<List<ImageModel>, ChonkitError> {
-        let total = map_err!(sqlx::query!(
-            "SELECT COUNT(*) FROM images WHERE document_id = $1 AND src = $2",
-            document_id,
-            src
-        )
-        .fetch_one(&self.client)
-        .await
-        .map(|row| row.count.map(|c| c as usize)));
+        let (limit, offset) = parameters.pagination.unwrap_or_default().to_limit_offset();
 
-        let images = map_err!(
-            sqlx::query_as!(
-                ImageModel,
-                r#"
-                SELECT
-                    path,
-                    page_number,
-                    image_number,
-                    format,
-                    hash,
-                    document_id,
-                    src,
-                    description,
-                    width,
-                    height
-                FROM images WHERE document_id = $1 AND src = $2
-                ORDER BY page_number, image_number"#,
+        let mut count = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM images WHERE src = ");
+        let mut data = sqlx::QueryBuilder::new(
+            r#"
+            SELECT
+                id,
+                path,
+                page_number,
+                image_number,
+                format,
+                hash,
                 document_id,
-                src
-            )
-            .fetch_all(&self.client)
-            .await
+                src,
+                description,
+                width,
+                height
+            FROM images WHERE src = 
+            "#,
         );
 
-        Ok(List::new(total, images))
+        count.push_bind(src);
+        data.push_bind(src);
+
+        if let Some(document_id) = parameters.document_id {
+            count.push(" AND document_id = ").push_bind(document_id);
+            data.push(" AND document_id = ").push_bind(document_id);
+        }
+
+        data.push(" ORDER BY page_number, image_number")
+            .push(" LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
+
+        let total: i64 = map_err!(count.build_query_scalar().fetch_one(&self.client).await);
+        let images: Vec<ImageModel> = map_err!(
+            data.build_query_as::<ImageModel>()
+                .fetch_all(&self.client)
+                .await
+        );
+
+        Ok(List::new(Some(total as usize), images))
     }
 
     pub async fn list_all_document_images(
@@ -185,6 +189,7 @@ impl Repository {
                 ImageModel,
                 r#"
                 SELECT
+                    id,
                     path,
                     page_number,
                     image_number,
@@ -205,18 +210,41 @@ impl Repository {
         ))
     }
 
-    pub async fn list_document_image_paths(
+    pub async fn get_image_by_id(
         &self,
-        document_id: Uuid,
-        src: &str,
-    ) -> Result<Vec<String>, ChonkitError> {
-        Ok(map_err!(sqlx::query!(
-            "SELECT path FROM images WHERE document_id = $1 AND src = $2",
-            document_id,
-            src
-        )
-        .fetch_all(&self.client)
-        .await
-        .map(|rows| rows.into_iter().map(|row| row.path).collect())))
+        image_id: Uuid,
+    ) -> Result<Option<ImageModel>, ChonkitError> {
+        Ok(map_err!(
+            sqlx::query_as!(
+                ImageModel,
+                r#"
+                SELECT 
+                    id,
+                    path,
+                    page_number,
+                    image_number,
+                    format,
+                    hash,
+                    document_id,
+                    src,
+                    description,
+                    width,
+                    height
+                FROM images WHERE id = $1
+                "#,
+                image_id
+            )
+            .fetch_optional(&self.client)
+            .await
+        ))
+    }
+
+    pub async fn delete_image_by_path(&self, path: &str) -> Result<(), ChonkitError> {
+        map_err!(
+            sqlx::query!("DELETE FROM images WHERE path = $1", path)
+                .execute(&self.client)
+                .await
+        );
+        Ok(())
     }
 }

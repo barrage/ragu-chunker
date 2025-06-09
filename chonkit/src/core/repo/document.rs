@@ -1,5 +1,5 @@
 use super::Atomic;
-use crate::core::document::parser::ParseConfig;
+use crate::core::document::parser::TextParseConfig;
 use crate::core::model::document::{DocumentParameterUpdate, DocumentSearchColumn};
 use crate::core::model::ToSearchColumn;
 use crate::core::repo::Repository;
@@ -652,7 +652,7 @@ impl Repository {
     ) -> Result<Option<DocumentParseConfig>, ChonkitError> {
         Ok(map_err!(
             sqlx::query_as!(
-                SelectConfig::<ParseConfig>,
+                SelectConfig::<TextParseConfig>,
                 r#"SELECT 
                 id,
                 document_id,
@@ -707,7 +707,7 @@ impl Repository {
     pub async fn upsert_document_parse_config(
         &self,
         document_id: uuid::Uuid,
-        config: ParseConfig,
+        config: TextParseConfig,
     ) -> Result<DocumentParseConfig, ChonkitError> {
         let config = InsertConfig::new(document_id, config);
 
@@ -719,7 +719,7 @@ impl Repository {
 
         let config = map_err!(
             sqlx::query_as!(
-                SelectConfig::<ParseConfig>,
+                SelectConfig::<TextParseConfig>,
                 r#"INSERT INTO parsers
                 (id, document_id, config)
              VALUES
@@ -729,7 +729,7 @@ impl Repository {
                 id, document_id, config AS "config: _", created_at, updated_at"#,
                 id,
                 document_id,
-                config as Json<ParseConfig>,
+                config as Json<TextParseConfig>,
             )
             .fetch_one(&self.client)
             .await
@@ -741,7 +741,7 @@ impl Repository {
     pub async fn insert_document_with_configs(
         &self,
         document: DocumentInsert<'_>,
-        parse_config: ParseConfig,
+        parse_config: TextParseConfig,
         chunk_config: ChunkConfig,
         tx: &mut <Self as Atomic>::Tx,
     ) -> Result<Document, ChonkitError>
@@ -790,7 +790,7 @@ impl Repository {
                 "#,
                 parse_insert.id,
                 parse_insert.document_id,
-                parse_insert.config as Json<ParseConfig>,
+                parse_insert.config as Json<TextParseConfig>,
             )
             .execute(&mut **tx)
             .await
@@ -880,7 +880,7 @@ struct SelectDocumentConfig {
     hash: String,
     src: String,
     chunk_config: Option<Json<ChunkConfig>>,
-    parse_config: Option<Json<ParseConfig>>,
+    parse_config: Option<Json<TextParseConfig>>,
 }
 
 impl From<SelectDocumentConfig> for DocumentConfig {
@@ -936,8 +936,8 @@ impl From<SelectConfig<ChunkConfig>> for DocumentChunkConfig {
     }
 }
 
-impl From<SelectConfig<ParseConfig>> for DocumentParseConfig {
-    fn from(value: SelectConfig<ParseConfig>) -> Self {
+impl From<SelectConfig<TextParseConfig>> for DocumentParseConfig {
+    fn from(value: SelectConfig<TextParseConfig>) -> Self {
         let SelectConfig {
             id,
             document_id,
@@ -963,7 +963,7 @@ mod tests {
         app::test::{init_repository, PostgresContainer},
         core::{
             chunk::ChunkConfig,
-            document::{parser::ParseConfig, DocumentType, TextDocumentType},
+            document::{parser::TextParseConfig, DocumentType, TextDocumentType},
             model::{
                 document::{DocumentInsert, DocumentSearchColumn},
                 Pagination, PaginationSort, Search,
@@ -1065,7 +1065,7 @@ mod tests {
                     "Hash1r",
                     "fs",
                 ),
-                ParseConfig::default(),
+                TextParseConfig::default(),
                 ChunkConfig::snapping_default(),
                 tx,
             )
@@ -1083,7 +1083,7 @@ mod tests {
                     "Hash2r",
                     "other",
                 ),
-                ParseConfig::default(),
+                TextParseConfig::default(),
                 ChunkConfig::snapping_default(),
                 tx,
             )

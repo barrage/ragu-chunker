@@ -1,17 +1,18 @@
 use crate::{
     app::{
-        batch::{BatchJob, BatchJobResult, JobResult},
+        batch::{BatchJob, BatchJobResult},
         server::dto::{EmbedBatchInput, ListEmbeddingsPayload},
         state::AppState,
     },
     core::{
         model::{
             embedding::{
-                Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
+                EmbeddingReport, ImageEmbeddingAdditionReport, TextEmbedding,
+                TextEmbeddingAdditionReport, TextEmbeddingRemovalReport,
             },
             List,
         },
-        service::embedding::{EmbedSingleInput, ListEmbeddingReportsParams},
+        service::embedding::{EmbedImageInput, EmbedTextInput, ListEmbeddingReportsParams},
     },
     err,
     error::ChonkitError,
@@ -57,17 +58,43 @@ pub(super) async fn list_embedding_models(
     post,
     path = "/embeddings", 
     responses(
-        (status = 200, description = "Embeddings created successfully", body = EmbeddingReportAddition),
+        (status = 200, description = "Embeddings created successfully", body = TextEmbeddingAdditionReport),
         (status = 404, description = "Collection or document not found"),
         (status = 500, description = "Internal server error")
     ),
     request_body = EmbedSingleInput
 )]
-pub(super) async fn embed(
+pub(super) async fn embed_text(
     State(state): State<AppState>,
-    Json(input): Json<EmbedSingleInput>,
-) -> Result<(StatusCode, Json<EmbeddingReportAddition>), ChonkitError> {
-    let report = state.services.embedding.create_embeddings(input).await?;
+    Json(input): Json<EmbedTextInput>,
+) -> Result<(StatusCode, Json<TextEmbeddingAdditionReport>), ChonkitError> {
+    let report = state
+        .services
+        .embedding
+        .create_text_embeddings(input)
+        .await?;
+    Ok((StatusCode::OK, Json(report)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/embeddings/images", 
+    responses(
+        (status = 200, description = "Embeddings created successfully", body = ImageEmbeddingAdditionReport),
+        (status = 404, description = "Collection or document not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    request_body = EmbedImageInput
+)]
+pub(super) async fn embed_image(
+    State(state): State<AppState>,
+    Json(input): Json<EmbedImageInput>,
+) -> Result<(StatusCode, Json<ImageEmbeddingAdditionReport>), ChonkitError> {
+    let report = state
+        .services
+        .embedding
+        .create_image_embeddings(input)
+        .await?;
     Ok((StatusCode::OK, Json(report)))
 }
 
@@ -80,7 +107,7 @@ pub(super) async fn embed(
     ),
     request_body = EmbedBatchInput
 )]
-pub(super) async fn batch_embed(
+pub(super) async fn batch_embed_text(
     State(state): State<AppState>,
     Json(input): Json<EmbedBatchInput>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, ChonkitError>>>, ChonkitError> {
@@ -109,7 +136,7 @@ pub(super) async fn batch_embed(
             };
             tracing::debug!("sse received event");
             let event = match result.result {
-                JobResult::Ok(report) => match Event::default().json_data(report) {
+                Ok(report) => match Event::default().json_data(report) {
                     Ok(event) => event,
                     Err(err) => {
                         tracing::error!("Error serializing embedding report: {err}");
@@ -117,7 +144,7 @@ pub(super) async fn batch_embed(
                         Event::default().data(err)
                     }
                 },
-                JobResult::Err(err) => {
+                Err(err) => {
                     tracing::error!("Received error in batch embedder: {err}");
                     let err = format!("error: {err}").replace('\n', " ");
                     Event::default().data(err)
@@ -137,7 +164,7 @@ pub(super) async fn batch_embed(
     get,
     path = "/embeddings", 
     responses(
-        (status = 200, description = "List of embedded documents, optionally filtered by collection ID", body = inline(List<Embedding>)),
+        (status = 200, description = "List of embedded documents, optionally filtered by collection ID", body = inline(List<TextEmbedding>)),
         (status = 500, description = "Internal server error")
     ),
     params(
@@ -147,7 +174,7 @@ pub(super) async fn batch_embed(
 pub(super) async fn list_embedded_documents(
     State(state): State<AppState>,
     Query(payload): Query<ListEmbeddingsPayload>,
-) -> Result<Json<List<Embedding>>, ChonkitError> {
+) -> Result<Json<List<TextEmbedding>>, ChonkitError> {
     let ListEmbeddingsPayload {
         collection: collection_id,
         pagination,
@@ -165,14 +192,14 @@ pub(super) async fn list_embedded_documents(
     get,
     path = "/collections/{collection_id}/outdated", 
     responses(
-        (status = 200, description = "List of all embeddings whose `created_at` field is less than their respective document's `updated_at` field", body = inline(Vec<Embedding>)),
+        (status = 200, description = "List of all embeddings whose `created_at` field is less than their respective document's `updated_at` field", body = inline(Vec<TextEmbedding>)),
         (status = 500, description = "Internal server error")
     ),
 )]
 pub(super) async fn list_outdated_embeddings(
     State(state): State<AppState>,
     Path(collection_id): Path<Uuid>,
-) -> Result<Json<Vec<Embedding>>, ChonkitError> {
+) -> Result<Json<Vec<TextEmbedding>>, ChonkitError> {
     let embeddings = state
         .services
         .embedding
@@ -220,11 +247,11 @@ pub(super) async fn count_embeddings(
 pub(super) async fn delete_embeddings(
     State(state): State<AppState>,
     Path((collection_id, document_id)): Path<(Uuid, Uuid)>,
-) -> Result<(StatusCode, Json<EmbeddingReportRemoval>), ChonkitError> {
+) -> Result<(StatusCode, Json<TextEmbeddingRemovalReport>), ChonkitError> {
     let report = state
         .services
         .embedding
-        .delete_embeddings(collection_id, document_id)
+        .delete_text_embeddings(collection_id, document_id)
         .await?;
 
     Ok((StatusCode::OK, Json(report)))

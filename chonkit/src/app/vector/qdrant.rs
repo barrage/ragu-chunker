@@ -5,6 +5,7 @@ use crate::core::vector::{
     CreateVectorCollection, VectorCollection, VectorDb, COLLECTION_EMBEDDING_MODEL_PROPERTY,
     COLLECTION_EMBEDDING_PROVIDER_PROPERTY, COLLECTION_GROUPS_PROPERTY, COLLECTION_ID_PROPERTY,
     COLLECTION_NAME_PROPERTY, COLLECTION_SIZE_PROPERTY, CONTENT_PROPERTY, DOCUMENT_ID_PROPERTY,
+    IMAGE_ID_PROPERTY,
 };
 use crate::error::ChonkitError;
 use crate::{err, map_err};
@@ -218,7 +219,7 @@ impl VectorDb for Qdrant {
         }
     }
 
-    async fn delete_embeddings(
+    async fn delete_text_embeddings(
         &self,
         collection: &str,
         document_id: uuid::Uuid,
@@ -229,6 +230,26 @@ impl VectorDb for Qdrant {
                     .points(Filter::must([Condition::matches(
                         DOCUMENT_ID_PROPERTY,
                         document_id.to_string(),
+                    )]))
+                    .wait(true),
+            )
+            .await
+        );
+
+        Ok(())
+    }
+
+    async fn delete_image_embeddings(
+        &self,
+        collection: &str,
+        image_id: uuid::Uuid,
+    ) -> Result<(), ChonkitError> {
+        map_err!(
+            self.delete_points(
+                DeletePointsBuilder::new(collection)
+                    .points(Filter::must([Condition::matches(
+                        IMAGE_ID_PROPERTY,
+                        image_id.to_string(),
                     )]))
                     .wait(true),
             )

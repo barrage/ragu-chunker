@@ -80,11 +80,8 @@ pub fn router(state: AppState) -> Router {
             post(document::parse_preview),
         )
         .route("/documents/sync/:provider", get(document::sync))
-        .route("/documents/:id/images", get(document::list_document_images))
-        .route(
-            "/documents/:id/images/:image_path",
-            put(document::update_image_description),
-        )
+        .route("/images", get(document::list_images))
+        .route("/images/:image_id", put(document::update_image_description))
         .route("/collections", get(collection::list_collections))
         .route("/collections", post(collection::create_collection))
         .route("/collections/:id", get(collection::get_collection))
@@ -119,12 +116,13 @@ pub fn router(state: AppState) -> Router {
             "/embeddings/:collection_id/outdated",
             get(embedding::list_outdated_embeddings),
         )
-        .route("/embeddings", post(embedding::embed))
+        .route("/embeddings", post(embedding::embed_text))
+        .route("/embeddings/image", post(embedding::embed_image))
         .route(
             "/embeddings/:provider/models",
             get(embedding::list_embedding_models),
         )
-        .route("/embeddings/batch", post(embedding::batch_embed))
+        .route("/embeddings/batch", post(embedding::batch_embed_text))
         .route("/search", post(collection::search))
         .route("/documents/display", get(document::list_documents_display))
         .route("/blobs/images/:id", get(blob::get_image))

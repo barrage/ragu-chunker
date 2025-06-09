@@ -34,8 +34,9 @@ use super::router::{
         __path_count_embeddings,
         __path_delete_embeddings,
         __path_list_embedded_documents,
-        __path_embed,
-        __path_batch_embed,
+        __path_embed_text,
+        __path_batch_embed_text,
+        __path_embed_image,
         __path_list_embedding_models,
         __path_list_embedding_reports,
     }
@@ -46,20 +47,19 @@ use crate::{
     app::{server::{dto::UpdateImageDescription, router::collection::SyncParams}, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
-        document::parser::{PageRange, ParseConfig, ParseMode, SectionParseConfig, StringParseConfig},
+        document::parser::{PageRange, SectionParseConfig, StringParseConfig, TextParseConfig},
         model::{
             collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort}, document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentSearchColumn, DocumentShort,
             }, embedding::{
-                Embedding, EmbeddingReport, EmbeddingReportAddition, EmbeddingReportRemoval,
-                EmbeddingReportSearchColumn,
+                EmbeddingAdditionReport, EmbeddingReport, EmbeddingReportBase, EmbeddingReportSearchColumn, EmbeddingReportType, ImageEmbeddingAdditionReport, ImageEmbeddingRemovalReport, TextEmbedding, TextEmbeddingAdditionReport, TextEmbeddingRemovalReport
             }, image::ImageModel, List, Pagination, PaginationSort, Search, SortDirection
         },
         service::{
-            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload, ParseOutputPreview, ParsePreview, ParsedDocumentContent, ParsedDocumentPage, ParsedDocumentSection}, embedding::{EmbedSingleInput, ListEmbeddingReportsParams}
+            collection::dto::{CollectionData, CollectionSearchResult, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution}, document::dto::{ChunkForPreview, ChunkPreview, ChunkPreviewPayload, ListImagesParameters, ParseOutputPreview, ParsePreview, ParsedDocumentPage, ParsedDocumentSection}, embedding::{EmbedTextInput, ListEmbeddingReportsParams}
         },
         token::TokenCount,
-        vector::{CollectionSearchItem, CollectionItemPayload, VectorCollection},
+        vector::{CollectionItemPayload, CollectionSearchItem, VectorCollection},
     },
 };
 use utoipa::OpenApi;
@@ -95,8 +95,9 @@ use utoipa::OpenApi;
         list_embedding_models,
         list_embedded_documents,
         list_embedding_reports,
-        embed,
-        batch_embed,
+        embed_text,
+        batch_embed_text,
+        embed_image,
         delete_embeddings,
         count_embeddings,
     ),
@@ -133,17 +134,18 @@ use utoipa::OpenApi;
         SplitlineConfig,
 
         ChunkPreviewPayload,
-        ParseMode,
+        TextParseConfig,
         SectionParseConfig,
         StringParseConfig,
-        ParseConfig,
+        TextParseConfig,
         ParsePreview,
         ParseOutputPreview,
         PageRange,
         ParsedDocumentSection,
         ParsedDocumentPage,
-        ParsedDocumentContent,
+
         ImageModel,
+        ListImagesParameters,
         UpdateImageDescription,
 
         CreateCollectionPayload,
@@ -154,23 +156,27 @@ use utoipa::OpenApi;
         SyncIncompatibilityResolution,
         SyncParams,
         SearchPayload,
-        Embedding,
+        TextEmbedding,
         Collection,
         VectorCollection,
         AppConfig,
         EmbedBatchInput,
-        EmbedSingleInput,
+        EmbedTextInput,
         ListEmbeddingsPayload,
         ListDocumentsPayload,
         ChunkForPreview,
         ChunkPreview,
         EmbeddingReport,
-        EmbeddingReportAddition,
-        EmbeddingReportRemoval,
+        EmbeddingReportType,
+        TextEmbeddingAdditionReport,
+        ImageEmbeddingAdditionReport,
+        TextEmbeddingRemovalReport,
+        ImageEmbeddingRemovalReport,
+        EmbeddingAdditionReport,
+        EmbeddingReportBase,
         TokenCount,
         ListEmbeddingReportsParams,
         
-
         // Display
         DocumentDisplay,
         DocumentShort,

@@ -2,7 +2,7 @@ use crate::{
     core::{
         chunk::ChunkConfig,
         document::{
-            parser::{parse, ParseConfig},
+            parser::{parse_text, TextParseConfig},
             sha256,
             store::external::ExternalDocumentStorage,
         },
@@ -112,11 +112,25 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice(), &[]) {
-                    result
-                        .failed
-                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
-                    continue;
+                match parse_text(TextParseConfig::default(), file.ext, content.as_slice()) {
+                    Ok(out) => {
+                        if out.is_empty() {
+                            result.failed.push(ImportFailure::new(
+                                file.path.0,
+                                file.name,
+                                "Parsing resulted in empty output".to_string(),
+                            ));
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
+                        continue;
+                    }
                 }
 
                 let hash = sha256(&content);
@@ -195,11 +209,25 @@ where
                 };
 
                 // Attempt to parse with defaults to check for empty documents.
-                if let Err(e) = parse(ParseConfig::default(), file.ext, content.as_slice(), &[]) {
-                    result
-                        .failed
-                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
-                    continue;
+                match parse_text(TextParseConfig::default(), file.ext, content.as_slice()) {
+                    Ok(out) => {
+                        if out.is_empty() {
+                            result.failed.push(ImportFailure::new(
+                                file.path.0,
+                                file.name,
+                                "Parsing resulted in empty output".to_string(),
+                            ));
+                            continue;
+                        }
+                    }
+                    Err(e) => {
+                        result.failed.push(ImportFailure::new(
+                            file.path.0,
+                            file.name,
+                            e.to_string(),
+                        ));
+                        continue;
+                    }
                 }
 
                 let hash = sha256(&content);
@@ -212,7 +240,7 @@ where
                         .repo
                         .insert_document_with_configs(
                             insert,
-                            ParseConfig::default(),
+                            TextParseConfig::default(),
                             ChunkConfig::snapping_default(),
                             tx,
                         )
@@ -292,7 +320,9 @@ where
         let content = self.api.download(file_id).await?;
 
         // Attempt to parse with defaults to check for empty documents.
-        parse(ParseConfig::default(), file.ext, content.as_slice(), &[])?;
+        if parse_text(TextParseConfig::default(), file.ext, content.as_slice())?.is_empty() {
+            return err!(InvalidFile, "Parsing resulted in empty output");
+        }
 
         let hash = sha256(&content);
         storage.write(&local_path, &content, force_download).await?;

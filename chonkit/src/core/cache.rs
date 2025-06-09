@@ -112,7 +112,7 @@ mod redis {
     impl ImageEmbeddingCache {
         pub async fn get(
             &self,
-            key: &ImageEmbeddingCacheKey,
+            key: &ImageEmbeddingCacheKey<'_>,
         ) -> Result<Option<CachedImageEmbeddings>, ChonkitError> {
             let __start = std::time::Instant::now();
 
@@ -141,7 +141,7 @@ mod redis {
 
         pub async fn set(
             &self,
-            key: &ImageEmbeddingCacheKey,
+            key: &ImageEmbeddingCacheKey<'_>,
             value: CachedImageEmbeddings,
         ) -> Result<(), ChonkitError> {
             let data = map_err!(serde_json::to_string(&value));

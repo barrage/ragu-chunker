@@ -79,7 +79,7 @@ mod tests {
     use super::GoogleDriveStore;
     use crate::core::{
         document::{
-            parser::{parse, ParseConfig, ParseOutput},
+            parser::{parse_text, ParseOutput, TextParseConfig},
             store::DocumentStorage,
             DocumentType,
         },
@@ -108,15 +108,9 @@ mod tests {
         assert_eq!(CONTENT, file);
         let read = store.read(&path).await.unwrap();
 
-        let content = parse(ParseConfig::default(), ext, read.as_slice(), &[]).unwrap();
+        let content = parse_text(TextParseConfig::default(), ext, read.as_slice()).unwrap();
 
-        assert_eq!(
-            content,
-            ParseOutput::String {
-                text: CONTENT.to_string(),
-                images: vec![]
-            }
-        );
+        assert_eq!(content, ParseOutput::String(CONTENT.to_string(),));
 
         store.delete(&path).await.unwrap();
 

@@ -1,11 +1,10 @@
 use crate::{
     core::{
-        model::embedding::{EmbeddingReportAddition, EmbeddingReportRemoval},
-        service::{embedding::EmbedSingleInput, ServiceState},
+        model::embedding::EmbeddingReportType,
+        service::{embedding::EmbedTextInput, ServiceState},
     },
     error::ChonkitError,
 };
-use serde::Serialize;
 use std::collections::HashMap;
 use tokio::{select, sync::mpsc};
 use uuid::Uuid;
@@ -126,7 +125,7 @@ impl BatchEmbedder {
                         e.print();
                         let result = JobEvent {
                             job_id,
-                            result: JobResult::Err(e),
+                            result: Err(e),
                         };
                         let _ = result_tx.send(BatchJobResult::Event(result)).await;
                         continue;
@@ -142,7 +141,7 @@ impl BatchEmbedder {
                 tracing::debug!("Sending error to channel ({e:?})");
                 let result = JobEvent {
                     job_id,
-                    result: JobResult::Err(e),
+                    result: Err(e),
                 };
                 let _ = result_tx.send(BatchJobResult::Event(result)).await;
                 let _ = result_tx.send(BatchJobResult::Done(job_id)).await;
@@ -156,13 +155,16 @@ impl BatchEmbedder {
             let report = ok_or_continue!(
                 services
                     .embedding
-                    .create_embeddings(EmbedSingleInput::new(document_id, collection.collection.id))
+                    .create_text_embeddings(EmbedTextInput::new(
+                        document_id,
+                        collection.collection.id
+                    ))
                     .await
             );
 
             let result = JobEvent {
                 job_id,
-                result: JobResult::Ok(JobReport::Addition(report)),
+                result: Ok(EmbeddingReportType::TextAddition(report)),
             };
 
             result_tx.send(BatchJobResult::Event(result)).await.unwrap();
@@ -172,13 +174,13 @@ impl BatchEmbedder {
             let report = ok_or_continue!(
                 services
                     .embedding
-                    .delete_embeddings(collection.collection.id, document_id)
+                    .delete_text_embeddings(collection.collection.id, document_id)
                     .await
             );
 
             let result = JobEvent {
                 job_id,
-                result: JobResult::Ok(JobReport::Removal(report)),
+                result: Ok(EmbeddingReportType::TextRemoval(report)),
             };
 
             result_tx.send(BatchJobResult::Event(result)).await.unwrap();
@@ -187,8 +189,6 @@ impl BatchEmbedder {
         let _ = result_tx.send(BatchJobResult::Done(job_id)).await;
     }
 }
-
-pub type JobResult = Result<JobReport, ChonkitError>;
 
 /// Used for batch embedding jobs.
 #[derive(Debug)]
@@ -240,15 +240,5 @@ pub struct JobEvent {
     job_id: Uuid,
 
     /// Result of the embedding process.
-    pub result: Result<JobReport, ChonkitError>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub enum JobReport {
-    /// Job type for adding documents to a collection.
-    Addition(EmbeddingReportAddition),
-
-    /// Job type for removing documents from a collection.
-    Removal(EmbeddingReportRemoval),
+    pub result: Result<EmbeddingReportType, ChonkitError>,
 }

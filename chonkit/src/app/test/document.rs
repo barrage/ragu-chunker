@@ -6,12 +6,12 @@ mod document_service_integration_tests {
         app::test::{TestState, TestStateConfig, DEFAULT_MODELS},
         core::{
             document::{
-                parser::{parse, ParseConfig, ParseMode, StringParseConfig},
+                parser::{parse_text, StringParseConfig, TextParseConfig},
                 DocumentType, TextDocumentType,
             },
             service::{
                 collection::dto::CreateCollectionPayload, document::dto::DocumentUpload,
-                embedding::EmbedSingleInput,
+                embedding::EmbedTextInput,
             },
         },
     };
@@ -63,17 +63,16 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let config = ParseConfig::default();
+        let config = TextParseConfig::default();
 
-        let text_from_bytes = parse(
+        let text_from_bytes = parse_text(
             config.clone(),
             document.ext.as_str().try_into().unwrap(),
             content,
-            &[],
         )
         .unwrap();
 
-        let text_from_store = parse(
+        let text_from_store = parse_text(
             config,
             document.ext.try_into().unwrap(),
             &state
@@ -85,7 +84,6 @@ mod document_service_integration_tests {
                 .read(&document.path)
                 .await
                 .unwrap(),
-            &[],
         )
         .unwrap();
 
@@ -111,17 +109,16 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let config = ParseConfig::default();
+        let config = TextParseConfig::default();
 
-        let text_from_bytes = parse(
+        let text_from_bytes = parse_text(
             config.clone(),
             document.ext.as_str().try_into().unwrap(),
             content,
-            &[],
         )
         .unwrap();
 
-        let text_from_store = parse(
+        let text_from_store = parse_text(
             config,
             document.ext.try_into().unwrap(),
             &state
@@ -133,7 +130,6 @@ mod document_service_integration_tests {
                 .read(&document.path)
                 .await
                 .unwrap(),
-            &[],
         )
         .unwrap();
 
@@ -159,16 +155,15 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload, false).await.unwrap();
 
-        let text_from_bytes = parse(
-            ParseConfig::default(),
+        let text_from_bytes = parse_text(
+            TextParseConfig::default(),
             document.ext.as_str().try_into().unwrap(),
             content,
-            &[],
         )
         .unwrap();
 
-        let text_from_store = parse(
-            ParseConfig::default(),
+        let text_from_store = parse_text(
+            TextParseConfig::default(),
             document.ext.try_into().unwrap(),
             &state
                 .app
@@ -179,7 +174,6 @@ mod document_service_integration_tests {
                 .read(&document.path)
                 .await
                 .unwrap(),
-            &[],
         )
         .unwrap();
 
@@ -246,14 +240,11 @@ mod document_service_integration_tests {
 
         let document = file_service.upload(upload, false).await.unwrap();
 
-        let config = ParseConfig {
-            mode: ParseMode::String(
-                StringParseConfig::new(10, 20)
-                    .use_range()
-                    .with_filter("foo"),
-            ),
-            include_images: true,
-        };
+        let config = TextParseConfig::String(
+            StringParseConfig::new(10, 20)
+                .use_range()
+                .with_filter("foo"),
+        );
 
         service
             .update_parser(document.id, config.clone())
@@ -266,13 +257,12 @@ mod document_service_integration_tests {
             .unwrap()
             .parse_config
             .unwrap();
-        assert!(parse_config.include_images);
 
-        let ParseMode::String(config) = config.mode else {
+        let TextParseConfig::String(config) = config else {
             unreachable!();
         };
 
-        let ParseMode::String(parse_config) = parse_config.mode else {
+        let TextParseConfig::String(parse_config) = parse_config else {
             panic!("unexpected parse mode")
         };
 
@@ -363,12 +353,12 @@ mod document_service_integration_tests {
                     .await
                     .unwrap();
 
-                let embeddings_1 = EmbedSingleInput {
+                let embeddings_1 = EmbedTextInput {
                     document: document.id,
                     collection: collection_1.id,
                 };
 
-                let embeddings_2 = EmbedSingleInput {
+                let embeddings_2 = EmbedTextInput {
                     document: document.id,
                     collection: collection_2.id,
                 };
@@ -377,21 +367,21 @@ mod document_service_integration_tests {
                     .app
                     .services
                     .embedding
-                    .create_embeddings(embeddings_1)
+                    .create_text_embeddings(embeddings_1)
                     .await
                     .unwrap();
 
-                assert!(!report_1.cache);
+                assert!(!report_1.report.cache);
 
                 let report_2 = state
                     .app
                     .services
                     .embedding
-                    .create_embeddings(embeddings_2)
+                    .create_text_embeddings(embeddings_2)
                     .await
                     .unwrap();
 
-                assert!(report_2.cache);
+                assert!(report_2.report.cache);
 
                 let count = state
                     .app

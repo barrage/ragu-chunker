@@ -3,8 +3,9 @@ use crate::{
     core::{
         model::{
             embedding::{
-                Embedding, EmbeddingInsert, EmbeddingReport, EmbeddingReportAddition,
-                EmbeddingReportRemoval,
+                EmbeddingReport, ImageEmbedding, ImageEmbeddingAdditionReport,
+                ImageEmbeddingInsert, ImageEmbeddingRemovalReport, TextEmbedding,
+                TextEmbeddingAdditionReport, TextEmbeddingInsert, TextEmbeddingRemovalReport,
             },
             List, Pagination,
         },
@@ -18,22 +19,22 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 impl Repository {
-    pub async fn insert_embeddings(
+    pub async fn insert_text_embeddings(
         &self,
-        embeddings: EmbeddingInsert,
+        embeddings: TextEmbeddingInsert,
         tx: Option<&mut <Self as Atomic>::Tx>,
-    ) -> Result<Embedding, ChonkitError>
+    ) -> Result<TextEmbedding, ChonkitError>
     where
         Self: Atomic,
     {
-        let EmbeddingInsert {
+        let TextEmbeddingInsert {
             id,
             document_id,
             collection_id,
         } = embeddings;
 
         let query = sqlx::query_as!(
-            Embedding,
+            TextEmbedding,
             r#"
                     INSERT INTO embeddings(id, document_id, collection_id)
                     VALUES ($1, $2, $3)
@@ -53,16 +54,49 @@ impl Repository {
         }
     }
 
-    pub async fn get_all_embeddings(
+    pub async fn insert_image_embeddings(
+        &self,
+        embeddings: ImageEmbeddingInsert,
+        tx: Option<&mut <Self as Atomic>::Tx>,
+    ) -> Result<(), ChonkitError> {
+        let ImageEmbeddingInsert {
+            id,
+            image_id,
+            collection_id,
+        } = embeddings;
+
+        let query = sqlx::query!(
+            r#"
+                INSERT INTO image_embeddings(id, image_id, collection_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT(id) DO UPDATE
+                SET id = $1
+            "#,
+            id,
+            image_id,
+            collection_id,
+        );
+
+        match tx {
+            Some(tx) => map_err!(query.execute(&mut **tx).await),
+            None => map_err!(query.execute(&self.client).await),
+        };
+
+        Ok(())
+    }
+
+    pub async fn get_all_text_embeddings(
         &self,
         document_id: Uuid,
-    ) -> Result<Vec<Embedding>, ChonkitError> {
+    ) -> Result<Vec<TextEmbedding>, ChonkitError> {
         Ok(map_err!(
             sqlx::query_as!(
-                Embedding,
+                TextEmbedding,
                 "SELECT id, document_id, collection_id, created_at, updated_at 
-             FROM embeddings
-             WHERE document_id = $1",
+                 FROM embeddings
+                 WHERE document_id = $1
+                 ORDER BY created_at DESC
+                ",
                 document_id
             )
             .fetch_all(&self.client)
@@ -70,18 +104,39 @@ impl Repository {
         ))
     }
 
-    pub async fn get_embeddings(
+    pub async fn get_text_embeddings(
         &self,
         document_id: Uuid,
         collection_id: Uuid,
-    ) -> Result<Option<Embedding>, ChonkitError> {
+    ) -> Result<Option<TextEmbedding>, ChonkitError> {
         Ok(map_err!(
             sqlx::query_as!(
-                Embedding,
+                TextEmbedding,
                 "SELECT id, document_id, collection_id, created_at, updated_at 
-             FROM embeddings
-             WHERE document_id = $1 AND collection_id = $2",
+                 FROM embeddings
+                 WHERE document_id = $1 AND collection_id = $2
+                ",
                 document_id,
+                collection_id
+            )
+            .fetch_optional(&self.client)
+            .await
+        ))
+    }
+
+    pub async fn get_image_embeddings(
+        &self,
+        image_id: Uuid,
+        collection_id: Uuid,
+    ) -> Result<Option<ImageEmbedding>, ChonkitError> {
+        Ok(map_err!(
+            sqlx::query_as!(
+                ImageEmbedding,
+                "SELECT id, image_id, collection_id, created_at
+                 FROM image_embeddings
+                 WHERE image_id = $1 AND collection_id = $2
+                ",
+                image_id,
                 collection_id
             )
             .fetch_optional(&self.client)
@@ -93,7 +148,7 @@ impl Repository {
         &self,
         pagination: Pagination,
         collection_id: Option<Uuid>,
-    ) -> Result<List<Embedding>, ChonkitError> {
+    ) -> Result<List<TextEmbedding>, ChonkitError> {
         let total = map_err!(sqlx::query!(
             "SELECT COUNT(id) FROM embeddings WHERE $1::UUID IS NULL OR collection_id = $1",
             collection_id
@@ -106,7 +161,7 @@ impl Repository {
 
         let embeddings = map_err!(
             sqlx::query_as!(
-                Embedding,
+                TextEmbedding,
                 "SELECT id, document_id, collection_id, created_at, updated_at 
              FROM embeddings
              WHERE $1::UUID IS NULL OR collection_id = $1
@@ -124,14 +179,14 @@ impl Repository {
         Ok(List::new(total, embeddings))
     }
 
-    pub async fn get_embeddings_by_name(
+    pub async fn get_text_embeddings_by_name(
         &self,
         document_id: Uuid,
         collection_name: &str,
         provider: &str,
-    ) -> Result<Option<Embedding>, ChonkitError> {
+    ) -> Result<Option<TextEmbedding>, ChonkitError> {
         Ok(map_err!(sqlx::query_as!(
-            Embedding,
+            TextEmbedding,
             "SELECT id, document_id, collection_id, created_at, updated_at 
              FROM embeddings
              WHERE document_id = $1 AND collection_id = (SELECT id FROM collections WHERE name = $2 AND provider = $3)",
@@ -143,7 +198,7 @@ impl Repository {
         .await))
     }
 
-    pub async fn delete_embeddings(
+    pub async fn delete_text_embeddings(
         &self,
         document_id: Uuid,
         collection_id: Uuid,
@@ -164,25 +219,33 @@ impl Repository {
         }
     }
 
-    pub async fn delete_all_embeddings(&self, collection_id: Uuid) -> Result<u64, ChonkitError> {
-        Ok(map_err!(
-            sqlx::query!(
-                "DELETE FROM embeddings WHERE collection_id = $1",
-                collection_id
-            )
-            .execute(&self.client)
-            .await
-        )
-        .rows_affected())
+    pub async fn delete_image_embeddings(
+        &self,
+        image_id: Uuid,
+        collection_id: Uuid,
+        tx: Option<&mut <Self as Atomic>::Tx>,
+    ) -> Result<u64, ChonkitError>
+    where
+        Self: Atomic,
+    {
+        let query = sqlx::query!(
+            "DELETE FROM image_embeddings WHERE image_id = $1 AND collection_id = $2",
+            image_id,
+            collection_id
+        );
+        match tx {
+            Some(tx) => Ok(map_err!(query.execute(&mut **tx).await).rows_affected()),
+            None => Ok(map_err!(query.execute(&self.client).await).rows_affected()),
+        }
     }
 
     pub async fn list_outdated_embeddings(
         &self,
         collection_id: Uuid,
-    ) -> Result<Vec<Embedding>, ChonkitError> {
+    ) -> Result<Vec<TextEmbedding>, ChonkitError> {
         Ok(map_err!(
             sqlx::query_as!(
-                Embedding,
+                TextEmbedding,
                 r#"
                     SELECT e.id, e.document_id, e.collection_id, e.created_at, e.updated_at 
                     FROM embeddings e
@@ -197,9 +260,83 @@ impl Repository {
         ))
     }
 
-    pub async fn insert_embedding_report(
+    pub async fn insert_image_embedding_report(
         &self,
-        report: &EmbeddingReportAddition,
+        report: &ImageEmbeddingAdditionReport,
+    ) -> Result<(), ChonkitError> {
+        map_err!(
+            sqlx::query!(
+                r#"
+                INSERT INTO embedding_reports(
+                    collection_id,
+                    collection_name,
+                    embedding_provider,
+                    model_used,
+                    vector_db,
+                    total_vectors,
+                    tokens_used,
+                    cache,
+                    started_at,
+                    finished_at,
+                    image_id,
+                    type
+                ) 
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'image')
+            "#,
+                report.report.base.collection_id,
+                report.report.base.collection_name,
+                report.report.embedding_provider,
+                report.report.model_used,
+                report.report.base.vector_db,
+                report.report.total_vectors,
+                report.report.tokens_used.map(|t| t as i32),
+                report.report.cache,
+                report.report.base.started_at,
+                report.report.base.finished_at,
+                report.image_id
+            )
+            .execute(&self.client)
+            .await
+        );
+
+        Ok(())
+    }
+
+    pub async fn insert_image_embedding_removal_report(
+        &self,
+        report: &ImageEmbeddingRemovalReport,
+    ) -> Result<(), ChonkitError> {
+        map_err!(
+            sqlx::query!(
+                r#"
+                INSERT INTO embedding_removal_reports(
+                    collection_id,
+                    collection_name,
+                    started_at,
+                    finished_at,
+                    image_id,
+                    vector_db,
+                    type
+                ) 
+                VALUES ($1, $2, $3, $4, $5, $6, 'image')
+            "#,
+                report.report.collection_id,
+                report.report.collection_name,
+                report.report.started_at,
+                report.report.finished_at,
+                report.image_id,
+                report.report.vector_db
+            )
+            .execute(&self.client)
+            .await
+        );
+
+        Ok(())
+    }
+
+    pub async fn insert_text_embedding_report(
+        &self,
+        report: &TextEmbeddingAdditionReport,
     ) -> Result<(), ChonkitError> {
         map_err!(
             sqlx::query!(
@@ -216,22 +353,23 @@ impl Repository {
                     tokens_used,
                     cache,
                     started_at,
-                    finished_at
+                    finished_at,
+                    type
                 ) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'text')
             "#,
-                report.collection_id,
-                report.collection_name,
+                report.report.base.collection_id,
+                report.report.base.collection_name,
                 report.document_id,
                 report.document_name,
-                report.embedding_provider,
-                report.model_used,
-                report.vector_db,
-                report.total_vectors as i32,
-                report.tokens_used.map(|t| t as i32),
-                report.cache,
-                report.started_at,
-                report.finished_at,
+                report.report.embedding_provider,
+                report.report.model_used,
+                report.report.base.vector_db,
+                report.report.total_vectors,
+                report.report.tokens_used.map(|t| t as i32),
+                report.report.cache,
+                report.report.base.started_at,
+                report.report.base.finished_at,
             )
             .execute(&self.client)
             .await
@@ -239,9 +377,9 @@ impl Repository {
         Ok(())
     }
 
-    pub async fn insert_embedding_removal_report(
+    pub async fn insert_text_embedding_removal_report(
         &self,
-        report: &EmbeddingReportRemoval,
+        report: &TextEmbeddingRemovalReport,
     ) -> Result<(), ChonkitError> {
         map_err!(
             sqlx::query!(
@@ -252,16 +390,19 @@ impl Repository {
                 collection_id,
                 collection_name,
                 started_at,
-                finished_at
+                finished_at,
+                vector_db,
+                type
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'text')
             "#,
                 report.document_id,
                 report.document_name,
-                report.collection_id,
-                report.collection_name,
-                report.started_at,
-                report.finished_at
+                report.report.collection_id,
+                report.report.collection_name,
+                report.report.started_at,
+                report.report.finished_at,
+                report.report.vector_db
             )
             .execute(&self.client)
             .await
@@ -282,40 +423,58 @@ impl Repository {
         let mut query = sqlx::query_builder::QueryBuilder::<Postgres>::new(
             r#"
                 SELECT 
+                    'addition' as "report_type",
                     id, 
-                    'addition' as "ty",
+                    type,
                     collection_id,
                     collection_name, 
-                    document_id,
-                    document_name,
+                    vector_db,
+
                     model_used,
                     embedding_provider,
-                    vector_db,
                     total_vectors,
                     tokens_used,
                     cache,
+
                     started_at,
-                    finished_at
+                    finished_at,
+
+                    -- Document fields
+                    document_id,
+                    document_name,
+
+                    -- Image fields
+                    image_id
                 FROM embedding_reports"#,
         );
 
         let mut removal_query = sqlx::query_builder::QueryBuilder::<Postgres>::new(
             r#"
                 SELECT 
+                    'removal' as "report_type",
                     id, 
-                    'removal' as "ty",
+                    type,
                     collection_id,
                     collection_name, 
-                    document_id,
-                    document_name,
+                    vector_db,
+
+                    -- Fields only applicable to addition
                     NULL as model_used,
                     NULL as embedding_provider,
-                    NULL as vector_db,
                     NULL as total_vectors,
                     NULL as tokens_used,
                     NULL as cache,
+
                     started_at,
-                    finished_at
+                    finished_at,
+
+                    -- Document fields
+                    document_id,
+                    document_name,
+
+                    -- Image fields
+                    image_id
+
                 FROM embedding_removal_reports
             "#,
         );

@@ -4,13 +4,13 @@ use crate::core::cache::embedding::{
 };
 use crate::core::cache::{ImageEmbeddingCache, TextEmbeddingCache};
 use crate::core::chunk::{ChunkConfig, ChunkedDocument};
-use crate::core::document::parser::{parse, ParseMode, ParseOutput};
+use crate::core::document::parser::{parse_text, ParseOutput, TextParseConfig};
 use crate::core::embeddings::Embeddings;
 use crate::core::model::embedding::{
-    Embedding, EmbeddingInsert, EmbeddingRemovalReportBuilder, EmbeddingReport,
-    EmbeddingReportAddition, EmbeddingReportBuilder, EmbeddingReportRemoval,
+    EmbeddingAdditionReport, EmbeddingReport, EmbeddingReportBase, ImageEmbeddingAdditionReport,
+    ImageEmbeddingInsert, ImageEmbeddingRemovalReport, TextEmbedding, TextEmbeddingAdditionReport,
+    TextEmbeddingInsert, TextEmbeddingRemovalReport,
 };
-use crate::core::model::image::Image;
 use crate::core::model::{List, Pagination};
 use crate::core::provider::ProviderState;
 use crate::core::repo::{Atomic, Repository};
@@ -18,7 +18,6 @@ use crate::core::vector::CollectionItemInsert;
 use crate::error::ChonkitError;
 use crate::{err, map_err, transaction};
 use chonkit_embedders::EmbeddingModel;
-use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
 use validify::Validate;
@@ -50,15 +49,17 @@ impl EmbeddingService {
         &self,
         document_id: Uuid,
         collection_id: Uuid,
-    ) -> Result<Option<Embedding>, ChonkitError> {
-        self.repo.get_embeddings(document_id, collection_id).await
+    ) -> Result<Option<TextEmbedding>, ChonkitError> {
+        self.repo
+            .get_text_embeddings(document_id, collection_id)
+            .await
     }
 
     pub async fn list_embeddings(
         &self,
         pagination: Pagination,
         collection_id: Option<Uuid>,
-    ) -> Result<List<Embedding>, ChonkitError> {
+    ) -> Result<List<TextEmbedding>, ChonkitError> {
         map_err!(pagination.validate());
         self.repo.list_embeddings(pagination, collection_id).await
     }
@@ -66,7 +67,7 @@ impl EmbeddingService {
     pub async fn list_outdated_embeddings(
         &self,
         collection_id: Uuid,
-    ) -> Result<Vec<Embedding>, ChonkitError> {
+    ) -> Result<Vec<TextEmbedding>, ChonkitError> {
         self.repo.list_outdated_embeddings(collection_id).await
     }
 
@@ -81,19 +82,200 @@ impl EmbeddingService {
         embedder.list_embedding_models().await
     }
 
+    /// Add image embeddings using a multi-modal embedding model.
+    pub async fn create_image_embeddings(
+        &self,
+        input: EmbedImageInput,
+    ) -> Result<ImageEmbeddingAdditionReport, ChonkitError> {
+        let start = chrono::Utc::now();
+
+        // Make sure the collection and optional document exist.
+
+        let EmbedImageInput {
+            image: image_id,
+            collection: collection_id,
+        } = input;
+
+        let Some(image_meta) = self.repo.get_image_by_id(image_id).await? else {
+            return err!(DoesNotExist, "Image with ID {}", image_id);
+        };
+
+        let Some(collection) = self.repo.get_collection_by_id(collection_id).await? else {
+            return err!(DoesNotExist, "Collection with ID '{}'", collection_id);
+        };
+
+        if self
+            .repo
+            .get_image_embeddings(image_id, collection_id)
+            .await?
+            .is_some()
+        {
+            return err!(
+                AlreadyExists,
+                "Image '{}' is already embedded in collection '{}'",
+                image_id,
+                collection_id
+            );
+        }
+
+        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
+
+        let embedder = self
+            .providers
+            .embedding
+            .get_provider(&collection.embedder)?;
+
+        let Some(model_details) = embedder.model_details(&collection.model).await? else {
+            return err!(
+                InvalidEmbeddingModel,
+                "Model '{}' is not supported by embedding provider '{}'"
+                collection.model,
+                collection.embedder
+            );
+        };
+
+        if !model_details.multimodal {
+            return err!(
+                InvalidEmbeddingModel,
+                "Model '{}' is not multimodal and cannot embed images",
+                model_details.name
+            );
+        }
+
+        let image = self.providers.image.get_image(&image_meta.path).await?;
+
+        // The image description is part of its hash, if it was changed in the meantime
+        // the cache will miss and we will get fresh embeddings.
+        let hash = image.hash();
+
+        let cached = self
+            .image_cache
+            .get(&ImageEmbeddingCacheKey::new(&hash, &collection.model))
+            .await;
+
+        if let Err(ref e) = cached {
+            tracing::debug!("failed to get image embeddings from cache: {e}");
+        }
+
+        let mut cache = false;
+        let mut tokens_used = None;
+
+        match cached {
+            Ok(Some(embeddings)) => {
+                vector_db
+                    .insert_embeddings(CollectionItemInsert::new_image(
+                        image_meta.document_id,
+                        &collection.name,
+                        image_meta.id,
+                        &image.image.to_b64_data_uri(),
+                        &image.path(),
+                        image.description.as_deref(),
+                        embeddings.embeddings,
+                    ))
+                    .await?;
+                cache = true;
+            }
+            Err(_) | Ok(None) => {
+                if image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE)
+                    >= model_details.max_input_tokens as u32
+                {
+                    tracing::warn!(
+                        "Skipping image due to too many tokens ({} > {})",
+                        image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
+                        model_details.max_input_tokens
+                    );
+
+                    return err!(
+                        InvalidParameter,
+                        "Image has too many tokens ({} > {})",
+                        image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
+                        model_details.max_input_tokens
+                    );
+                }
+
+                tracing::debug!(
+                    "cache miss (key: {}) for image embeddings, attempting re-embedding",
+                    hash,
+                );
+
+                let b64 = image.image.to_b64_data_uri();
+                let path = image.path();
+
+                let mut embeddings = embedder
+                    .embed_image(None, None, &b64, &model_details.name)
+                    .await?;
+
+                let vector = std::mem::take(&mut embeddings.embeddings[0]);
+                tokens_used = embeddings.tokens_used.map(|t| t as i32);
+
+                let collection_name = &collection.name;
+                let collection_model = &collection.model;
+
+                transaction!(self.repo, |tx| async move {
+                    self.repo
+                        .insert_image_embeddings(
+                            ImageEmbeddingInsert::new(image_id, collection_id),
+                            Some(tx),
+                        )
+                        .await?;
+
+                    vector_db
+                        .insert_embeddings(CollectionItemInsert::new_image(
+                            image_meta.document_id,
+                            collection_name,
+                            image_meta.id,
+                            &b64,
+                            &path,
+                            image.description.as_deref(),
+                            vector.clone(),
+                        ))
+                        .await?;
+
+                    let key = ImageEmbeddingCacheKey::new(&hash, collection_model);
+
+                    let embeddings = CachedImageEmbeddings::new(vector, embeddings.tokens_used);
+
+                    if let Err(e) = self.image_cache.set(&key, embeddings).await {
+                        tracing::warn!("failed to cache image embeddings: {e}");
+                    };
+
+                    Ok(())
+                })?;
+            }
+        };
+
+        let report = ImageEmbeddingAdditionReport {
+            image_id,
+            report: EmbeddingAdditionReport {
+                model_used: collection.model,
+                tokens_used,
+                embedding_provider: collection.embedder,
+                total_vectors: 1,
+                cache,
+                base: EmbeddingReportBase {
+                    collection_id: Some(collection.id),
+                    collection_name: collection.name,
+                    vector_db: collection.provider,
+                    started_at: start,
+                    finished_at: chrono::Utc::now(),
+                },
+            },
+        };
+
+        self.repo.insert_image_embedding_report(&report).await?;
+
+        Ok(report)
+    }
+
     /// Create and store embeddings in both the vector database
     /// and the repository.
     ///
     /// Errors if embeddings already exist in the collection
     /// for the document to prevent duplication in semantic search.
-    ///
-    /// * `id`: Document ID.
-    /// * `vector_db`: The vector DB implementation to use.
-    /// * `embedder`: The embedder to use.
-    pub async fn create_embeddings(
+    pub async fn create_text_embeddings(
         &self,
-        input: EmbedSingleInput,
-    ) -> Result<EmbeddingReportAddition, ChonkitError> {
+        input: EmbedTextInput,
+    ) -> Result<TextEmbeddingAdditionReport, ChonkitError> {
         // Make sure the collection and document exist.
 
         let Some(document) = self.repo.get_document_config_by_id(input.document).await? else {
@@ -104,18 +286,14 @@ impl EmbeddingService {
             return err!(DoesNotExist, "Collection with ID '{}'", input.collection);
         };
 
-        // Start the report so we get a sense of how long all of this takes
-
-        let report = EmbeddingReportBuilder::new(
-            document.id,
-            document.name.clone(),
-            collection.id,
-            collection.name.clone(),
-        );
+        let start = chrono::Utc::now();
 
         // Make sure we are not duplicating embeddings.
 
-        let existing = self.repo.get_embeddings(document.id, collection.id).await?;
+        let existing = self
+            .repo
+            .get_text_embeddings(document.id, collection.id)
+            .await?;
         if existing.is_some() {
             return err!(
                 AlreadyExists,
@@ -135,6 +313,7 @@ impl EmbeddingService {
             .get_provider(&collection.embedder)?;
 
         let v_collection = vector_db.get_collection(&collection.name).await?;
+
         let Some(model_details) = embedder.model_details(&collection.model).await? else {
             return err!(
                 InvalidEmbeddingModel,
@@ -153,25 +332,27 @@ impl EmbeddingService {
             );
         }
 
-        tracing::debug!("{} - starting embedding process", document.name);
-
         // Load parser and chunker
 
         let parse_cfg = document.parse_config.unwrap_or_default();
 
-        let chunk_cfg = match parse_cfg.mode {
-            ParseMode::String(_) => {
-                tracing::debug!("{} - using generic parser", document.name);
-                document
-                    .chunk_config
-                    .or(Some(ChunkConfig::snapping_default()))
-            }
+        let chunk_cfg = match parse_cfg {
+            TextParseConfig::String(_) => document
+                .chunk_config
+                .or(Some(ChunkConfig::snapping_default())),
             // Sectioned parsers do not support chunking
-            ParseMode::Section(_) => {
-                tracing::debug!("{} - using section parser", document.name);
-                None
-            }
+            TextParseConfig::Section(_) => None,
         };
+
+        tracing::debug!(
+            "{} - embedding with parser-chunker: {}-{}",
+            document.name,
+            parse_cfg,
+            chunk_cfg
+                .as_ref()
+                .map(|c| c.to_string())
+                .unwrap_or("none".to_string())
+        );
 
         // Check embedding cache
 
@@ -179,7 +360,7 @@ impl EmbeddingService {
             &collection.model,
             &document.hash,
             chunk_cfg.as_ref(),
-            &parse_cfg.mode,
+            &parse_cfg,
         )?;
 
         let cached = match self.text_cache.get(&text_cache_key).await {
@@ -195,99 +376,34 @@ impl EmbeddingService {
 
         if let Some(embeddings) = cached {
             tracing::debug!("{} - using cached embeddings", document.id);
-
-            // If there are cached text embeddings, we need to check for cached image embeddings
-            // as well.
-            let existing_images = self
-                .repo
-                .list_all_document_images(document.id, self.providers.image.id())
-                .await?;
-
-            let mut cached_img_embeddings = Vec::with_capacity(existing_images.len());
-            let mut total_image_embeddings = 0;
-
-            for image in existing_images {
-                let image = self.providers.image.get_image(&image.path).await?;
-
-                let img_cache_key =
-                    &ImageEmbeddingCacheKey::new(image.hash(), collection.model.clone());
-
-                let cached = match self.image_cache.get(img_cache_key).await {
-                    Ok(embeddings) => embeddings,
-                    Err(e) => {
-                        tracing::debug!(
-                            "{} - failed to get image embeddings from cache: {e}",
-                            document.name
-                        );
-                        continue;
-                    }
-                };
-
-                if let Some(cached) = cached {
-                    cached_img_embeddings.push(cached);
-                } else {
-                    if image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE)
-                        >= model_details.max_input_tokens as u32
-                    {
-                        tracing::warn!(
-                            "Skipping image due to too many tokens ({} > {})",
-                            image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
-                            model_details.max_input_tokens
-                        );
-                        continue;
-                    }
-
-                    tracing::debug!(
-                        "{} - cache miss (key: {}) for image embeddings, attempting re-embedding",
-                        document.name,
-                        img_cache_key.key()
-                    );
-
-                    let b64 = image.image.to_b64_data_uri();
-
-                    let mut embeddings = embedder
-                        .embed_image(None, None, &b64, &model_details.name)
-                        .await?;
-
-                    let tokens_used = embeddings.tokens_used;
-                    let embeddings = std::mem::take(&mut embeddings.embeddings[0]);
-                    let key = ImageEmbeddingCacheKey::new(image.hash(), collection.model.clone());
-
-                    let embeddings = CachedImageEmbeddings::new(
-                        embeddings,
-                        tokens_used,
-                        b64,
-                        image.path(),
-                        image.description,
-                    );
-
-                    self.image_cache.set(&key, embeddings.clone()).await?;
-
-                    cached_img_embeddings.push(embeddings);
-                }
-
-                total_image_embeddings += 1;
-            }
-
-            debug_assert_eq!(total_image_embeddings, cached_img_embeddings.len());
-
             return transaction!(self.repo, |tx| async move {
                 self.repo
-                    .insert_embeddings(EmbeddingInsert::new(document.id, collection.id), Some(tx))
+                    .insert_text_embeddings(
+                        TextEmbeddingInsert::new(document.id, collection.id),
+                        Some(tx),
+                    )
                     .await?;
 
-                let report = report
-                    .model_used(collection.model)
-                    .embedding_provider(collection.embedder.clone())
-                    .tokens_used(Some(0))
-                    .image_vectors(total_image_embeddings)
-                    .total_vectors(embeddings.embeddings.len() + total_image_embeddings)
-                    .vector_db(collection.provider)
-                    .from_cache()
-                    .finished_at(Utc::now())
-                    .build();
+                let report = TextEmbeddingAdditionReport {
+                    document_id: document.id,
+                    document_name: document.name,
+                    report: EmbeddingAdditionReport {
+                        model_used: collection.model,
+                        tokens_used: Some(0),
+                        embedding_provider: collection.embedder.clone(),
+                        total_vectors: embeddings.embeddings.len() as i32,
+                        cache: true,
+                        base: EmbeddingReportBase {
+                            collection_id: Some(collection.id),
+                            collection_name: collection.name.clone(),
+                            vector_db: collection.provider.clone(),
+                            started_at: start,
+                            finished_at: chrono::Utc::now(),
+                        },
+                    },
+                };
 
-                self.store_embedding_report(&report).await?;
+                self.repo.insert_text_embedding_report(&report).await?;
 
                 vector_db
                     .insert_embeddings(CollectionItemInsert::new_text(
@@ -302,19 +418,6 @@ impl EmbeddingService {
                     ))
                     .await?;
 
-                for image in cached_img_embeddings {
-                    vector_db
-                        .insert_embeddings(CollectionItemInsert::new_image(
-                            Some(document.id),
-                            &collection.name,
-                            &image.image_b64,
-                            &image.image_path,
-                            image.description.as_deref(),
-                            image.embeddings,
-                        ))
-                        .await?;
-                }
-
                 Ok(report)
             });
         }
@@ -324,174 +427,43 @@ impl EmbeddingService {
         // Read and parse
         let content_bytes = storage.read(&document.path).await?;
 
-        let existing_image_paths = self
-            .repo
-            .list_document_image_paths(document.id, self.providers.image.id())
-            .await?;
-
-        let parse_output = parse(
-            parse_cfg,
-            document.ext.try_into()?,
-            &content_bytes,
-            &existing_image_paths
-                .iter()
-                .filter_map(|p| Some(p.split_once('.')?.0.to_string()))
-                .collect::<Vec<_>>(),
-        )?;
+        let parse_output = parse_text(parse_cfg, document.ext.try_into()?, &content_bytes)?;
 
         // Chunk and embed
         let chunks: Vec<String>;
         let embeddings: Embeddings;
-        let mut image_embeddings: Vec<(Image, Embeddings)> = vec![];
-        let mut total_image_embeddings = 0;
 
         match parse_output {
-            ParseOutput::String { text, images } => {
-                tracing::debug!("{} - parsed to string", document.name);
-                image_embeddings.reserve(images.len() + existing_image_paths.len());
-
-                match chunk_cfg {
-                    Some(cfg) => {
-                        chunks =
-                            match crate::core::chunk::chunk(&self.providers, cfg, &text).await? {
-                                ChunkedDocument::Ref(r) => {
-                                    r.iter().map(|s| s.to_string()).collect::<Vec<_>>()
-                                }
-                                ChunkedDocument::Owned(o) => o,
-                            };
-
-                        embeddings = embedder
-                            .embed_text(
-                                &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                                &collection.model,
-                            )
-                            .await?;
-                    }
-                    None => {
-                        embeddings = embedder.embed_text(&[&text], &collection.model).await?;
-                        chunks = vec![text];
-                    }
-                }
-
-                if model_details.multimodal {
-                    for path in existing_image_paths {
-                        let image = self.providers.image.get_image(&path).await?;
-
-                        if dbg!(image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE))
-                            >= model_details.max_input_tokens as u32
-                        {
-                            tracing::warn!(
-                                "Skipping image due to too many tokens ({} > {})",
-                                image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
-                                model_details.max_input_tokens
-                            );
-                            continue;
+            ParseOutput::String(text) => match chunk_cfg {
+                Some(cfg) => {
+                    chunks = match crate::core::chunk::chunk(&self.providers, cfg, &text).await? {
+                        ChunkedDocument::Ref(r) => {
+                            r.iter().map(|s| s.to_string()).collect::<Vec<_>>()
                         }
+                        ChunkedDocument::Owned(o) => o,
+                    };
 
-                        let embeddings = embedder
-                            .embed_image(
-                                None,
-                                image.description.as_deref(),
-                                &image.image.to_b64_data_uri(),
-                                &model_details.name,
-                            )
-                            .await?;
-                        image_embeddings.push((image, embeddings));
-                        total_image_embeddings += 1;
-                    }
-
-                    for image in images {
-                        // TODO: System message and context
-                        if image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE)
-                            >= model_details.max_input_tokens as u32
-                        {
-                            tracing::warn!(
-                                "Skipping image due to too many tokens ({} > {})",
-                                image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
-                                model_details.max_input_tokens
-                            );
-                            continue;
-                        }
-
-                        let embeddings = embedder
-                            .embed_image(
-                                None,
-                                image.description.as_deref(),
-                                &image.image.to_b64_data_uri(),
-                                &model_details.name,
-                            )
-                            .await?;
-                        image_embeddings.push((image, embeddings));
-                        total_image_embeddings += 1;
-                    }
-                }
-            }
-            ParseOutput::Sections(sections) => {
-                tracing::debug!("{} - parsed sections", document.name);
-
-                let mut section_chunks = Vec::with_capacity(sections.len());
-
-                for path in existing_image_paths {
-                    let image = self.providers.image.get_image(&path).await?;
-                    if image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE)
-                        >= model_details.max_input_tokens as u32
-                    {
-                        tracing::warn!(
-                            "Skipping image due to too many tokens ({} > {})",
-                            image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
-                            model_details.max_input_tokens
-                        );
-                        continue;
-                    }
-                    let embeddings = embedder
-                        .embed_image(
-                            None,
-                            image.description.as_deref(),
-                            &image.image.to_b64_data_uri(),
-                            &model_details.name,
+                    embeddings = embedder
+                        .embed_text(
+                            &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                            &collection.model,
                         )
                         .await?;
-                    image_embeddings.push((image, embeddings));
-                    total_image_embeddings += 1;
                 }
+                None => {
+                    embeddings = embedder.embed_text(&[&text], &collection.model).await?;
+                    chunks = vec![text];
+                }
+            },
+            ParseOutput::Sections(sections) => {
+                let mut section_chunks = Vec::with_capacity(sections.len());
 
-                let sections_total = sections.len();
-                for (i, section) in sections.into_iter().enumerate() {
+                for section in sections {
                     let mut content = String::new();
 
-                    let pages_total = section.pages.len();
-                    for (j, page) in section.pages.into_iter().enumerate() {
+                    for page in section.pages {
                         content.push_str(&page.content);
                         content.push('\n');
-
-                        if !model_details.multimodal {
-                            continue;
-                        }
-
-                        let images_total = page.images.len();
-                        for (k, image) in page.images.into_iter().enumerate() {
-                            if image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE)
-                                >= model_details.max_input_tokens as u32
-                            {
-                                tracing::warn!(
-                                    "Skipping image due to too many tokens ({} > {})",
-                                    image.image.estimate_tokens(DEFAULT_IMAGE_PATCH_SIZE),
-                                    model_details.max_input_tokens
-                                );
-                                continue;
-                            }
-                            let embeddings = embedder
-                                .embed_image(
-                                    None,
-                                    image.description.as_deref(),
-                                    &image.image.to_b64_data_uri(),
-                                    &model_details.name,
-                                )
-                                .await?;
-                            tracing::debug!("Image embedded (section {}/{sections_total} | page {}/{pages_total} | image {}/{images_total})", i+1, j+1, k+1);
-                            image_embeddings.push((image, embeddings));
-                            total_image_embeddings += 1;
-                        }
                     }
 
                     section_chunks.push(content);
@@ -519,39 +491,38 @@ impl EmbeddingService {
             chunks.len()
         );
 
-        let mut total_tokens = embeddings.tokens_used.unwrap_or(0);
-        for (_, embeddings) in image_embeddings.iter() {
-            if let Some(tokens) = embeddings.tokens_used {
-                total_tokens += tokens;
-            }
-        }
-
         debug_assert_eq!(chunks.len(), embeddings.embeddings.len());
 
         transaction!(self.repo, |tx| async move {
             // Repository operations go first since we can revert those with the tx
 
             self.repo
-                .insert_embeddings(EmbeddingInsert::new(document.id, collection.id), Some(tx))
+                .insert_text_embeddings(
+                    TextEmbeddingInsert::new(document.id, collection.id),
+                    Some(tx),
+                )
                 .await?;
 
-            let report = report
-                .model_used(collection.model)
-                .embedding_provider(collection.embedder.clone())
-                .tokens_used(if total_tokens == 0 {
-                    None
-                } else {
-                    Some(total_tokens)
-                })
-                .image_vectors(total_image_embeddings)
-                .total_vectors(embeddings.embeddings.len() + total_image_embeddings)
-                .vector_db(collection.provider)
-                .finished_at(Utc::now())
-                .build();
+            let report = TextEmbeddingAdditionReport {
+                document_id: document.id,
+                document_name: document.name,
+                report: EmbeddingAdditionReport {
+                    model_used: collection.model,
+                    tokens_used: embeddings.tokens_used.map(|t| t as i32),
+                    embedding_provider: collection.embedder.clone(),
+                    total_vectors: embeddings.embeddings.len() as i32,
+                    cache: false,
+                    base: EmbeddingReportBase {
+                        collection_id: Some(collection.id),
+                        collection_name: collection.name.clone(),
+                        vector_db: collection.provider.clone(),
+                        started_at: start,
+                        finished_at: chrono::Utc::now(),
+                    },
+                },
+            };
 
-            self.store_embedding_report(&report).await?;
-
-            tracing::debug!("{} - caching embeddings", document.name);
+            self.repo.insert_text_embedding_report(&report).await?;
 
             if let Err(e) = self
                 .text_cache
@@ -565,10 +536,9 @@ impl EmbeddingService {
                 )
                 .await
             {
-                tracing::warn!("{} - failed to cache embeddings: {}", document.name, e);
+                tracing::warn!("failed to cache embeddings: {e}");
             }
 
-            tracing::debug!("{} - inserting text embeddings", document.name);
             vector_db
                 .insert_embeddings(CollectionItemInsert::new_text(
                     document.id,
@@ -578,33 +548,16 @@ impl EmbeddingService {
                 ))
                 .await?;
 
-            tracing::debug!("{} - inserting image embeddings", document.name);
-            for (img, mut embeddings) in image_embeddings {
-                let embeddings = std::mem::take(&mut embeddings.embeddings[0]);
-                vector_db
-                    .insert_embeddings(CollectionItemInsert::new_image(
-                        Some(document.id),
-                        &collection.name,
-                        &img.image.to_b64_data_uri(),
-                        &img.path(),
-                        img.description.as_deref(),
-                        embeddings,
-                    ))
-                    .await?
-            }
-
-            tracing::debug!("{} - successfully processed", document.name);
-
             Ok(report)
         })
     }
 
     /// Returns the number of rows deleted from the db and the number of vectors deleted from the collection.
-    pub async fn delete_embeddings(
+    pub async fn delete_text_embeddings(
         &self,
         collection_id: Uuid,
         document_id: Uuid,
-    ) -> Result<EmbeddingReportRemoval, ChonkitError> {
+    ) -> Result<TextEmbeddingRemovalReport, ChonkitError> {
         let Some(document) = self.repo.get_document_by_id(document_id).await? else {
             return err!(DoesNotExist, "Document with ID {document_id}");
         };
@@ -615,7 +568,7 @@ impl EmbeddingService {
 
         if self
             .repo
-            .get_embeddings(document.id, collection.id)
+            .get_text_embeddings(document.id, collection.id)
             .await?
             .is_none()
         {
@@ -627,34 +580,38 @@ impl EmbeddingService {
             );
         };
 
-        let report = EmbeddingRemovalReportBuilder::new(
-            document.id,
-            document.name,
-            collection.id,
-            collection.name.clone(),
-        );
+        let start = chrono::Utc::now();
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
 
         transaction!(self.repo, |tx| async move {
             let amount_deleted_db = self
                 .repo
-                .delete_embeddings(document_id, collection_id, Some(tx))
+                .delete_text_embeddings(document_id, collection_id, Some(tx))
                 .await?;
 
             let amount = vector_db
                 .count_vectors(&collection.name, document_id)
                 .await?;
 
-            let report = report
-                .total_vectors_removed(amount)
-                .finished_at(Utc::now())
-                .build();
+            let report = TextEmbeddingRemovalReport {
+                document_id,
+                document_name: document.name,
+                report: EmbeddingReportBase {
+                    collection_id: Some(collection.id),
+                    collection_name: collection.name.clone(),
+                    vector_db: collection.provider.clone(),
+                    started_at: start,
+                    finished_at: chrono::Utc::now(),
+                },
+            };
 
-            self.store_embedding_removal_report(&report).await?;
+            self.repo
+                .insert_text_embedding_removal_report(&report)
+                .await?;
 
             vector_db
-                .delete_embeddings(&collection.name, document_id)
+                .delete_text_embeddings(&collection.name, document_id)
                 .await?;
 
             tracing::debug!(
@@ -666,32 +623,113 @@ impl EmbeddingService {
         })
     }
 
+    pub async fn delete_image_embeddings(
+        &self,
+        collection_id: Uuid,
+        image_id: Uuid,
+    ) -> Result<ImageEmbeddingRemovalReport, ChonkitError> {
+        let Some(image) = self.repo.get_image_by_id(image_id).await? else {
+            return err!(DoesNotExist, "Image with ID {image_id}");
+        };
+
+        let Some(collection) = self.repo.get_collection_by_id(collection_id).await? else {
+            return err!(DoesNotExist, "Collection with ID '{collection_id}'");
+        };
+
+        if self
+            .repo
+            .get_image_embeddings(image.id, collection.id)
+            .await?
+            .is_none()
+        {
+            return err!(
+                DoesNotExist,
+                "Embeddings for image '{}' in collection '{}'",
+                image.id,
+                collection.name
+            );
+        };
+
+        let start = chrono::Utc::now();
+
+        let vector_db = self.providers.vector.get_provider(&collection.provider)?;
+
+        transaction!(self.repo, |tx| async move {
+            let amount_deleted_db = self
+                .repo
+                .delete_text_embeddings(image_id, collection_id, Some(tx))
+                .await?;
+
+            let report = ImageEmbeddingRemovalReport {
+                image_id,
+                report: EmbeddingReportBase {
+                    collection_id: Some(collection.id),
+                    collection_name: collection.name.clone(),
+                    vector_db: collection.provider.clone(),
+                    started_at: start,
+                    finished_at: chrono::Utc::now(),
+                },
+            };
+
+            self.repo
+                .insert_image_embedding_removal_report(&report)
+                .await?;
+
+            vector_db
+                .delete_image_embeddings(&collection.name, image_id)
+                .await?;
+
+            tracing::debug!(
+                "Deleted image vectors in collection '{}' ({amount_deleted_db} from db)",
+                collection.name
+            );
+
+            Ok(report)
+        })
+    }
+
+    /// Delete all text and image embeddings from the database and vector database.
     pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<usize, ChonkitError> {
         let collections = self
             .repo
             .get_document_assigned_collections(document_id)
             .await?;
 
+        let images = self
+            .repo
+            .list_all_document_images(document_id, self.providers.image.id())
+            .await?;
+
         let mut total_deleted = 0;
 
         for (collection_id, collection_name, provider) in collections.iter() {
-            let vector_db = self.providers.vector.get_provider(provider)?;
+            let images = images.iter();
 
-            let amount = transaction!(self.repo, |tx| async move {
+            transaction!(self.repo, |tx| async move {
+                let vector_db = self.providers.vector.get_provider(provider)?;
+
                 self.repo
-                    .delete_embeddings(document_id, *collection_id, Some(tx))
+                    .delete_text_embeddings(document_id, *collection_id, Some(&mut *tx))
                     .await?;
-                let amount = vector_db
+
+                for image in images {
+                    self.repo
+                        .delete_image_embeddings(image.id, *collection_id, Some(tx))
+                        .await?;
+                }
+
+                vector_db
                     .count_vectors(collection_name, document_id)
                     .await?;
+
                 vector_db
-                    .delete_embeddings(collection_name, document_id)
+                    .delete_text_embeddings(collection_name, document_id)
                     .await?;
 
-                Ok(amount)
-            })?;
+                // total_deleted += amount;
 
-            total_deleted += amount;
+                Ok(())
+            })?;
         }
 
         tracing::debug!(
@@ -721,39 +759,13 @@ impl EmbeddingService {
         map_err!(params.validate());
         self.repo.list_collection_embedding_reports(params).await
     }
-
-    async fn store_embedding_report(
-        &self,
-        report: &EmbeddingReportAddition,
-    ) -> Result<(), ChonkitError> {
-        tracing::debug!(
-            "Storing embedding report for document '{}' in '{}'",
-            report.document_name,
-            report.collection_name
-        );
-        self.repo.insert_embedding_report(report).await?;
-        Ok(())
-    }
-
-    async fn store_embedding_removal_report(
-        &self,
-        report: &EmbeddingReportRemoval,
-    ) -> Result<(), ChonkitError> {
-        tracing::debug!(
-            "Storing embedding removal report for document '{}' in '{}'",
-            report.document_name,
-            report.collection_name
-        );
-        self.repo.insert_embedding_removal_report(report).await?;
-        Ok(())
-    }
 }
 
-/// Used for embedding documents one by one.
+/// Used for embedding text from documents, one document at a time.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 #[cfg_attr(test, derive(Clone))]
 #[serde(rename_all = "camelCase")]
-pub struct EmbedSingleInput {
+pub struct EmbedTextInput {
     /// The ID of the document to embed.
     pub document: Uuid,
 
@@ -761,12 +773,30 @@ pub struct EmbedSingleInput {
     pub collection: Uuid,
 }
 
-impl EmbedSingleInput {
+impl EmbedTextInput {
     pub fn new(document: Uuid, collection: Uuid) -> Self {
         Self {
             document,
             collection,
         }
+    }
+}
+
+/// Used for embedding single images.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[cfg_attr(test, derive(Clone))]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedImageInput {
+    /// The ID of the document to embed.
+    pub image: Uuid,
+
+    /// The ID of the collection in which to store the embeddings to.
+    pub collection: Uuid,
+}
+
+impl EmbedImageInput {
+    pub fn new(image: Uuid, collection: Uuid) -> Self {
+        Self { image, collection }
     }
 }
 

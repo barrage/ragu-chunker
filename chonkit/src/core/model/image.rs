@@ -1,42 +1,42 @@
 use crate::core::document::sha256;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-/// An image obtained from a document during parsing.
+/// In memory representation of an image.
 pub struct Image {
-    pub document_hash: String,
-
-    pub page_number: usize,
-
-    pub image_number: usize,
-
+    /// The image data, including the bytes, format, width and height.
     pub image: ImageData,
 
     /// An optional description of the image, populated during parsing or when a user saves the
     /// image description, used for embedding purposes.
     pub description: Option<String>,
+
+    /// The page of the document the image was found in (if originating from a document).
+    pub page_number: Option<usize>,
+
+    /// The number of the image on the page (if originating from a document).
+    pub image_number: Option<usize>,
 }
 
 impl PartialEq for Image {
     fn eq(&self, other: &Self) -> bool {
-        self.path() == other.path() && self.hash() == other.hash()
+        self.hash().0 == other.hash().0
     }
 }
 
 impl Image {
     pub fn new(
-        document_hash: String,
-        page_number: usize,
-        image_number: usize,
+        page_number: Option<usize>,
+        image_number: Option<usize>,
         bytes: Vec<u8>,
         format: image::ImageFormat,
         width: u32,
         height: u32,
     ) -> Self {
         Self {
-            document_hash,
             page_number,
             image_number,
             image: ImageData {
@@ -49,28 +49,26 @@ impl Image {
         }
     }
 
-    /// The ID of the image, relevant to [ImageStorage].
+    /// The path to the image in [ImageStorage][crate::core::image::ImageStorage].
     ///
-    /// Since we are usually extracting images from documents, this field will be set by the
-    /// parser and is going to be in the format <DOCUMENT_HASH>_<PAGE_NUMBER>_<IMAGE_NUMBER>
-    /// guaranteeing a unique ID of the image in the document.
+    /// <BYTES_HASH>.<EXTENSION>.
     pub fn path(&self) -> String {
         format!(
-            "{}_{}_{}.{}",
-            self.document_hash,
-            self.page_number,
-            self.image_number,
+            "{}.{}",
+            sha256(self.image.bytes.as_slice()),
             self.image.format.extensions_str()[0]
         )
     }
 
-    pub fn hash(&self) -> String {
+    /// If the image has a description, it is appended to the bytes vector before hashing.
+    /// Otherwise, the hash of the image bytes is returned.
+    pub fn hash(&self) -> ImageHash {
         if let Some(description) = &self.description {
             let mut bytes = self.image.bytes.clone();
             bytes.extend_from_slice(description.as_bytes());
-            sha256(&bytes)
+            ImageHash(sha256(&bytes))
         } else {
-            sha256(&self.image.bytes)
+            ImageHash(sha256(&self.image.bytes))
         }
     }
 }
@@ -130,26 +128,31 @@ impl ImageData {
     }
 }
 
+/// SHA256 hash of the image bytes, optionally appended with the image description before hashing.
+///
+/// Obtained via [Image::hash].
+pub struct ImageHash(pub String);
+
+impl std::fmt::Display for ImageHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// Image database model.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, ToSchema, FromRow)]
 pub struct ImageModel {
-    /// Path of the image in the image storage. See [ParsedImage::path].
+    /// Image primary key
+    pub id: Uuid,
+
+    /// Path of the image in the image storage. See [Image::path].
     pub path: String,
-
-    /// The page of the document the image was found in.
-    pub page_number: i32,
-
-    /// The sequence number of the image on the page.
-    pub image_number: i32,
 
     /// Image extension.
     pub format: String,
 
     /// SHA256 hash of the image bytes.
     pub hash: String,
-
-    /// ID of the document where the image was found in.
-    pub document_id: Uuid,
 
     /// Image storage provider.
     pub src: String,
@@ -159,17 +162,28 @@ pub struct ImageModel {
 
     pub width: i32,
     pub height: i32,
+
+    /// ID of the document where the image was found in.
+    pub document_id: Option<Uuid>,
+
+    /// The page of the document the image was found in.
+    pub page_number: Option<i32>,
+
+    /// The sequence number of the image on the page.
+    pub image_number: Option<i32>,
 }
 
 pub struct InsertImage<'a> {
-    pub document_id: Uuid,
-    pub page_number: usize,
-    pub image_number: usize,
     pub path: &'a str,
     pub hash: &'a str,
     pub src: &'a str,
     pub format: &'a str,
-    pub description: Option<&'a str>,
     pub width: u32,
     pub height: u32,
+    pub description: Option<&'a str>,
+
+    // Document related fields if the image is obtained from a document.
+    pub document_id: Option<Uuid>,
+    pub page_number: Option<usize>,
+    pub image_number: Option<usize>,
 }
