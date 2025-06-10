@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO image_embeddings(id, image_id, collection_id)\n                VALUES ($1, $2, $3)\n                ON CONFLICT(id) DO UPDATE\n                SET id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32feabf6b24e3d4a4f270a49aba99b2c9781186d322162c6687a4ca5f640f0fb"
+}

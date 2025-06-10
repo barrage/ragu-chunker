@@ -1,0 +1,91 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO images (\n                document_id,\n                page_number,\n                image_number,\n                format,\n                path,\n                hash,\n                src,\n                description,\n                width,\n                height\n               )\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n               RETURNING \n                id,\n                path,\n                format,\n                hash,\n                src,\n                width,\n                height,\n                description,\n                document_id,\n                page_number,\n                image_number\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "format",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "src",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "width",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "height",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "document_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 9,
+        "name": "page_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "image_number",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "051a54a0e754e36e22d1d5f9f7a90a17123263519f66c84d6479176f6bf95813"
+}

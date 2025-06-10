@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM image_embeddings WHERE image_id = $1 AND collection_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "710da2241f58e7abe2273070a8b96089e1d5e3da0bd4cbd045161a85678ff46a"
+}

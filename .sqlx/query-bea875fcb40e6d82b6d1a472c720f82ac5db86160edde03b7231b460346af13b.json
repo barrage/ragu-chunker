@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                id,\n                path,\n                page_number,\n                image_number,\n                format,\n                hash,\n                document_id,\n                src,\n                description,\n                width,\n                height\n                FROM images WHERE path = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "path",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "page_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "image_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "format",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "document_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "src",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "width",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "height",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "bea875fcb40e6d82b6d1a472c720f82ac5db86160edde03b7231b460346af13b"
+}
