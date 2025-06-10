@@ -13,10 +13,10 @@ use crate::core::model::embedding::{
 };
 use crate::core::model::{List, Pagination};
 use crate::core::provider::ProviderState;
-use crate::core::repo::{Atomic, Repository};
+use crate::core::repo::Repository;
 use crate::core::vector::CollectionItemInsert;
 use crate::error::ChonkitError;
-use crate::{err, map_err, transaction};
+use crate::{err, map_err};
 use chonkit_embedders::EmbeddingModel;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -211,36 +211,41 @@ impl EmbeddingService {
                 let collection_name = &collection.name;
                 let collection_model = &collection.model;
 
-                transaction!(self.repo, |tx| async move {
-                    self.repo
-                        .insert_image_embeddings(
-                            ImageEmbeddingInsert::new(image_id, collection_id),
-                            Some(tx),
-                        )
-                        .await?;
+                self.repo
+                    .transaction(|tx| {
+                        Box::pin(async move {
+                            self.repo
+                                .insert_image_embeddings(
+                                    ImageEmbeddingInsert::new(image_id, collection_id),
+                                    Some(tx),
+                                )
+                                .await?;
 
-                    vector_db
-                        .insert_embeddings(CollectionItemInsert::new_image(
-                            image_meta.document_id,
-                            collection_name,
-                            image_meta.id,
-                            &b64,
-                            &path,
-                            image.description.as_deref(),
-                            vector.clone(),
-                        ))
-                        .await?;
+                            vector_db
+                                .insert_embeddings(CollectionItemInsert::new_image(
+                                    image_meta.document_id,
+                                    collection_name,
+                                    image_meta.id,
+                                    &b64,
+                                    &path,
+                                    image.description.as_deref(),
+                                    vector.clone(),
+                                ))
+                                .await?;
 
-                    let key = ImageEmbeddingCacheKey::new(&hash, collection_model);
+                            let key = ImageEmbeddingCacheKey::new(&hash, collection_model);
 
-                    let embeddings = CachedImageEmbeddings::new(vector, embeddings.tokens_used);
+                            let embeddings =
+                                CachedImageEmbeddings::new(vector, embeddings.tokens_used);
 
-                    if let Err(e) = self.image_cache.set(&key, embeddings).await {
-                        tracing::warn!("failed to cache image embeddings: {e}");
-                    };
+                            if let Err(e) = self.image_cache.set(&key, embeddings).await {
+                                tracing::warn!("failed to cache image embeddings: {e}");
+                            };
 
-                    Ok(())
-                })?;
+                            Ok(())
+                        })
+                    })
+                    .await?;
             }
         };
 
@@ -376,50 +381,55 @@ impl EmbeddingService {
 
         if let Some(embeddings) = cached {
             tracing::debug!("{} - using cached embeddings", document.id);
-            return transaction!(self.repo, |tx| async move {
-                self.repo
-                    .insert_text_embeddings(
-                        TextEmbeddingInsert::new(document.id, collection.id),
-                        Some(tx),
-                    )
-                    .await?;
+            return self
+                .repo
+                .transaction(|tx| {
+                    Box::pin(async move {
+                        self.repo
+                            .insert_text_embeddings(
+                                TextEmbeddingInsert::new(document.id, collection.id),
+                                Some(tx),
+                            )
+                            .await?;
 
-                let report = TextEmbeddingAdditionReport {
-                    document_id: document.id,
-                    document_name: document.name,
-                    report: EmbeddingAdditionReport {
-                        model_used: collection.model,
-                        tokens_used: Some(0),
-                        embedding_provider: collection.embedder.clone(),
-                        total_vectors: embeddings.embeddings.len() as i32,
-                        cache: true,
-                        base: EmbeddingReportBase {
-                            collection_id: Some(collection.id),
-                            collection_name: collection.name.clone(),
-                            vector_db: collection.provider.clone(),
-                            started_at: start,
-                            finished_at: chrono::Utc::now(),
-                        },
-                    },
-                };
+                        let report = TextEmbeddingAdditionReport {
+                            document_id: document.id,
+                            document_name: document.name,
+                            report: EmbeddingAdditionReport {
+                                model_used: collection.model,
+                                tokens_used: Some(0),
+                                embedding_provider: collection.embedder.clone(),
+                                total_vectors: embeddings.embeddings.len() as i32,
+                                cache: true,
+                                base: EmbeddingReportBase {
+                                    collection_id: Some(collection.id),
+                                    collection_name: collection.name.clone(),
+                                    vector_db: collection.provider.clone(),
+                                    started_at: start,
+                                    finished_at: chrono::Utc::now(),
+                                },
+                            },
+                        };
 
-                self.repo.insert_text_embedding_report(&report).await?;
+                        self.repo.insert_text_embedding_report(&report).await?;
 
-                vector_db
-                    .insert_embeddings(CollectionItemInsert::new_text(
-                        document.id,
-                        &collection.name,
-                        &embeddings
-                            .chunks
-                            .iter()
-                            .map(|s| s.as_str())
-                            .collect::<Vec<&str>>(),
-                        embeddings.embeddings,
-                    ))
-                    .await?;
+                        vector_db
+                            .insert_embeddings(CollectionItemInsert::new_text(
+                                document.id,
+                                &collection.name,
+                                &embeddings
+                                    .chunks
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<&str>>(),
+                                embeddings.embeddings,
+                            ))
+                            .await?;
 
-                Ok(report)
-            });
+                        Ok(report)
+                    })
+                })
+                .await;
         }
 
         // From this point on we are certain nothing is cached
@@ -493,63 +503,67 @@ impl EmbeddingService {
 
         debug_assert_eq!(chunks.len(), embeddings.embeddings.len());
 
-        transaction!(self.repo, |tx| async move {
-            // Repository operations go first since we can revert those with the tx
+        self.repo
+            .transaction(|tx| {
+                Box::pin(async move {
+                    // Repository operations go first since we can revert those with the tx
 
-            self.repo
-                .insert_text_embeddings(
-                    TextEmbeddingInsert::new(document.id, collection.id),
-                    Some(tx),
-                )
-                .await?;
+                    self.repo
+                        .insert_text_embeddings(
+                            TextEmbeddingInsert::new(document.id, collection.id),
+                            Some(tx),
+                        )
+                        .await?;
 
-            let report = TextEmbeddingAdditionReport {
-                document_id: document.id,
-                document_name: document.name,
-                report: EmbeddingAdditionReport {
-                    model_used: collection.model,
-                    tokens_used: embeddings.tokens_used.map(|t| t as i32),
-                    embedding_provider: collection.embedder.clone(),
-                    total_vectors: embeddings.embeddings.len() as i32,
-                    cache: false,
-                    base: EmbeddingReportBase {
-                        collection_id: Some(collection.id),
-                        collection_name: collection.name.clone(),
-                        vector_db: collection.provider.clone(),
-                        started_at: start,
-                        finished_at: chrono::Utc::now(),
-                    },
-                },
-            };
+                    let report = TextEmbeddingAdditionReport {
+                        document_id: document.id,
+                        document_name: document.name,
+                        report: EmbeddingAdditionReport {
+                            model_used: collection.model,
+                            tokens_used: embeddings.tokens_used.map(|t| t as i32),
+                            embedding_provider: collection.embedder.clone(),
+                            total_vectors: embeddings.embeddings.len() as i32,
+                            cache: false,
+                            base: EmbeddingReportBase {
+                                collection_id: Some(collection.id),
+                                collection_name: collection.name.clone(),
+                                vector_db: collection.provider.clone(),
+                                started_at: start,
+                                finished_at: chrono::Utc::now(),
+                            },
+                        },
+                    };
 
-            self.repo.insert_text_embedding_report(&report).await?;
+                    self.repo.insert_text_embedding_report(&report).await?;
 
-            if let Err(e) = self
-                .text_cache
-                .set(
-                    &text_cache_key,
-                    CachedTextEmbeddings::new(
-                        embeddings.embeddings.clone(),
-                        embeddings.tokens_used,
-                        chunks.iter().map(|s| s.to_string()).collect(),
-                    ),
-                )
-                .await
-            {
-                tracing::warn!("failed to cache embeddings: {e}");
-            }
+                    if let Err(e) = self
+                        .text_cache
+                        .set(
+                            &text_cache_key,
+                            CachedTextEmbeddings::new(
+                                embeddings.embeddings.clone(),
+                                embeddings.tokens_used,
+                                chunks.iter().map(|s| s.to_string()).collect(),
+                            ),
+                        )
+                        .await
+                    {
+                        tracing::warn!("failed to cache embeddings: {e}");
+                    }
 
-            vector_db
-                .insert_embeddings(CollectionItemInsert::new_text(
-                    document.id,
-                    &collection.name,
-                    &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    embeddings.embeddings,
-                ))
-                .await?;
+                    vector_db
+                        .insert_embeddings(CollectionItemInsert::new_text(
+                            document.id,
+                            &collection.name,
+                            &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                            embeddings.embeddings,
+                        ))
+                        .await?;
 
-            Ok(report)
-        })
+                    Ok(report)
+                })
+            })
+            .await
     }
 
     /// Returns the number of rows deleted from the db and the number of vectors deleted from the collection.
@@ -584,43 +598,47 @@ impl EmbeddingService {
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
 
-        transaction!(self.repo, |tx| async move {
-            let amount_deleted_db = self
-                .repo
-                .delete_text_embeddings(document_id, collection_id, Some(tx))
-                .await?;
+        self.repo
+            .transaction(|tx| {
+                Box::pin(async move {
+                    let amount_deleted_db = self
+                        .repo
+                        .delete_text_embeddings(document_id, collection_id, Some(tx))
+                        .await?;
 
-            let amount = vector_db
-                .count_vectors(&collection.name, document_id)
-                .await?;
+                    let amount = vector_db
+                        .count_vectors(&collection.name, document_id)
+                        .await?;
 
-            let report = TextEmbeddingRemovalReport {
-                document_id,
-                document_name: document.name,
-                report: EmbeddingReportBase {
-                    collection_id: Some(collection.id),
-                    collection_name: collection.name.clone(),
-                    vector_db: collection.provider.clone(),
-                    started_at: start,
-                    finished_at: chrono::Utc::now(),
-                },
-            };
+                    let report = TextEmbeddingRemovalReport {
+                        document_id,
+                        document_name: document.name,
+                        report: EmbeddingReportBase {
+                            collection_id: Some(collection.id),
+                            collection_name: collection.name.clone(),
+                            vector_db: collection.provider.clone(),
+                            started_at: start,
+                            finished_at: chrono::Utc::now(),
+                        },
+                    };
 
-            self.repo
-                .insert_text_embedding_removal_report(&report)
-                .await?;
+                    self.repo
+                        .insert_text_embedding_removal_report(&report)
+                        .await?;
 
-            vector_db
-                .delete_text_embeddings(&collection.name, document_id)
-                .await?;
+                    vector_db
+                        .delete_text_embeddings(&collection.name, document_id)
+                        .await?;
 
-            tracing::debug!(
-                "Deleted {amount} vectors in collection '{}' ({amount_deleted_db} from db)",
-                collection.name
-            );
+                    tracing::debug!(
+                        "Deleted {amount} vectors in collection '{}' ({amount_deleted_db} from db)",
+                        collection.name
+                    );
 
-            Ok(report)
-        })
+                    Ok(report)
+                })
+            })
+            .await
     }
 
     pub async fn delete_image_embeddings(
@@ -654,42 +672,46 @@ impl EmbeddingService {
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
 
-        transaction!(self.repo, |tx| async move {
-            let amount_deleted_db = self
-                .repo
-                .delete_text_embeddings(image_id, collection_id, Some(tx))
-                .await?;
+        self.repo
+            .transaction(|tx| {
+                Box::pin(async move {
+                    let amount_deleted_db = self
+                        .repo
+                        .delete_text_embeddings(image_id, collection_id, Some(tx))
+                        .await?;
 
-            let report = ImageEmbeddingRemovalReport {
-                image_id,
-                report: EmbeddingReportBase {
-                    collection_id: Some(collection.id),
-                    collection_name: collection.name.clone(),
-                    vector_db: collection.provider.clone(),
-                    started_at: start,
-                    finished_at: chrono::Utc::now(),
-                },
-            };
+                    let report = ImageEmbeddingRemovalReport {
+                        image_id,
+                        report: EmbeddingReportBase {
+                            collection_id: Some(collection.id),
+                            collection_name: collection.name.clone(),
+                            vector_db: collection.provider.clone(),
+                            started_at: start,
+                            finished_at: chrono::Utc::now(),
+                        },
+                    };
 
-            self.repo
-                .insert_image_embedding_removal_report(&report)
-                .await?;
+                    self.repo
+                        .insert_image_embedding_removal_report(&report)
+                        .await?;
 
-            vector_db
-                .delete_image_embeddings(&collection.name, image_id)
-                .await?;
+                    vector_db
+                        .delete_image_embeddings(&collection.name, image_id)
+                        .await?;
 
-            tracing::debug!(
-                "Deleted image vectors in collection '{}' ({amount_deleted_db} from db)",
-                collection.name
-            );
+                    tracing::debug!(
+                        "Deleted image vectors in collection '{}' ({amount_deleted_db} from db)",
+                        collection.name
+                    );
 
-            Ok(report)
-        })
+                    Ok(report)
+                })
+            })
+            .await
     }
 
     /// Delete all text and image embeddings from the database and vector database.
-    pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<usize, ChonkitError> {
+    pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<(), ChonkitError> {
         let collections = self
             .repo
             .get_document_assigned_collections(document_id)
@@ -700,44 +722,39 @@ impl EmbeddingService {
             .list_all_document_images(document_id, self.providers.image.id())
             .await?;
 
-        let mut total_deleted = 0;
+        for (collection_id, collection_name, provider) in collections {
+            let images = &images[..];
+            self.repo
+                .transaction(|tx| {
+                    Box::pin(async move {
+                        let vector_db = self.providers.vector.get_provider(&provider)?;
 
-        for (collection_id, collection_name, provider) in collections.iter() {
-            let images = images.iter();
+                        self.repo
+                            .delete_text_embeddings(document_id, collection_id, Some(tx))
+                            .await?;
 
-            transaction!(self.repo, |tx| async move {
-                let vector_db = self.providers.vector.get_provider(provider)?;
+                        for image in images {
+                            self.repo
+                                .delete_image_embeddings(image.id, collection_id, Some(tx))
+                                .await?;
+                        }
 
-                self.repo
-                    .delete_text_embeddings(document_id, *collection_id, Some(&mut *tx))
-                    .await?;
+                        vector_db
+                            .count_vectors(&collection_name, document_id)
+                            .await?;
 
-                for image in images {
-                    self.repo
-                        .delete_image_embeddings(image.id, *collection_id, Some(tx))
-                        .await?;
-                }
+                        vector_db
+                            .delete_text_embeddings(&collection_name, document_id)
+                            .await?;
 
-                vector_db
-                    .count_vectors(collection_name, document_id)
-                    .await?;
-
-                vector_db
-                    .delete_text_embeddings(collection_name, document_id)
-                    .await?;
-
-                // total_deleted += amount;
-
-                Ok(())
-            })?;
+                        tracing::debug!("Deleted embeddings from collection '{collection_name}'",);
+                        Ok(())
+                    })
+                })
+                .await?;
         }
 
-        tracing::debug!(
-            "Deleted {total_deleted} embeddings from {} collections",
-            collections.len()
-        );
-
-        Ok(total_deleted)
+        Ok(())
     }
 
     pub async fn count_embeddings(

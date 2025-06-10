@@ -1,8 +1,7 @@
-use super::Atomic;
 use crate::core::document::parser::TextParseConfig;
 use crate::core::model::document::{DocumentParameterUpdate, DocumentSearchColumn};
 use crate::core::model::ToSearchColumn;
-use crate::core::repo::Repository;
+use crate::core::repo::{Repository, Transaction};
 use crate::error::ChonkitError;
 use crate::{
     core::{
@@ -604,7 +603,7 @@ impl Repository {
     pub async fn remove_document_by_id(
         &self,
         id: uuid::Uuid,
-        tx: Option<&mut <Self as Atomic>::Tx>,
+        tx: Option<&mut Transaction<'_>>,
     ) -> Result<u64, ChonkitError> {
         let query = sqlx::query!("DELETE FROM documents WHERE id = $1", id);
         if let Some(tx) = tx {
@@ -743,11 +742,8 @@ impl Repository {
         document: DocumentInsert<'_>,
         parse_config: TextParseConfig,
         chunk_config: ChunkConfig,
-        tx: &mut <Self as Atomic>::Tx,
-    ) -> Result<Document, ChonkitError>
-    where
-        Self: Atomic,
-    {
+        tx: &mut Transaction<'_>,
+    ) -> Result<Document, ChonkitError> {
         let DocumentInsert {
             id,
             name,
@@ -968,10 +964,9 @@ mod tests {
                 document::{DocumentInsert, DocumentSearchColumn},
                 Pagination, PaginationSort, Search,
             },
-            repo::{Atomic, Repository},
+            repo::Repository,
         },
         error::ChonkitError,
-        transaction,
     };
     use suitest::before_all;
 
@@ -1056,41 +1051,51 @@ mod tests {
         .await
         .unwrap();
 
-        transaction!(infallible repo, |tx| async move {
-            repo.insert_document_with_configs(
-                DocumentInsert::new(
-                    "My file 1r",
-                    "/path/to/file/1/ready",
-                    DocumentType::Text(TextDocumentType::Txt),
-                    "Hash1r",
-                    "fs",
-                ),
-                TextParseConfig::default(),
-                ChunkConfig::snapping_default(),
-                tx,
-            )
-            .await.unwrap();
+        repo.transaction(|tx| {
+            Box::pin(async move {
+                repo.insert_document_with_configs(
+                    DocumentInsert::new(
+                        "My file 1r",
+                        "/path/to/file/1/ready",
+                        DocumentType::Text(TextDocumentType::Txt),
+                        "Hash1r",
+                        "fs",
+                    ),
+                    TextParseConfig::default(),
+                    ChunkConfig::snapping_default(),
+                    tx,
+                )
+                .await
+                .unwrap();
 
-            Result::<(), ChonkitError>::Ok(())
-        });
+                Result::<(), ChonkitError>::Ok(())
+            })
+        })
+        .await
+        .unwrap();
 
-        transaction!(infallible repo, |tx| async move {
-            repo.insert_document_with_configs(
-                DocumentInsert::new(
-                    "My file 2r",
-                    "/path/to/file/2/ready",
-                    DocumentType::Text(TextDocumentType::Txt),
-                    "Hash2r",
-                    "other",
-                ),
-                TextParseConfig::default(),
-                ChunkConfig::snapping_default(),
-                tx,
-            )
-            .await.unwrap();
+        repo.transaction(|tx| {
+            Box::pin(async move {
+                repo.insert_document_with_configs(
+                    DocumentInsert::new(
+                        "My file 2r",
+                        "/path/to/file/2/ready",
+                        DocumentType::Text(TextDocumentType::Txt),
+                        "Hash2r",
+                        "other",
+                    ),
+                    TextParseConfig::default(),
+                    ChunkConfig::snapping_default(),
+                    tx,
+                )
+                .await
+                .unwrap();
 
-            Result::<(), ChonkitError>::Ok(())
-        });
+                Result::<(), ChonkitError>::Ok(())
+            })
+        })
+        .await
+        .unwrap();
 
         let docs = repo
             .list_documents(PaginationSort::default(), None, None)

@@ -1,11 +1,12 @@
 use crate::{error::ChonkitError, map_err};
-use sqlx::Transaction;
-use std::future::Future;
+use futures_util::future::BoxFuture;
 
 pub mod collection;
 pub mod document;
 pub mod embedding;
 pub mod image;
+
+pub type Transaction<'tx> = sqlx::Transaction<'tx, sqlx::Postgres>;
 
 /// Thin wrapper around a database connection pool.
 /// Theoretically, this should be a generic repository not tied to SQL.
@@ -33,79 +34,22 @@ impl Repository {
     }
 }
 
-/// Bound for repositories that support atomic operations.
-pub trait Atomic {
-    /// Transaction type.
-    type Tx;
-
-    /// Start a database transaction.
-    fn start_tx(&self) -> impl Future<Output = Result<Self::Tx, ChonkitError>>;
-
-    /// Commit a database transaction.
-    fn commit_tx(&self, tx: Self::Tx) -> impl Future<Output = Result<(), ChonkitError>>;
-
-    /// Abort a database transaction.
-    fn abort_tx(&self, tx: Self::Tx) -> impl Future<Output = Result<(), ChonkitError>>;
-}
-
-impl Atomic for Repository {
-    type Tx = Transaction<'static, sqlx::Postgres>;
-
-    async fn start_tx(&self) -> Result<Self::Tx, ChonkitError> {
-        let tx = map_err!(self.client.begin().await);
-        Ok(tx)
-    }
-
-    async fn commit_tx(&self, tx: Self::Tx) -> Result<(), ChonkitError> {
-        map_err!(tx.commit().await);
-        Ok(())
-    }
-
-    async fn abort_tx(&self, tx: Self::Tx) -> Result<(), ChonkitError> {
-        map_err!(tx.rollback().await);
-        Ok(())
-    }
-}
-
-/// Uses `$repo` to start a transaction, passing it to the provided `$op`.
-/// The provided `$op` must return a result.
-/// Aborts the transaction on error and commits on success.
-#[macro_export]
-macro_rules! transaction {
-    ($repo:expr, $op:expr) => {{
-        let mut tx = $repo.start_tx().await?;
-        let result = { $op(&mut tx) }.await;
+impl Repository {
+    pub async fn transaction<'tx, T, F>(&self, op: F) -> Result<T, ChonkitError>
+    where
+        F: for<'c> FnOnce(&'c mut Transaction<'tx>) -> BoxFuture<'c, Result<T, ChonkitError>>,
+    {
+        let mut tx = map_err!(self.client.begin().await);
+        let result = op(&mut tx).await;
         match result {
             Ok(out) => {
-                $repo.commit_tx(tx).await?;
-                Result::<_, ChonkitError>::Ok(out)
+                map_err!(tx.commit().await);
+                Ok(out)
             }
             Err(err) => {
-                $repo.abort_tx(tx).await?;
-                return Err(err);
+                map_err!(tx.rollback().await);
+                Err(err)
             }
         }
-    }};
-
-    (infallible $repo:expr, $op:expr) => {{
-        let mut tx = $repo
-            .start_tx()
-            .await
-            .expect("error in starting transaction");
-        let result = { $op(&mut tx) }.await;
-        match result {
-            Ok(_) => {
-                $repo
-                    .commit_tx(tx)
-                    .await
-                    .expect("error in commiting transaction");
-            }
-            Err(_) => {
-                $repo
-                    .abort_tx(tx)
-                    .await
-                    .expect("error in aborting transaction");
-            }
-        }
-    }};
+    }
 }

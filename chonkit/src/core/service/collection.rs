@@ -4,10 +4,10 @@ use crate::core::model::collection::{
 };
 use crate::core::model::{List, PaginationSort};
 use crate::core::provider::ProviderState;
-use crate::core::repo::{Atomic, Repository};
+use crate::core::repo::Repository;
 use crate::core::vector::CreateVectorCollection;
 use crate::error::ChonkitError;
-use crate::{err, map_err, transaction};
+use crate::{err, map_err};
 use dto::{CollectionData, CreateCollectionPayload, SearchPayload, SyncIncompatibilityResolution};
 use tracing::info;
 use uuid::Uuid;
@@ -141,23 +141,28 @@ impl CollectionService {
             model_details.size
         );
 
-        transaction!(self.repo, |tx| async move {
-            let insert = CollectionInsert::new(&name, &model, embedder.id(), vector_db.id());
-            let collection = self.repo.insert_collection(insert, Some(tx)).await?;
+        self.repo
+            .transaction(|tx| {
+                Box::pin(async move {
+                    let insert =
+                        CollectionInsert::new(&name, &model, embedder.id(), vector_db.id());
+                    let collection = self.repo.insert_collection(insert, Some(tx)).await?;
 
-            let data = CreateVectorCollection::new(
-                collection.id,
-                &name,
-                model_details.size,
-                &embedding_provider,
-                &model,
-                groups,
-            );
+                    let data = CreateVectorCollection::new(
+                        collection.id,
+                        &name,
+                        model_details.size,
+                        &embedding_provider,
+                        &model,
+                        groups,
+                    );
 
-            vector_db.create_vector_collection(data).await?;
+                    vector_db.create_vector_collection(data).await?;
 
-            Ok(collection)
-        })
+                    Ok(collection)
+                })
+            })
+            .await
     }
 
     /// Delete a vector collection and all its corresponding embedding entries.

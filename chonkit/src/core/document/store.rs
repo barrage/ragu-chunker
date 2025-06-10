@@ -4,10 +4,10 @@ use crate::{
         chunk::ChunkConfig,
         model::document::{Document, DocumentInsert},
         provider::Identity,
-        repo::{Atomic, Repository},
+        repo::Repository,
     },
     error::ChonkitError,
-    map_err, transaction,
+    map_err,
 };
 use chrono::{DateTime, Utc};
 
@@ -145,17 +145,26 @@ pub trait DocumentStorage: Identity {
 
             let hash = sha256(&map_err!(tokio::fs::read(&file.path.0).await));
 
-            let result = transaction!(repo, |tx| async move {
-                let insert =
-                    DocumentInsert::new(&file.name, &file.path.0, file.ext, &hash, self.id());
-                repo.insert_document_with_configs(
-                    insert,
-                    TextParseConfig::default(),
-                    ChunkConfig::snapping_default(),
-                    tx,
-                )
-                .await
-            });
+            let result = repo
+                .transaction(|tx| {
+                    Box::pin(async move {
+                        let insert = DocumentInsert::new(
+                            &file.name,
+                            &file.path.0,
+                            file.ext,
+                            &hash,
+                            self.id(),
+                        );
+                        repo.insert_document_with_configs(
+                            insert,
+                            TextParseConfig::default(),
+                            ChunkConfig::snapping_default(),
+                            tx,
+                        )
+                        .await
+                    })
+                })
+                .await;
 
             match result {
                 Ok(Document { id, name, .. }) => {

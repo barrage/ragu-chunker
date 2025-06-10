@@ -1,11 +1,10 @@
-use super::Atomic;
 use crate::{
     core::{
         model::{
             image::{ImageModel, InsertImage},
             List,
         },
-        repo::Repository,
+        repo::{Repository, Transaction},
         service::document::dto::ListImagesParameters,
     },
     err,
@@ -18,11 +17,8 @@ impl Repository {
     pub async fn insert_image(
         &self,
         insert: InsertImage<'_>,
-        tx: Option<&mut <Self as Atomic>::Tx>,
-    ) -> Result<ImageModel, ChonkitError>
-    where
-        Self: Atomic,
-    {
+        tx: Option<&mut Transaction<'_>>,
+    ) -> Result<ImageModel, ChonkitError> {
         let query = sqlx::query_as!(
             ImageModel,
             r#"INSERT INTO images (

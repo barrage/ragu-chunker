@@ -15,11 +15,11 @@ use crate::{
             List, PaginationSort,
         },
         provider::ProviderState,
-        repo::{Atomic, Repository},
+        repo::Repository,
     },
     err,
     error::ChonkitError,
-    map_err, transaction,
+    map_err,
 };
 use dto::{ChunkForPreview, ChunkPreview, DocumentUpload, ParseOutputPreview, ParsePreview};
 use std::time::Instant;
@@ -134,23 +134,28 @@ impl DocumentService {
             return err!(InvalidFile, "Parsing resulted in empty output");
         }
 
-        let document = transaction!(self.repo, |tx| async move {
-            let insert = DocumentInsert::new(name, &path, ty, &hash, store.id());
+        let document = self
+            .repo
+            .transaction(|tx| {
+                Box::pin(async move {
+                    let insert = DocumentInsert::new(name, &path, ty, &hash, store.id());
 
-            let document = self
-                .repo
-                .insert_document_with_configs(
-                    insert,
-                    TextParseConfig::default(),
-                    ChunkConfig::snapping_default(),
-                    tx,
-                )
-                .await?;
+                    let document = self
+                        .repo
+                        .insert_document_with_configs(
+                            insert,
+                            TextParseConfig::default(),
+                            ChunkConfig::snapping_default(),
+                            tx,
+                        )
+                        .await?;
 
-            store.write(&path, file, force).await?;
+                    store.write(&path, file, force).await?;
 
-            Ok(document)
-        })?;
+                    Ok(document)
+                })
+            })
+            .await?;
 
         self.process_document_images(document.id, images).await?;
 
@@ -173,17 +178,20 @@ impl DocumentService {
 
         let store = self.providers.document.get_provider(&document.src)?;
 
-        transaction! {self.repo, |tx| async move {
-                self.repo.remove_document_by_id(document.id, Some(tx)).await?;
-                for (_, name, provider) in collections {
-                    let vector_db = self.providers.vector.get_provider(&provider)?;
-                    vector_db
-                        .delete_text_embeddings(&name, document.id)
+        self.repo
+            .transaction(|tx| {
+                Box::pin(async move {
+                    self.repo
+                        .remove_document_by_id(document.id, Some(tx))
                         .await?;
-                }
-                store.delete(&document.path).await
-            }
-        }
+                    for (_, name, provider) in collections {
+                        let vector_db = self.providers.vector.get_provider(&provider)?;
+                        vector_db.delete_text_embeddings(&name, document.id).await?;
+                    }
+                    store.delete(&document.path).await
+                })
+            })
+            .await
     }
 
     /// Sync storage contents with the repo.

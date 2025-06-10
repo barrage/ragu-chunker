@@ -8,11 +8,10 @@ use crate::{
         },
         model::document::{Document, DocumentInsert, DocumentParameterUpdate},
         provider::ProviderState,
-        repo::{Atomic, Repository},
+        repo::Repository,
     },
     err,
     error::ChonkitError,
-    transaction,
 };
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -38,7 +37,7 @@ impl<T> ExternalFileService<T> {
 
 impl<T> ExternalFileService<T>
 where
-    T: ExternalDocumentStorage,
+    T: ExternalDocumentStorage + Sync,
 {
     /// Import files from an external API. All files imported via this function
     /// will be downloaded and stored locally.
@@ -233,24 +232,30 @@ where
                 let hash = sha256(&content);
                 let name = file.name.clone();
 
-                let insert_result = transaction!(self.repo, |tx| async move {
-                    let insert = DocumentInsert::new(&name, &path, file.ext, &hash, self.api.id());
+                let insert_result = self
+                    .repo
+                    .transaction(|tx| {
+                        Box::pin(async move {
+                            let insert =
+                                DocumentInsert::new(&name, &path, file.ext, &hash, self.api.id());
 
-                    let document = self
-                        .repo
-                        .insert_document_with_configs(
-                            insert,
-                            TextParseConfig::default(),
-                            ChunkConfig::snapping_default(),
-                            tx,
-                        )
-                        .await?;
+                            let document = self
+                                .repo
+                                .insert_document_with_configs(
+                                    insert,
+                                    TextParseConfig::default(),
+                                    ChunkConfig::snapping_default(),
+                                    tx,
+                                )
+                                .await?;
 
-                    match storage.write(&path, &content, false).await {
-                        Ok(_) => Ok(document),
-                        Err(e) => Err(e),
-                    }
-                });
+                            match storage.write(&path, &content, false).await {
+                                Ok(_) => Ok(document),
+                                Err(e) => Err(e),
+                            }
+                        })
+                    })
+                    .await;
 
                 match insert_result {
                     Ok(document) => document,

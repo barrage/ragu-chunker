@@ -5,7 +5,7 @@ use crate::{
             document::DocumentShort,
             List, PaginationSort, ToSearchColumn,
         },
-        repo::{Atomic, Repository},
+        repo::{Repository, Transaction},
     },
     err,
     error::ChonkitError,
@@ -181,7 +181,7 @@ impl Repository {
     pub async fn insert_collection(
         &self,
         insert: CollectionInsert<'_>,
-        tx: Option<&mut <Repository as Atomic>::Tx>,
+        tx: Option<&mut Transaction<'_>>,
     ) -> Result<Collection, ChonkitError> {
         let CollectionInsert {
             id,

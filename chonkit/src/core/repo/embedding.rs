@@ -1,4 +1,3 @@
-use super::Atomic;
 use crate::{
     core::{
         model::{
@@ -9,7 +8,7 @@ use crate::{
             },
             List, Pagination,
         },
-        repo::Repository,
+        repo::{Repository, Transaction},
         service::embedding::ListEmbeddingReportsParams,
     },
     error::ChonkitError,
@@ -22,11 +21,8 @@ impl Repository {
     pub async fn insert_text_embeddings(
         &self,
         embeddings: TextEmbeddingInsert,
-        tx: Option<&mut <Self as Atomic>::Tx>,
-    ) -> Result<TextEmbedding, ChonkitError>
-    where
-        Self: Atomic,
-    {
+        tx: Option<&mut Transaction<'_>>,
+    ) -> Result<TextEmbedding, ChonkitError> {
         let TextEmbeddingInsert {
             id,
             document_id,
@@ -57,7 +53,7 @@ impl Repository {
     pub async fn insert_image_embeddings(
         &self,
         embeddings: ImageEmbeddingInsert,
-        tx: Option<&mut <Self as Atomic>::Tx>,
+        tx: Option<&mut Transaction<'_>>,
     ) -> Result<(), ChonkitError> {
         let ImageEmbeddingInsert {
             id,
@@ -202,11 +198,8 @@ impl Repository {
         &self,
         document_id: Uuid,
         collection_id: Uuid,
-        tx: Option<&mut <Self as Atomic>::Tx>,
-    ) -> Result<u64, ChonkitError>
-    where
-        Self: Atomic,
-    {
+        tx: Option<&mut Transaction<'_>>,
+    ) -> Result<u64, ChonkitError> {
         let query = sqlx::query!(
             "DELETE FROM embeddings WHERE document_id = $1 AND collection_id = $2",
             document_id,
@@ -223,11 +216,8 @@ impl Repository {
         &self,
         image_id: Uuid,
         collection_id: Uuid,
-        tx: Option<&mut <Self as Atomic>::Tx>,
-    ) -> Result<u64, ChonkitError>
-    where
-        Self: Atomic,
-    {
+        tx: Option<&mut Transaction<'_>>,
+    ) -> Result<u64, ChonkitError> {
         let query = sqlx::query!(
             "DELETE FROM image_embeddings WHERE image_id = $1 AND collection_id = $2",
             image_id,
