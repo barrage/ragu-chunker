@@ -1,4 +1,3 @@
-use super::Force;
 use crate::{
     app::{
         external::google::{auth::GoogleAccessToken, drive::GoogleDriveApi},
@@ -11,7 +10,7 @@ use crate::{
     error::ChonkitError,
 };
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     Json,
 };
 use reqwest::StatusCode;
@@ -30,14 +29,11 @@ use validify::Validate;
 pub(super) async fn import_files(
     State(state): State<AppState>,
     access_token: axum::extract::Extension<GoogleAccessToken>,
-    force: Option<Query<Force>>,
     Json(payload): Json<ImportPayload>,
 ) -> Result<(StatusCode, Json<ImportResult>), ChonkitError> {
     let api = GoogleDriveApi::new(state.http_client.clone(), access_token.0);
     let service = state.services.external.storage(api);
-    let result = service
-        .import_documents(payload.files, force.map(|f| f.force).unwrap_or_default())
-        .await?;
+    let result = service.import_documents(payload.files).await?;
     Ok((StatusCode::OK, Json(result)))
 }
 
@@ -56,13 +52,10 @@ pub(super) async fn import_file(
     State(state): State<AppState>,
     access_token: axum::extract::Extension<GoogleAccessToken>,
     Path(file_id): Path<String>,
-    force: Option<Query<Force>>,
 ) -> Result<(StatusCode, Json<Document>), ChonkitError> {
     let api = GoogleDriveApi::new(state.http_client.clone(), access_token.0);
     let service = state.services.external.storage(api);
-    let document = service
-        .import_document(&file_id, force.map(|f| f.force).unwrap_or_default())
-        .await?;
+    let document = service.import_document(&file_id).await?;
     Ok((StatusCode::CREATED, Json(document)))
 }
 
@@ -105,6 +98,6 @@ pub(super) struct SingleImportPayload {
 #[derive(utoipa::OpenApi)]
 #[openapi(
     paths(import_files, import_file, list_outdated_documents),
-    components(schemas(ImportPayload, ImportResult, ImportFailure, Force, OutdatedDocument,))
+    components(schemas(ImportPayload, ImportResult, ImportFailure, OutdatedDocument))
 )]
 pub(super) struct GDriveApiDoc;

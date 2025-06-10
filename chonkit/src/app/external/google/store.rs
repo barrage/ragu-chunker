@@ -69,8 +69,8 @@ impl DocumentStorage for GoogleDriveStore {
         self.dir.delete(path).await
     }
 
-    async fn write(&self, path: &str, content: &[u8], overwrite: bool) -> Result<(), ChonkitError> {
-        self.dir.write(path, content, overwrite).await
+    async fn write(&self, path: &str, content: &[u8]) -> Result<(), ChonkitError> {
+        self.dir.write(path, content).await
     }
 }
 
@@ -102,7 +102,7 @@ mod tests {
 
         let ext = DocumentType::try_from(d.ext.clone()).unwrap();
         let path = store.absolute_path(&d.name, ext);
-        store.write(&path, CONTENT.as_bytes(), false).await.unwrap();
+        store.write(&path, CONTENT.as_bytes()).await.unwrap();
 
         let file = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(CONTENT, file);

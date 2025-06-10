@@ -1,6 +1,7 @@
-use crate::core::document::parser::{parse_images, parse_text, ParseOutput, TextParseConfig};
+use crate::core::document::parser::{parse_text, ParseOutput, TextParseConfig};
+use crate::core::document::{get_image, process_document_images, store_document, store_images};
 use crate::core::model::document::DocumentSearchColumn;
-use crate::core::model::image::{Image, ImageModel};
+use crate::core::model::image::{Image, ImageData, ImageModel};
 use crate::core::service::document::dto::{
     ListImagesParameters, ParsedDocumentPage, ParsedDocumentSection,
 };
@@ -9,9 +10,9 @@ use crate::{
     config::{DEFAULT_DOCUMENT_CONTENT, DEFAULT_DOCUMENT_NAME, FS_STORE_ID},
     core::{
         chunk::{ChunkConfig, ChunkedDocument},
-        document::{sha256, DocumentType, TextDocumentType},
+        document::{DocumentType, TextDocumentType},
         model::{
-            document::{Document, DocumentConfig, DocumentDisplay, DocumentInsert},
+            document::{Document, DocumentConfig, DocumentDisplay},
             List, PaginationSort,
         },
         provider::ProviderState,
@@ -95,6 +96,30 @@ impl DocumentService {
         Ok(document)
     }
 
+    pub async fn process_document_images(&self, id: Uuid) -> Result<(), ChonkitError> {
+        let Some(document) = self.repo.get_document_by_id(id).await? else {
+            return err!(DoesNotExist, "Document with ID {id}");
+        };
+
+        let file = self
+            .providers
+            .document
+            .get_provider(&document.src)?
+            .read(&document.path)
+            .await?;
+
+        process_document_images(
+            self.repo.clone(),
+            self.providers.image.clone(),
+            id,
+            DocumentType::try_from(document.ext.as_str())?,
+            file,
+        )
+        .await?;
+
+        Ok(())
+    }
+
     /// Insert the document metadata to the repository and persist it
     /// in the underlying storage implementation.
     ///
@@ -102,68 +127,27 @@ impl DocumentService {
     /// * `params`: Upload params.
     /// * `force`: If `true`, overwrite the document if it already exists. Hash
     ///            collisions always return errors.
-    pub async fn upload(
-        &self,
-        mut params: DocumentUpload<'_>,
-        force: bool,
-    ) -> Result<Document, ChonkitError> {
+    pub async fn upload(&self, mut params: DocumentUpload<'_>) -> Result<Document, ChonkitError> {
         map_err!(params.validify());
 
-        let store = self.providers.document.get_provider(FS_STORE_ID)?;
-
         let DocumentUpload { ref name, ty, file } = params;
-        let path = store.absolute_path(name, ty);
-        let hash = sha256(file);
 
-        // Always return errors if there is a hash collision
-        if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
-            return err!(
-                AlreadyExists,
-                "New document '{name}' has same hash as existing '{}' ({})",
-                existing.name,
-                existing.id
-            );
-        };
+        let img_store = self.providers.image.clone();
+        let doc_store = self.providers.document.get_provider(FS_STORE_ID)?;
 
-        // The default parser parses the whole input so we use it
-        // to check whether the document has any content. Reject if empty.
-        let text = parse_text(TextParseConfig::default(), ty, file)?;
-        let images = parse_images(ty, file)?;
+        let document = store_document(&self.repo, &*doc_store, name, ty, file).await?;
 
-        if text.is_empty() && images.is_empty() {
-            return err!(InvalidFile, "Parsing resulted in empty output");
-        }
+        // Process images in the background as it can take a while
 
-        let document = self
-            .repo
-            .transaction(|tx| {
-                Box::pin(async move {
-                    let insert = DocumentInsert::new(name, &path, ty, &hash, store.id());
+        let file = file.to_vec();
 
-                    let document = self
-                        .repo
-                        .insert_document_with_configs(
-                            insert,
-                            TextParseConfig::default(),
-                            ChunkConfig::snapping_default(),
-                            tx,
-                        )
-                        .await?;
-
-                    store.write(&path, file, force).await?;
-
-                    Ok(document)
-                })
-            })
-            .await?;
-
-        self.process_document_images(document.id, images).await?;
+        process_document_images(self.repo.clone(), img_store, document.id, ty, file).await?;
 
         Ok(document)
     }
 
-    /// Remove the document from the repo, delete it from storage, and delete all images found in
-    /// it.
+    /// Remove the document from the repo, delete it from storage, delete all of its images,
+    /// and remove all of its text embeddings and image embeddings from all vector databases.
     ///
     /// * `id`: Document ID.
     pub async fn delete(&self, id: Uuid) -> Result<(), ChonkitError> {
@@ -176,22 +160,50 @@ impl DocumentService {
             .get_document_assigned_collections(document.id)
             .await?;
 
+        let images = self
+            .repo
+            .list_all_document_images(document.id, self.providers.image.id())
+            .await?;
+
         let store = self.providers.document.get_provider(&document.src)?;
+        let image_store = &self.providers.image;
+
+        for (_, name, provider) in collections {
+            let result: Result<(), ChonkitError> = async {
+                let vector_db = self.providers.vector.get_provider(&provider)?;
+
+                // Remove text embeddings from all found collections
+                vector_db.delete_text_embeddings(&name, document.id).await?;
+
+                // Remove image BLOBs and image embeddings from all found collections
+                for image in images.iter() {
+                    vector_db.delete_image_embeddings(&name, image.id).await?;
+                    image_store.delete_image(&image.path).await?;
+                }
+
+                Ok(())
+            }
+            .await;
+
+            if let Err(e) = result {
+                tracing::error!("Failed to delete document part: {e}");
+            }
+        }
+
+        // Remove the document only when we are certain it is cleaned up
 
         self.repo
             .transaction(|tx| {
-                Box::pin(async move {
+                Box::pin(async {
                     self.repo
                         .remove_document_by_id(document.id, Some(tx))
                         .await?;
-                    for (_, name, provider) in collections {
-                        let vector_db = self.providers.vector.get_provider(&provider)?;
-                        vector_db.delete_text_embeddings(&name, document.id).await?;
-                    }
                     store.delete(&document.path).await
                 })
             })
-            .await
+            .await?;
+
+        Ok(())
     }
 
     /// Sync storage contents with the repo.
@@ -408,14 +420,11 @@ impl DocumentService {
         }
 
         match self
-            .upload(
-                DocumentUpload::new(
-                    String::from(DEFAULT_DOCUMENT_NAME),
-                    DocumentType::Text(TextDocumentType::Txt),
-                    DEFAULT_DOCUMENT_CONTENT.as_bytes(),
-                ),
-                false,
-            )
+            .upload(DocumentUpload::new(
+                String::from(DEFAULT_DOCUMENT_NAME),
+                DocumentType::Text(TextDocumentType::Txt),
+                DEFAULT_DOCUMENT_CONTENT.as_bytes(),
+            ))
             .await
         {
             Ok(_) => tracing::info!("Created default document '{DEFAULT_DOCUMENT_NAME}'"),
@@ -427,6 +436,7 @@ impl DocumentService {
         }
     }
 
+    /// Get a document with its content bytes.
     pub async fn get_document_with_content(
         &self,
         id: Uuid,
@@ -444,6 +454,36 @@ impl DocumentService {
         Ok((document, content))
     }
 
+    // IMAGES
+
+    pub async fn upload_images(
+        &self,
+        images: Vec<ImageData>,
+    ) -> Result<Vec<ImageModel>, ChonkitError> {
+        let images = images
+            .into_iter()
+            .map(|image| {
+                Image::new(
+                    None,
+                    None,
+                    image.bytes,
+                    image.format,
+                    image.width,
+                    image.height,
+                )
+            })
+            .collect();
+
+        store_images(
+            self.repo.clone(),
+            self.providers.image.clone(),
+            None,
+            images,
+        )
+        .await
+    }
+
+    /// List image metadata from the repository.
     pub async fn list_images(
         &self,
         parameters: ListImagesParameters,
@@ -453,6 +493,7 @@ impl DocumentService {
             .await
     }
 
+    /// Update an image's description which is used to enrich its embeddings.
     pub async fn update_image_description(
         &self,
         image_id: Uuid,
@@ -463,44 +504,20 @@ impl DocumentService {
             .await
     }
 
-    /// Store the images found in the document.
-    async fn process_document_images(
-        &self,
-        document_id: Uuid,
-        images: Vec<Image>,
-    ) -> Result<Vec<ImageModel>, ChonkitError> {
-        if images.is_empty() {
-            return Ok(vec![]);
+    /// Delete an
+    pub async fn delete_image(&self, image_id: Uuid) -> Result<(), ChonkitError> {
+        let collections = self.repo.get_image_assigned_collections(image_id).await?;
+
+        for (_, name, provider) in collections {
+            let vector_db = self.providers.vector.get_provider(&provider)?;
+            vector_db.delete_image_embeddings(&name, image_id).await?;
         }
 
-        let total = images.len();
-        tracing::debug!("Processing {} images in document {document_id}", total);
+        self.repo.delete_image_by_id(image_id).await
+    }
 
-        let mut parsed_images = vec![];
-
-        for (i, image) in images.into_iter().enumerate() {
-            let img = match self
-                .providers
-                .image
-                .store_image(Some(document_id), &image)
-                .await
-            {
-                Ok(img) => img,
-                Err(e) => {
-                    tracing::error!(
-                        "Unable to store image ({}) in document {document_id}: {e}",
-                        image.path()
-                    );
-                    continue;
-                }
-            };
-
-            parsed_images.push(img);
-
-            tracing::debug!("Uploaded image {}/{}", i + 1, total);
-        }
-
-        Ok(parsed_images)
+    pub async fn get_image(&self, id: Uuid) -> Result<(Image, ImageModel), ChonkitError> {
+        get_image(self.repo.clone(), &*self.providers.image, id).await
     }
 }
 

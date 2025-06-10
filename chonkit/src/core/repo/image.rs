@@ -235,9 +235,9 @@ impl Repository {
         ))
     }
 
-    pub async fn delete_image_by_path(&self, path: &str) -> Result<(), ChonkitError> {
+    pub async fn delete_image_by_id(&self, id: Uuid) -> Result<(), ChonkitError> {
         map_err!(
-            sqlx::query!("DELETE FROM images WHERE path = $1", path)
+            sqlx::query!("DELETE FROM images WHERE id = $1", id)
                 .execute(&self.client)
                 .await
         );

@@ -86,7 +86,7 @@ pub trait DocumentStorage: Identity {
     /// * `path`: The _absolute_ file path.
     /// * `content`: What to write.
     /// * `overwrite`: If `true`, overwrite the file if it already exists, return an error otherwise.
-    async fn write(&self, path: &str, content: &[u8], overwrite: bool) -> Result<(), ChonkitError>;
+    async fn write(&self, path: &str, content: &[u8]) -> Result<(), ChonkitError>;
 
     /// Sync repository entries with the files currently located in the storage.
     /// Any existing files in the storage must be added to the repository if not

@@ -16,10 +16,10 @@ use uuid::Uuid;
     )
 )]
 pub(super) async fn get_image(
-    Path(path): Path<String>,
+    Path(id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<(HeaderMap, Vec<u8>), ChonkitError> {
-    let image = state.providers.image.get_image(&path).await?;
+    let (image, _) = state.services.document.get_image(id).await?;
 
     let mut header_map = HeaderMap::new();
 
@@ -30,7 +30,7 @@ pub(super) async fn get_image(
     );
     header_map.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!("inline; filename={:?}", path))
+        HeaderValue::from_str(&format!("inline; filename={:?}", image.path()))
             .expect("invalid content-disposition header"),
     );
 

@@ -178,18 +178,6 @@ pub struct DocumentMetadataUpdate<'a> {
     pub tags: Option<Vec<String>>,
 }
 
-#[derive(Debug)]
-pub struct DocumentParameterUpdate<'a> {
-    pub path: &'a str,
-    pub hash: &'a str,
-}
-
-impl<'a> DocumentParameterUpdate<'a> {
-    pub fn new(path: &'a str, hash: &'a str) -> Self {
-        Self { path, hash }
-    }
-}
-
 /// Main config model for the `chunkers` table.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,4 +1,3 @@
-use super::Force;
 use crate::{
     app::{
         server::dto::{
@@ -10,7 +9,7 @@ use crate::{
         document::{parser::TextParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
-            image::ImageModel,
+            image::{ImageData, ImageModel},
             List,
         },
         service::document::dto::{
@@ -133,11 +132,9 @@ pub(super) async fn delete_document(
 )]
 pub(super) async fn upload_documents(
     State(state): State<AppState>,
-    force: Option<Query<Force>>,
     mut form: axum::extract::Multipart,
 ) -> Result<Json<UploadResult>, ChonkitError> {
     let mut documents = vec![];
-    let force = force.map(|f| f.force).unwrap_or_default();
     let mut errors = HashMap::<String, Vec<String>>::new();
 
     while let Ok(Some(field)) = form.next_field().await {
@@ -173,7 +170,7 @@ pub(super) async fn upload_documents(
 
         let upload = DocumentUpload::new(name.to_string(), typ, &file);
 
-        let document = match state.services.document.upload(upload, force).await {
+        let document = match state.services.document.upload(upload).await {
             Ok(doc) => doc,
             Err(e) => {
                 tracing::error!("{e}");
@@ -295,16 +292,33 @@ pub(super) async fn sync(
 }
 
 #[utoipa::path(
-    get,
-    path = "/images",
+    post,
+    path = "/documents/{id}/images",
     responses(
-        (status = 200, description = "List document images", body = List<ImageModel>),
+        (status = 204, description = "Parse document images and store them in the database. This is done automatically during upload. Skips already existing images."),
         (status = 404, description = "Document not found"),
         (status = 500, description = "Internal server error")
     ),
     params(
         ("id" = Uuid, Path, description = "Document ID")
     )
+)]
+pub(super) async fn process_document_images(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, ChonkitError> {
+    state.services.document.process_document_images(id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    get,
+    path = "/images",
+    responses(
+        (status = 200, description = "List images", body = List<ImageModel>),
+        (status = 404, description = "Document not found"),
+        (status = 500, description = "Internal server error")
+    ),
 )]
 pub(super) async fn list_images(
     State(state): State<AppState>,
@@ -317,12 +331,12 @@ pub(super) async fn list_images(
     put,
     path = "/images/{id}",
     responses(
-        (status = 204, description = "Update document description"),
-        (status = 404, description = "Document not found"),
+        (status = 204, description = "Update image description"),
+        (status = 404, description = "Image not found"),
         (status = 500, description = "Internal server error")
     ),
     params(
-        ("id" = Uuid, Path, description = "Document ID"),
+        ("id" = Uuid, Path, description = "Image ID"),
     ),
     request_body = UpdateImageDescription
 )]
@@ -338,4 +352,63 @@ pub(super) async fn update_image_description(
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    delete,
+    path = "/images/{id}",
+    responses(
+        (status = 204, description = "Delete image"),
+        (status = 404, description = "Document not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Image ID"),
+    )
+)]
+pub(super) async fn delete_image(
+    State(state): State<AppState>,
+    Path(image_id): Path<Uuid>,
+) -> Result<StatusCode, ChonkitError> {
+    state.services.document.delete_image(image_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    post,
+    path = "/images",
+    responses(
+        (status = 200, description = "Upload images", body = List<ImageModel>),
+        (status = 500, description = "Internal server error")
+    )
+)]
+pub(super) async fn upload_images(
+    State(state): State<AppState>,
+    mut form: axum::extract::Multipart,
+) -> Result<Json<Vec<ImageModel>>, ChonkitError> {
+    let mut images = vec![];
+
+    while let Ok(Some(field)) = form.next_field().await {
+        let file = match field.bytes().await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::error!("error processing image in form: {e}");
+                continue;
+            }
+        };
+
+        let image = match ImageData::from_raw_bytes(&file) {
+            Ok(i) => i,
+            Err(e) => {
+                tracing::error!("error processing image in form: {e}");
+                continue;
+            }
+        };
+
+        images.push(image);
+    }
+
+    let images = state.services.document.upload_images(images).await?;
+
+    Ok(Json(images))
 }

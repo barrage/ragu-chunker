@@ -61,7 +61,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload(upload, false).await.unwrap();
+        let document = service.upload(upload).await.unwrap();
 
         let config = TextParseConfig::default();
 
@@ -107,7 +107,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload(upload, false).await.unwrap();
+        let document = service.upload(upload).await.unwrap();
 
         let config = TextParseConfig::default();
 
@@ -153,7 +153,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = service.upload(upload, false).await.unwrap();
+        let document = service.upload(upload).await.unwrap();
 
         let text_from_bytes = parse_text(
             TextParseConfig::default(),
@@ -185,45 +185,6 @@ mod document_service_integration_tests {
     }
 
     #[test]
-    async fn upload_overwrite_works(state: TestState) {
-        let service = state.app.services.document.clone();
-
-        let content = &tokio::fs::read(format!("{TEST_DOCS_PATH}/test.md"))
-            .await
-            .unwrap();
-        let upload = DocumentUpload {
-            name: "UPLOAD_OVERWRITE_TEST".to_string(),
-            ty: DocumentType::Text(TextDocumentType::Md),
-            file: content,
-        };
-
-        let regular = service.upload(upload.clone(), false).await.unwrap();
-
-        let upload = DocumentUpload {
-            name: "UPLOAD_OVERWRITE_TEST".to_string(),
-            ty: DocumentType::Text(TextDocumentType::Md),
-            file: b"foo".as_slice(),
-        };
-
-        let forced = service.upload(upload, true).await.unwrap();
-
-        assert_eq!(regular.id, forced.id);
-        assert_eq!(regular.path, forced.path);
-
-        let content = state
-            .app
-            .providers
-            .document
-            .get_provider(&forced.src)
-            .unwrap()
-            .read(&forced.path)
-            .await
-            .unwrap();
-
-        assert_eq!("foo".as_bytes(), content);
-    }
-
-    #[test]
     async fn update_parser(state: TestState) {
         let file_service = state.app.services.document.clone();
         let service = state.app.services.document.clone();
@@ -238,7 +199,7 @@ mod document_service_integration_tests {
             file: content,
         };
 
-        let document = file_service.upload(upload, false).await.unwrap();
+        let document = file_service.upload(upload).await.unwrap();
 
         let config = TextParseConfig::String(
             StringParseConfig::new(10, 20)
@@ -293,13 +254,7 @@ mod document_service_integration_tests {
                     file: content,
                 };
 
-                let document = state
-                    .app
-                    .services
-                    .document
-                    .upload(upload, false)
-                    .await
-                    .unwrap();
+                let document = state.app.services.document.upload(upload).await.unwrap();
 
                 let vector_db = state.app.providers.vector.get_provider(vector).unwrap();
                 let embedder = state

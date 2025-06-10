@@ -1,5 +1,5 @@
 use crate::core::document::parser::TextParseConfig;
-use crate::core::model::document::{DocumentParameterUpdate, DocumentSearchColumn};
+use crate::core::model::document::DocumentSearchColumn;
 use crate::core::model::ToSearchColumn;
 use crate::core::repo::{Repository, Transaction};
 use crate::error::ChonkitError;
@@ -578,28 +578,6 @@ impl Repository {
         ))
     }
 
-    pub async fn update_document_parameters(
-        &self,
-        id: uuid::Uuid,
-        update: DocumentParameterUpdate<'_>,
-    ) -> Result<Document, ChonkitError> {
-        let DocumentParameterUpdate { path, hash } = update;
-
-        Ok(map_err!(
-            sqlx::query_as!(
-                Document,
-                r#"
-                UPDATE documents SET path = $1, hash = $2 WHERE id = $3
-                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at"#,
-                path,
-                hash,
-                id
-            )
-            .fetch_one(&self.client)
-            .await
-        ))
-    }
-
     pub async fn remove_document_by_id(
         &self,
         id: uuid::Uuid,
@@ -809,29 +787,6 @@ impl Repository {
         );
 
         Ok(document)
-    }
-
-    pub async fn get_document_assigned_collections(
-        &self,
-        document_id: Uuid,
-    ) -> Result<Vec<(Uuid, String, String)>, ChonkitError> {
-        let query = sqlx::query!(
-            r#"
-            SELECT collections.id, collections.name, collections.provider FROM collections
-                WHERE collections.id IN (
-                        SELECT collection_id FROM embeddings
-                        WHERE embeddings.document_id = $1 
-                )
-            "#,
-            document_id
-        );
-
-        let results = map_err!(query.fetch_all(&self.client).await);
-
-        Ok(results
-            .into_iter()
-            .map(|record| (record.id, record.name, record.provider))
-            .collect())
     }
 }
 

@@ -1,16 +1,11 @@
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::{
-            parser::{parse_text, TextParseConfig},
-            sha256,
-            store::external::ExternalDocumentStorage,
-        },
-        model::document::{Document, DocumentInsert, DocumentParameterUpdate},
+        document::{parser::TextParseConfig, sha256, store::external::ExternalDocumentStorage},
+        model::document::{Document, DocumentInsert},
         provider::ProviderState,
         repo::Repository,
     },
-    err,
     error::ChonkitError,
 };
 use chrono::{DateTime, Utc};
@@ -46,18 +41,17 @@ where
     pub async fn import_documents(
         &self,
         file_ids: Vec<String>,
-        force_download: bool,
     ) -> Result<ImportResult, ChonkitError> {
         let storage = &self.providers.document.get_provider(self.api.id())?;
 
-        let mut result = ImportResult::default();
+        let mut results = ImportResult::default();
 
         // Files from GDrive have their external file ID as the path
         for file_id in file_ids {
             let file = match self.api.get_file(&file_id).await {
                 Ok(file) => file,
                 Err(e) => {
-                    result.failed.push(ImportFailure::new(
+                    results.failed.push(ImportFailure::new(
                         file_id,
                         "Unknown".to_string(),
                         e.to_string(),
@@ -66,225 +60,62 @@ where
                 }
             };
 
-            let path = storage.absolute_path(&file.name, file.ext);
-
-            // Check for path collision first to prevent downloading file in case it already
-            // exists
-            let existing_by_path = match self.repo.get_document_by_path(&path, self.api.id()).await
-            {
-                Ok(doc) => doc,
+            let content = match self.api.download(&file.path.0).await {
+                Ok(content) => content,
                 Err(e) => {
-                    // Handles database errors
-                    result
+                    results
                         .failed
                         .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
                     continue;
                 }
             };
 
-            let document = if let Some(existing) = existing_by_path {
-                // Document at path already exists, attempt redownload
+            let hash = sha256(&content);
 
-                if !force_download {
-                    tracing::info!(
-                        "Document '{}' already exists ({})",
-                        existing.name,
-                        existing.id
-                    );
-                    result.skipped.push(existing);
-                    continue;
-                }
+            if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
+                results.skipped.push(existing);
+                continue;
+            }
 
-                // Redownload and rehash the content
-                tracing::debug!("'{}' - downloading content", existing.name);
+            let path = storage.absolute_path(&file.name, file.ext);
+            let name = file.name.clone();
 
-                let content = match self.api.download(&file.path.0).await {
-                    Ok(content) => content,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                };
+            let document = self
+                .repo
+                .transaction(|tx| {
+                    Box::pin(async move {
+                        let insert =
+                            DocumentInsert::new(&name, &path, file.ext, &hash, self.api.id());
 
-                // Attempt to parse with defaults to check for empty documents.
-                match parse_text(TextParseConfig::default(), file.ext, content.as_slice()) {
-                    Ok(out) => {
-                        if out.is_empty() {
-                            result.failed.push(ImportFailure::new(
-                                file.path.0,
-                                file.name,
-                                "Parsing resulted in empty output".to_string(),
-                            ));
-                            continue;
+                        let document = self
+                            .repo
+                            .insert_document_with_configs(
+                                insert,
+                                TextParseConfig::default(),
+                                ChunkConfig::snapping_default(),
+                                tx,
+                            )
+                            .await?;
+
+                        match storage.write(&path, &content).await {
+                            Ok(_) => Ok(document),
+                            Err(e) => Err(e),
                         }
-                    }
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                }
-
-                let hash = sha256(&content);
-
-                tracing::debug!(
-                    "Redownloading document '{}' ({})",
-                    existing.name,
-                    existing.id
-                );
-
-                // Always return errors if there is a hash collision
-                // Files from GDrive always have their hashes on them so it's ok to unwrap
-                let existing_by_hash = match self.repo.get_document_by_hash(&hash).await {
-                    Ok(existing) => existing,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                };
-
-                if let Some(existing) = existing_by_hash {
-                    result.failed.push(ImportFailure::new(
-                        file.path.0,
-                        file.name,
-                        format!(
-                            "New document has same hash as existing '{}' ({})",
-                            existing.name, existing.id
-                        ),
-                    ));
-                    continue;
-                };
-
-                // Write new contents with the overwrite flag enabled
-                if let Err(e) = storage.write(&path, &content, true).await {
-                    result
-                        .failed
-                        .push(ImportFailure::new(file.path.0, file.name, e.to_string()));
-                    continue;
-                };
-
-                // Update the repository entry, its `updated_at` field is also updated
-                let update = DocumentParameterUpdate::new(&path, &hash);
-
-                match self
-                    .repo
-                    .update_document_parameters(existing.id, update)
-                    .await
-                {
-                    Ok(document) => document,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                }
-            } else {
-                // Document does not exist, download as usual
-
-                let content = match self.api.download(&file.path.0).await {
-                    Ok(content) => content,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                };
-
-                // Attempt to parse with defaults to check for empty documents.
-                match parse_text(TextParseConfig::default(), file.ext, content.as_slice()) {
-                    Ok(out) => {
-                        if out.is_empty() {
-                            result.failed.push(ImportFailure::new(
-                                file.path.0,
-                                file.name,
-                                "Parsing resulted in empty output".to_string(),
-                            ));
-                            continue;
-                        }
-                    }
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                }
-
-                let hash = sha256(&content);
-                let name = file.name.clone();
-
-                let insert_result = self
-                    .repo
-                    .transaction(|tx| {
-                        Box::pin(async move {
-                            let insert =
-                                DocumentInsert::new(&name, &path, file.ext, &hash, self.api.id());
-
-                            let document = self
-                                .repo
-                                .insert_document_with_configs(
-                                    insert,
-                                    TextParseConfig::default(),
-                                    ChunkConfig::snapping_default(),
-                                    tx,
-                                )
-                                .await?;
-
-                            match storage.write(&path, &content, false).await {
-                                Ok(_) => Ok(document),
-                                Err(e) => Err(e),
-                            }
-                        })
                     })
-                    .await;
+                })
+                .await?;
 
-                match insert_result {
-                    Ok(document) => document,
-                    Err(e) => {
-                        result.failed.push(ImportFailure::new(
-                            file.path.0,
-                            file.name,
-                            e.to_string(),
-                        ));
-                        continue;
-                    }
-                }
-            };
-
-            result.success.push(document);
+            results.success.push(document);
         }
 
-        Ok(result)
+        Ok(results)
     }
 
     /// Import a single file from an external API. All files imported via this function
     /// will be downloaded and stored locally.
     ///
     /// * `file_id`: The external file ID.
-    pub async fn import_document(
-        &self,
-        file_id: &str,
-        force_download: bool,
-    ) -> Result<Document, ChonkitError> {
+    pub async fn import_document(&self, file_id: &str) -> Result<Document, ChonkitError> {
         let file = self.api.get_file(file_id).await?;
         let storage = match self.providers.document.get_provider(self.api.id()) {
             Ok(store) => store,
@@ -299,38 +130,15 @@ where
 
         let local_path = storage.absolute_path(&file.name, file.ext);
 
-        if let Some(doc) = self
-            .repo
-            .get_document_by_path(&local_path, self.api.id())
-            .await?
-        {
-            if !force_download {
-                tracing::error!("Document '{}' already exists ({})", doc.name, doc.id);
-                return err!(AlreadyExists, "Document with ID '{}'", doc.id);
-            }
-            let content = self.api.download(&file.path.0).await?;
-            let hash = sha256(&content);
-            storage.write(&local_path, &content, true).await?;
-
-            // Triggering updates will update the `updated_at` field
-            return self
-                .repo
-                .update_document_parameters(
-                    doc.id,
-                    DocumentParameterUpdate::new(&local_path, &hash),
-                )
-                .await;
-        }
-
         let content = self.api.download(file_id).await?;
 
-        // Attempt to parse with defaults to check for empty documents.
-        if parse_text(TextParseConfig::default(), file.ext, content.as_slice())?.is_empty() {
-            return err!(InvalidFile, "Parsing resulted in empty output");
+        let hash = sha256(&content);
+
+        if let Some(existing) = self.repo.get_document_by_hash(&hash).await? {
+            return Ok(existing);
         }
 
-        let hash = sha256(&content);
-        storage.write(&local_path, &content, force_download).await?;
+        storage.write(&local_path, &content).await?;
 
         self.repo
             .insert_document(DocumentInsert::new(

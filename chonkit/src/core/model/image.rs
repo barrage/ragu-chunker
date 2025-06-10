@@ -1,4 +1,4 @@
-use crate::core::document::sha256;
+use crate::{core::document::sha256, err, error::ChonkitError, map_err};
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
@@ -98,7 +98,7 @@ impl std::fmt::Debug for Image {
 
 /// Image obtained when loading from document storage.
 pub struct ImageData {
-    /// Encoded image bytes.
+    /// Image bytes.
     pub bytes: Vec<u8>,
 
     /// Image format.
@@ -116,6 +116,43 @@ impl ImageData {
             self.format.to_mime_type(),
             base64::engine::general_purpose::STANDARD.encode(self.bytes.as_slice())
         )
+    }
+
+    pub fn from_b64_data_uri(uri: &str) -> Result<Self, ChonkitError> {
+        let Some(uri) = uri.strip_prefix("data:") else {
+            return err!(InvalidFile, "Invalid data URI");
+        };
+
+        let Some((mime, b64)) = uri.split_once(";base64,") else {
+            return err!(InvalidFile, "Invalid data URI");
+        };
+
+        let Some(format) = image::ImageFormat::from_mime_type(mime) else {
+            return err!(InvalidFile, "Invalid mime type: {mime}");
+        };
+
+        let bytes = map_err!(base64::engine::general_purpose::STANDARD.decode(b64));
+
+        let img = map_err!(image::load_from_memory_with_format(&bytes, format));
+
+        Ok(Self {
+            bytes,
+            format,
+            width: img.width(),
+            height: img.height(),
+        })
+    }
+
+    pub fn from_raw_bytes(bytes: &[u8]) -> Result<Self, ChonkitError> {
+        let img = map_err!(image::load_from_memory(bytes));
+        let format = map_err!(image::guess_format(bytes));
+
+        Ok(Self {
+            bytes: bytes.to_vec(),
+            format,
+            width: img.width(),
+            height: img.height(),
+        })
     }
 
     pub fn size_in_mb(&self) -> usize {

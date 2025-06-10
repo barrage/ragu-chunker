@@ -49,8 +49,8 @@ impl DocumentStorage for FsDocumentStore {
         self.dir.list_files().await
     }
 
-    async fn write(&self, path: &str, file: &[u8], overwrite: bool) -> Result<(), ChonkitError> {
-        self.dir.write(path, file, overwrite).await
+    async fn write(&self, path: &str, file: &[u8]) -> Result<(), ChonkitError> {
+        self.dir.write(path, file).await
     }
 
     async fn delete(&self, path: &str) -> Result<(), ChonkitError> {
@@ -123,21 +123,11 @@ impl TokioDirectory {
         Ok(files)
     }
 
-    pub async fn write(
-        &self,
-        path: &str,
-        file: &[u8],
-        overwrite: bool,
-    ) -> Result<(), ChonkitError> {
+    pub async fn write(&self, path: &str, file: &[u8]) -> Result<(), ChonkitError> {
         debug!("Writing {path}");
         match tokio::fs::read(&path).await {
             Ok(_) => {
-                if overwrite {
-                    map_err!(tokio::fs::write(&path, file).await);
-                    Ok(())
-                } else {
-                    err!(AlreadyExists, "File '{path}' at {path}")
-                }
+                err!(AlreadyExists, "File '{path}' at {path}")
             }
             Err(e) => match e.kind() {
                 std::io::ErrorKind::NotFound => {
@@ -210,7 +200,7 @@ mod tests {
 
         let ext = DocumentType::try_from(d.ext).unwrap();
         let path = store.absolute_path(&d.name, ext);
-        store.write(&path, CONTENT.as_bytes(), false).await.unwrap();
+        store.write(&path, CONTENT.as_bytes()).await.unwrap();
 
         let file = tokio::fs::read_to_string(&path).await.unwrap();
         assert_eq!(CONTENT, file);

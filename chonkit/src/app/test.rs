@@ -7,6 +7,7 @@ use super::{
     document::store::FsDocumentStore,
     state::{AppProviderState, AppState},
 };
+use crate::core::provider::Identity;
 use crate::core::{
     cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
     provider::{DocumentStorageProvider, EmbeddingProvider, VectorDbProvider},
@@ -17,7 +18,6 @@ use crate::core::{
     },
     token::Tokenizer,
 };
-use crate::core::{image::minio::MinioImageStorage, provider::Identity};
 use chonkit_embedders::EmbeddingModel;
 use std::{
     collections::HashMap,
@@ -285,7 +285,7 @@ pub async fn init_cache() -> (TextEmbeddingCache, ImageEmbeddingCache, RedisCont
 
 pub async fn init_minio(
     repository: Repository,
-) -> (crate::core::image::minio::MinioImageStorage, MinioContainer) {
+) -> (crate::core::image::minio::MinioClient, MinioContainer) {
     let minio_image = testcontainers_modules::minio::MinIO::default()
         .start()
         .await
@@ -325,10 +325,7 @@ pub async fn init_minio(
     )
     .await;
 
-    (
-        MinioImageStorage::new(minio_client, repository),
-        minio_image,
-    )
+    (minio_client, minio_image)
 }
 
 /// Setup a qdrant test container and connect to it using QdrantDb.

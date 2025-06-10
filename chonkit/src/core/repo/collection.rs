@@ -290,6 +290,52 @@ impl Repository {
         .fetch_optional(&self.client)
         .await))
     }
+
+    pub async fn get_document_assigned_collections(
+        &self,
+        document_id: Uuid,
+    ) -> Result<Vec<(Uuid, String, String)>, ChonkitError> {
+        let query = sqlx::query!(
+            r#"
+            SELECT collections.id, collections.name, collections.provider FROM collections
+                WHERE collections.id IN (
+                        SELECT collection_id FROM embeddings
+                        WHERE embeddings.document_id = $1 
+                )
+            "#,
+            document_id
+        );
+
+        let results = map_err!(query.fetch_all(&self.client).await);
+
+        Ok(results
+            .into_iter()
+            .map(|record| (record.id, record.name, record.provider))
+            .collect())
+    }
+
+    pub async fn get_image_assigned_collections(
+        &self,
+        image_id: Uuid,
+    ) -> Result<Vec<(Uuid, String, String)>, ChonkitError> {
+        let query = sqlx::query!(
+            r#"
+            SELECT collections.id, collections.name, collections.provider FROM collections
+                WHERE collections.id IN (
+                        SELECT image_id FROM image_embeddings
+                        WHERE image_embeddings.image_id = $1 
+                )
+            "#,
+            image_id
+        );
+
+        let results = map_err!(query.fetch_all(&self.client).await);
+
+        Ok(results
+            .into_iter()
+            .map(|record| (record.id, record.name, record.provider))
+            .collect())
+    }
 }
 
 /// Private DTO for joining collections and the documents they contain.

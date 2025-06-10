@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::DocumentType;
 use crate::{core::model::image::Image, err, error::ChonkitError, map_err};
 use serde::{Deserialize, Serialize};
@@ -53,10 +55,17 @@ pub fn parse_text(
     }
 }
 
-/// Parse all images of a document.
-pub fn parse_images(ext: DocumentType, input: &[u8]) -> Result<Vec<Image>, ChonkitError> {
+/// Parse all images of a document, skipping those found in `skip`.
+///
+/// The `skip` set is a set of the combination of an image's page number and
+/// sequence number on the page.
+pub fn parse_images(
+    ext: DocumentType,
+    input: &[u8],
+    skip: &HashSet<(usize, usize)>,
+) -> Result<Vec<Image>, ChonkitError> {
     match ext {
-        DocumentType::Pdf => pdf::parse_images(input),
+        DocumentType::Pdf => pdf::parse_images(input, skip),
         _ => err!(
             InvalidParameter,
             "Image parsing not yet supported for document type '{ext}'"

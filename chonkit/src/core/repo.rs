@@ -35,12 +35,17 @@ impl Repository {
 }
 
 impl Repository {
-    pub async fn transaction<'tx, T, F>(&self, op: F) -> Result<T, ChonkitError>
+    /// Run the provided block `f`, with a started transaction.
+    ///
+    /// If the block returns an error, the transaction will be rolled back.
+    ///
+    /// Otherwise, the transaction will be committed.
+    pub async fn transaction<'tx, T, F>(&self, f: F) -> Result<T, ChonkitError>
     where
         F: for<'c> FnOnce(&'c mut Transaction<'tx>) -> BoxFuture<'c, Result<T, ChonkitError>>,
     {
         let mut tx = map_err!(self.client.begin().await);
-        let result = op(&mut tx).await;
+        let result = f(&mut tx).await;
         match result {
             Ok(out) => {
                 map_err!(tx.commit().await);

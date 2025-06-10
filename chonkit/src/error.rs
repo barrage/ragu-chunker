@@ -130,6 +130,12 @@ pub enum ChonkitErr {
 
     #[error("tokio: {0}")]
     Tokio(#[from] tokio::task::JoinError),
+
+    #[error("base64: {0}")]
+    B64(#[from] base64::DecodeError),
+
+    #[error("image: {0}")]
+    Image(#[from] image::ImageError),
 }
 
 /// A wrapper around an error that includes the specific file, line and column it was created in.

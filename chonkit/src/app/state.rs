@@ -9,10 +9,7 @@ use crate::{
         cache::{init, ImageEmbeddingCache, TextEmbeddingCache},
         chunk::ChunkConfig,
         document::{DocumentType, TextDocumentType},
-        image::{
-            minio::{MinioClient, MinioImageStorage},
-            ImageStore,
-        },
+        image::{minio::MinioClient, ImageStore},
         provider::{
             DocumentStorageProvider, EmbeddingProvider, Identity, ProviderState, VectorDbProvider,
         },
@@ -75,7 +72,7 @@ impl AppState {
             vector: Self::init_vector_providers(args),
             embedding: Self::init_embedding_providers(args),
             document: Self::init_storage(args).await,
-            image: Self::init_image_storage(args, repository.clone()).await,
+            image: Self::init_image_storage(args).await,
         };
 
         let services = ServiceState {
@@ -242,10 +239,7 @@ impl AppState {
         storage
     }
 
-    async fn init_image_storage(
-        args: &crate::config::StartArgs,
-        repository: Repository,
-    ) -> ImageStore {
+    async fn init_image_storage(args: &crate::config::StartArgs) -> ImageStore {
         let client = MinioClient::new(
             args.minio_url(),
             args.minio_bucket(),
@@ -253,7 +247,7 @@ impl AppState {
             args.minio_secret_key(),
         )
         .await;
-        Arc::new(MinioImageStorage::new(client, repository))
+        Arc::new(client)
     }
 
     /// Used for metadata display.

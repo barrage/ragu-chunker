@@ -280,14 +280,11 @@ mod vector_service_integration_tests {
 
             let document = services
                 .document
-                .upload(
-                    DocumentUpload::new(
-                        "test_document".to_string(),
-                        DocumentType::Text(TextDocumentType::Txt),
-                        content.as_bytes(),
-                    ),
-                    false,
-                )
+                .upload(DocumentUpload::new(
+                    "test_document".to_string(),
+                    DocumentType::Text(TextDocumentType::Txt),
+                    content.as_bytes(),
+                ))
                 .await
                 .unwrap();
 
@@ -376,14 +373,11 @@ mod vector_service_integration_tests {
 
             let document = services
                 .document
-                .upload(
-                    DocumentUpload::new(
-                        "test_document_420".to_string(),
-                        DocumentType::Text(TextDocumentType::Txt),
-                        b"Hello, world! 420",
-                    ),
-                    false,
-                )
+                .upload(DocumentUpload::new(
+                    "test_document_420".to_string(),
+                    DocumentType::Text(TextDocumentType::Txt),
+                    b"Hello, world! 420",
+                ))
                 .await
                 .unwrap();
 
@@ -433,14 +427,11 @@ mod vector_service_integration_tests {
 
             let document = services
                 .document
-                .upload(
-                    DocumentUpload::new(
-                        "test_document_42069".to_string(),
-                        DocumentType::Text(TextDocumentType::Txt),
-                        b"Hello, world! 42069",
-                    ),
-                    false,
-                )
+                .upload(DocumentUpload::new(
+                    "test_document_42069".to_string(),
+                    DocumentType::Text(TextDocumentType::Txt),
+                    b"Hello, world! 42069",
+                ))
                 .await
                 .unwrap();
 

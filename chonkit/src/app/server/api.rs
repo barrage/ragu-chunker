@@ -1,47 +1,3 @@
-#[rustfmt::skip]
-use super::router::{
-    // App config
-    __path_app_config,
-
-    // Documents
-    document::{
-        __path_list_documents,
-        __path_list_documents_display,
-        __path_get_document,
-        __path_delete_document,
-        __path_upload_documents,
-        __path_chunk_preview,
-        __path_parse_preview,
-        __path_update_document_config,
-        __path_sync,
-    },
-
-    // Vectors
-    collection::{
-        __path_list_collections,
-        __path_get_collection,
-        __path_create_collection,
-        __path_delete_collection,
-        __path_search, 
-        __path_list_collections_display,
-        __path_collection_display,
-        __path_sync as __path_collection_sync,
-        __path_update_collection_groups
-    },
-
-    // Embeddings
-    embedding::{
-        __path_count_embeddings,
-        __path_delete_embeddings,
-        __path_list_embedded_documents,
-        __path_embed_text,
-        __path_batch_embed_text,
-        __path_embed_image,
-        __path_list_embedding_models,
-        __path_list_embedding_reports,
-    }
-};
-
 use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, UploadResult};
 use crate::{
     app::{server::{dto::UpdateImageDescription, router::collection::SyncParams}, state::AppConfig},
@@ -68,38 +24,45 @@ use utoipa::OpenApi;
 #[openapi(
     paths(
         // App config
-        app_config,
+        super::router::app_config,
+
         // Documents
-        list_documents,
-        list_documents_display,
-        get_document,
-        delete_document,
-        upload_documents,
-        chunk_preview,
-        parse_preview,
-        update_document_config,
-        sync,
+        super::router::document::list_documents,
+        super::router::document::list_documents_display,
+        super::router::document::get_document,
+        super::router::document::delete_document,
+        super::router::document::upload_documents,
+        super::router::document::chunk_preview,
+        super::router::document::parse_preview,
+        super::router::document::update_document_config,
+        super::router::document::sync,
+
+        // Images
+        super::router::document::list_images,
+        super::router::document::delete_image,
+        super::router::document::update_image_description,
+        super::router::document::process_document_images,
 
         // Collections
-        list_collections,
-        get_collection,
-        create_collection,
-        delete_collection,
-        list_collections_display,
-        collection_display,
-        search,
-        collection_sync,
-        update_collection_groups,
+        super::router::collection::list_collections,
+        super::router::collection::get_collection,
+        super::router::collection::create_collection,
+        super::router::collection::delete_collection,
+        super::router::collection::list_collections_display,
+        super::router::collection::collection_display,
+        super::router::collection::search,
+        super::router::collection::sync,
+        super::router::collection::update_collection_groups,
 
         // Embeddings
-        list_embedding_models,
-        list_embedded_documents,
-        list_embedding_reports,
-        embed_text,
-        batch_embed_text,
-        embed_image,
-        delete_embeddings,
-        count_embeddings,
+        super::router::embedding::list_embedding_models,
+        super::router::embedding::list_embedded_documents,
+        super::router::embedding::list_embedding_reports,
+        super::router::embedding::embed_text,
+        super::router::embedding::batch_embed_text,
+        super::router::embedding::embed_image,
+        super::router::embedding::delete_embeddings,
+        super::router::embedding::count_embeddings,
     ),
     components(schemas(
         List<Collection>,

@@ -4,6 +4,7 @@ use crate::core::cache::embedding::{
 };
 use crate::core::cache::{ImageEmbeddingCache, TextEmbeddingCache};
 use crate::core::chunk::{ChunkConfig, ChunkedDocument};
+use crate::core::document::get_image;
 use crate::core::document::parser::{parse_text, ParseOutput, TextParseConfig};
 use crate::core::embeddings::Embeddings;
 use crate::core::model::embedding::{
@@ -96,9 +97,8 @@ impl EmbeddingService {
             collection: collection_id,
         } = input;
 
-        let Some(image_meta) = self.repo.get_image_by_id(image_id).await? else {
-            return err!(DoesNotExist, "Image with ID {}", image_id);
-        };
+        let (image, image_meta) =
+            get_image(self.repo.clone(), &*self.providers.image, image_id).await?;
 
         let Some(collection) = self.repo.get_collection_by_id(collection_id).await? else {
             return err!(DoesNotExist, "Collection with ID '{}'", collection_id);
@@ -141,8 +141,6 @@ impl EmbeddingService {
                 model_details.name
             );
         }
-
-        let image = self.providers.image.get_image(&image_meta.path).await?;
 
         // The image description is part of its hash, if it was changed in the meantime
         // the cache will miss and we will get fresh embeddings.
@@ -536,29 +534,29 @@ impl EmbeddingService {
 
                     self.repo.insert_text_embedding_report(&report).await?;
 
+                    vector_db
+                        .insert_embeddings(CollectionItemInsert::new_text(
+                            document.id,
+                            &collection.name,
+                            &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                            embeddings.embeddings.clone(),
+                        ))
+                        .await?;
+
                     if let Err(e) = self
                         .text_cache
                         .set(
                             &text_cache_key,
                             CachedTextEmbeddings::new(
-                                embeddings.embeddings.clone(),
+                                embeddings.embeddings,
                                 embeddings.tokens_used,
-                                chunks.iter().map(|s| s.to_string()).collect(),
+                                chunks,
                             ),
                         )
                         .await
                     {
                         tracing::warn!("failed to cache embeddings: {e}");
                     }
-
-                    vector_db
-                        .insert_embeddings(CollectionItemInsert::new_text(
-                            document.id,
-                            &collection.name,
-                            &chunks.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                            embeddings.embeddings,
-                        ))
-                        .await?;
 
                     Ok(report)
                 })
@@ -598,16 +596,17 @@ impl EmbeddingService {
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
 
+        tracing::debug!(
+            "Deleting text vectors of '{}' in collection '{}'",
+            document.name,
+            collection.name
+        );
+
         self.repo
             .transaction(|tx| {
                 Box::pin(async move {
-                    let amount_deleted_db = self
-                        .repo
+                    self.repo
                         .delete_text_embeddings(document_id, collection_id, Some(tx))
-                        .await?;
-
-                    let amount = vector_db
-                        .count_vectors(&collection.name, document_id)
                         .await?;
 
                     let report = TextEmbeddingRemovalReport {
@@ -629,11 +628,6 @@ impl EmbeddingService {
                     vector_db
                         .delete_text_embeddings(&collection.name, document_id)
                         .await?;
-
-                    tracing::debug!(
-                        "Deleted {amount} vectors in collection '{}' ({amount_deleted_db} from db)",
-                        collection.name
-                    );
 
                     Ok(report)
                 })
@@ -672,11 +666,16 @@ impl EmbeddingService {
 
         let vector_db = self.providers.vector.get_provider(&collection.provider)?;
 
+        tracing::debug!(
+            "Deleting image vectors of '{}' in collection '{}'",
+            image.id,
+            collection.name
+        );
+
         self.repo
             .transaction(|tx| {
                 Box::pin(async move {
-                    let amount_deleted_db = self
-                        .repo
+                    self.repo
                         .delete_text_embeddings(image_id, collection_id, Some(tx))
                         .await?;
 
@@ -699,11 +698,6 @@ impl EmbeddingService {
                         .delete_image_embeddings(&collection.name, image_id)
                         .await?;
 
-                    tracing::debug!(
-                        "Deleted image vectors in collection '{}' ({amount_deleted_db} from db)",
-                        collection.name
-                    );
-
                     Ok(report)
                 })
             })
@@ -712,6 +706,10 @@ impl EmbeddingService {
 
     /// Delete all text and image embeddings from the database and vector database.
     pub async fn delete_all_embeddings(&self, document_id: Uuid) -> Result<(), ChonkitError> {
+        let Some(document) = self.repo.get_document_by_id(document_id).await? else {
+            return err!(DoesNotExist, "Document with ID {document_id}");
+        };
+
         let collections = self
             .repo
             .get_document_assigned_collections(document_id)
@@ -724,6 +722,8 @@ impl EmbeddingService {
 
         for (collection_id, collection_name, provider) in collections {
             let images = &images[..];
+            let document_name = &document.name;
+
             self.repo
                 .transaction(|tx| {
                     Box::pin(async move {
@@ -747,7 +747,10 @@ impl EmbeddingService {
                             .delete_text_embeddings(&collection_name, document_id)
                             .await?;
 
-                        tracing::debug!("Deleted embeddings from collection '{collection_name}'",);
+                        tracing::debug!(
+                            "{} - deleted embeddings from collection '{collection_name}'",
+                            document_name
+                        );
                         Ok(())
                     })
                 })

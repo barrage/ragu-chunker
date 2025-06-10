@@ -6,7 +6,7 @@ use crate::{
 };
 use pdfium_render::prelude::{PdfPageObject, PdfPageObjectsCommon, Pdfium};
 use regex::Regex;
-use std::{fmt::Write, time::Instant};
+use std::{collections::HashSet, fmt::Write, time::Instant};
 use tracing::debug;
 
 /// Parser implementation that reads the _whole_ PDF document and extracts its text to a single string.
@@ -156,9 +156,14 @@ pub(super) fn parse_to_sections(
 
 /// Implementation that goes through the whole document to extract images.
 ///
-/// Since images are separately included in collections, all images found in the document are returned
-/// so as to parse and store them only once, as they can take a long time to process.
-pub(super) fn parse_images(input: &[u8]) -> Result<Vec<Image>, ChonkitError> {
+/// The `skip` set contains images already parsed and is usually obtained from the database.
+/// The set should be empty during initial parsing. The set should consist of the page number
+/// and image number combination for a specific document. This metadata is stored with every
+/// image obtained from the document in upstream layers.
+pub(super) fn parse_images(
+    input: &[u8],
+    skip: &HashSet<(usize, usize)>,
+) -> Result<Vec<Image>, ChonkitError> {
     let pdfium = Pdfium::default();
     let input = map_err!(pdfium.load_pdf_from_byte_slice(input, None));
 
@@ -176,12 +181,18 @@ pub(super) fn parse_images(input: &[u8]) -> Result<Vec<Image>, ChonkitError> {
                 continue;
             };
 
+            if skip.contains(&(page_num, image_num)) {
+                image_num += 1;
+                continue;
+            }
+
             match pdf_page_image_object.get_raw_bitmap() {
                 Ok(bitmap) => {
                     let mut bytes = vec![];
                     let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut bytes);
                     let width = bitmap.width() as u32;
                     let height = bitmap.height() as u32;
+
                     encoder
                         .encode(
                             &bitmap.as_rgba_bytes(),
@@ -191,22 +202,14 @@ pub(super) fn parse_images(input: &[u8]) -> Result<Vec<Image>, ChonkitError> {
                         )
                         .unwrap();
 
-                    let image = Image::new(
+                    images.push(Image::new(
                         Some(page_num),
                         Some(image_num),
                         bytes,
                         image::ImageFormat::WebP,
                         width,
                         height,
-                    );
-
-                    // 20 is the max MB size for OpenAI chat multimodal.
-                    if image.image.size_in_mb() > 20 {
-                        tracing::warn!("Image too large: {image} bytes (page: {})", page_num + 1);
-                        continue;
-                    }
-
-                    images.push(image);
+                    ));
 
                     image_num += 1;
                 }

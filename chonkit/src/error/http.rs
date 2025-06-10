@@ -50,6 +50,8 @@ impl ChonkitError {
             E::OperationUnsupported(_) => SC::BAD_REQUEST,
             E::InvalidHeader(_) => SC::INTERNAL_SERVER_ERROR,
             E::Cache(_) => SC::BAD_REQUEST,
+            E::B64(_) => SC::BAD_REQUEST,
+            E::Image(_) => SC::BAD_REQUEST,
         }
     }
 }
@@ -140,6 +142,8 @@ impl IntoResponse for ChonkitError {
             CE::Cache(e) => (status, e.to_string()).into_response(),
             CE::CachePool(e) => (status, e.to_string()).into_response(),
             CE::S3(e) => (status, e.to_string()).into_response(),
+            CE::B64(e) => (status, e.to_string()).into_response(),
+            CE::Image(e) => (status, e.to_string()).into_response(),
             CE::IO(_)
             | CE::Tokio(_)
             | CE::Regex(_)

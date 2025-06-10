@@ -8,7 +8,6 @@ use axum::{
     Json, Router,
 };
 use reqwest::StatusCode;
-use serde::Deserialize;
 use std::{str::FromStr, time::Duration};
 use tower_http::{
     classify::ServerErrorsFailureClass,
@@ -68,6 +67,10 @@ pub fn router(state: AppState) -> Router {
         .route("/documents/:id", get(document::get_document))
         .route("/documents/:id", delete(document::delete_document))
         .route(
+            "/documents/:id/images",
+            post(document::process_document_images),
+        )
+        .route(
             "/documents/:id/config",
             put(document::update_document_config),
         )
@@ -80,8 +83,10 @@ pub fn router(state: AppState) -> Router {
             post(document::parse_preview),
         )
         .route("/documents/sync/:provider", get(document::sync))
+        .route("/images", post(document::upload_images))
         .route("/images", get(document::list_images))
         .route("/images/:image_id", put(document::update_image_description))
+        .route("/images/:image_id", delete(document::delete_image))
         .route("/collections", get(collection::list_collections))
         .route("/collections", post(collection::create_collection))
         .route("/collections/:id", get(collection::get_collection))
@@ -207,11 +212,6 @@ pub fn router(state: AppState) -> Router {
 
 async fn health_check() -> impl IntoResponse {
     StatusCode::OK
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-struct Force {
-    force: bool,
 }
 
 #[utoipa::path(
