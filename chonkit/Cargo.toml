@@ -78,7 +78,6 @@ image = { version = "0.25.6", features = ["webp", "serde"] }
 base64 = "0.22.1"
 rust-s3 = { git = "https://github.com/durch/rust-s3.git", rev = "7c6fdc0646704eac315c11eb60bf9f125975159b" }
 
-
 [features]
 default = [
   "weaviate",
@@ -100,3 +99,6 @@ weaviate = ["weaviate-community"]
 qdrant = ["qdrant-client"]
 gdrive = []
 auth-jwt = ["jwtk"]
+
+[patch.crates-io]
+calamine = { git = "https://github.com/prophittcorey/calamine", branch = "fix/zip-3.0" }
