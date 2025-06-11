@@ -1,7 +1,10 @@
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::{parser::TextParseConfig, sha256, store::external::ExternalDocumentStorage},
+        document::{
+            parser::TextParseConfig, process_document_images, sha256,
+            store::external::ExternalDocumentStorage,
+        },
         model::document::{Document, DocumentInsert},
         provider::ProviderState,
         repo::Repository,
@@ -105,6 +108,15 @@ where
                 })
                 .await?;
 
+            process_document_images(
+                self.repo.clone(),
+                self.providers.image.clone(),
+                document.id,
+                file.ext,
+                content,
+            )
+            .await?;
+
             results.success.push(document);
         }
 
@@ -140,7 +152,8 @@ where
 
         storage.write(&local_path, &content).await?;
 
-        self.repo
+        let document = self
+            .repo
             .insert_document(DocumentInsert::new(
                 &file.name,
                 &local_path,
@@ -148,7 +161,18 @@ where
                 &hash,
                 self.api.id(),
             ))
-            .await
+            .await;
+
+        process_document_images(
+            self.repo.clone(),
+            self.providers.image.clone(),
+            document.id,
+            file.ext,
+            content,
+        )
+        .await?;
+
+        Ok(document)
     }
 
     /// Check the modification time of a document on the external API and compare it with the

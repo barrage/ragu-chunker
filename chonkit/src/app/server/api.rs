@@ -40,6 +40,7 @@ use utoipa::OpenApi;
         // Images
         super::router::document::list_images,
         super::router::document::delete_image,
+        super::router::document::upload_images,
         super::router::document::update_image_description,
         super::router::document::process_document_images,
 
