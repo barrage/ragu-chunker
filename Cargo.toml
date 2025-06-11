@@ -1,3 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["chonkit", "chunx", "embedders", "feserver"]
+
+[patch.crates-io]
+calamine = { git = "https://github.com/prophittcorey/calamine", branch = "fix/zip-3.0" }

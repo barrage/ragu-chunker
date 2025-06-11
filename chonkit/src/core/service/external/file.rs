@@ -86,7 +86,7 @@ where
             let document = self
                 .repo
                 .transaction(|tx| {
-                    Box::pin(async move {
+                    Box::pin(async {
                         let insert =
                             DocumentInsert::new(&name, &path, file.ext, &hash, self.api.id());
 
@@ -161,7 +161,7 @@ where
                 &hash,
                 self.api.id(),
             ))
-            .await;
+            .await?;
 
         process_document_images(
             self.repo.clone(),
