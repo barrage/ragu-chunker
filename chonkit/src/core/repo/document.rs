@@ -1,4 +1,4 @@
-use crate::core::document::parser::TextParseConfig;
+use crate::core::document::parser::ParseConfig;
 use crate::core::model::document::DocumentSearchColumn;
 use crate::core::model::ToSearchColumn;
 use crate::core::repo::{Repository, Transaction};
@@ -629,7 +629,7 @@ impl Repository {
     ) -> Result<Option<DocumentParseConfig>, ChonkitError> {
         Ok(map_err!(
             sqlx::query_as!(
-                SelectConfig::<TextParseConfig>,
+                SelectConfig::<ParseConfig>,
                 r#"SELECT 
                 id,
                 document_id,
@@ -649,6 +649,7 @@ impl Repository {
     pub async fn upsert_document_chunk_config(
         &self,
         document_id: uuid::Uuid,
+        collection_id: Option<uuid::Uuid>,
         chunker: ChunkConfig,
     ) -> Result<DocumentChunkConfig, ChonkitError> {
         let config = InsertConfig::new(document_id, chunker);
@@ -662,16 +663,14 @@ impl Repository {
         let config = map_err!(
             sqlx::query_as!(
                 SelectConfig::<ChunkConfig>,
-                r#"INSERT INTO chunkers
-                (id, document_id, config)
-             VALUES
-                ($1, $2, $3)
-             ON CONFLICT(document_id) DO UPDATE SET config = $3
-             RETURNING
-                id, document_id, config AS "config: _", created_at, updated_at
-            "#,
+                r#"INSERT INTO chunkers (id, document_id, collection_id, config)
+                   VALUES ($1, $2, $3, $4)
+                   ON CONFLICT (document_id, collection_id) DO UPDATE SET config = $4
+                   RETURNING id, document_id, config AS "config: _", created_at, updated_at
+                "#,
                 id,
                 document_id,
+                collection_id,
                 config as Json<ChunkConfig>,
             )
             .fetch_one(&self.client)
@@ -684,7 +683,8 @@ impl Repository {
     pub async fn upsert_document_parse_config(
         &self,
         document_id: uuid::Uuid,
-        config: TextParseConfig,
+        collection_id: Option<uuid::Uuid>,
+        config: ParseConfig,
     ) -> Result<DocumentParseConfig, ChonkitError> {
         let config = InsertConfig::new(document_id, config);
 
@@ -696,17 +696,16 @@ impl Repository {
 
         let config = map_err!(
             sqlx::query_as!(
-                SelectConfig::<TextParseConfig>,
-                r#"INSERT INTO parsers
-                (id, document_id, config)
-             VALUES
-                ($1, $2, $3)
-             ON CONFLICT(document_id) DO UPDATE SET config = $3
-             RETURNING
-                id, document_id, config AS "config: _", created_at, updated_at"#,
+                SelectConfig::<ParseConfig>,
+                r#"INSERT INTO parsers (id, document_id, collection_id, config)
+                   VALUES ($1, $2, $3, $4)
+                   ON CONFLICT(document_id, collection_id) DO UPDATE SET config = $4
+                   RETURNING id, document_id, config AS "config: _", created_at, updated_at
+                "#,
                 id,
                 document_id,
-                config as Json<TextParseConfig>,
+                collection_id,
+                config as Json<ParseConfig>,
             )
             .fetch_one(&self.client)
             .await
@@ -718,7 +717,7 @@ impl Repository {
     pub async fn insert_document_with_configs(
         &self,
         document: DocumentInsert<'_>,
-        parse_config: TextParseConfig,
+        parse_config: ParseConfig,
         chunk_config: ChunkConfig,
         tx: &mut Transaction<'_>,
     ) -> Result<Document, ChonkitError> {
@@ -764,7 +763,7 @@ impl Repository {
                 "#,
                 parse_insert.id,
                 parse_insert.document_id,
-                parse_insert.config as Json<TextParseConfig>,
+                parse_insert.config as Json<ParseConfig>,
             )
             .execute(&mut **tx)
             .await
@@ -831,7 +830,7 @@ struct SelectDocumentConfig {
     hash: String,
     src: String,
     chunk_config: Option<Json<ChunkConfig>>,
-    parse_config: Option<Json<TextParseConfig>>,
+    parse_config: Option<Json<ParseConfig>>,
 }
 
 impl From<SelectDocumentConfig> for DocumentConfig {
@@ -887,8 +886,8 @@ impl From<SelectConfig<ChunkConfig>> for DocumentChunkConfig {
     }
 }
 
-impl From<SelectConfig<TextParseConfig>> for DocumentParseConfig {
-    fn from(value: SelectConfig<TextParseConfig>) -> Self {
+impl From<SelectConfig<ParseConfig>> for DocumentParseConfig {
+    fn from(value: SelectConfig<ParseConfig>) -> Self {
         let SelectConfig {
             id,
             document_id,
@@ -914,7 +913,7 @@ mod tests {
         app::test::{init_repository, PostgresContainer},
         core::{
             chunk::ChunkConfig,
-            document::{parser::TextParseConfig, DocumentType, TextDocumentType},
+            document::{parser::ParseConfig, DocumentType, TextDocumentType},
             model::{
                 document::{DocumentInsert, DocumentSearchColumn},
                 Pagination, PaginationSort, Search,
@@ -963,7 +962,7 @@ mod tests {
         );
         let doc = repo.insert_document(doc).await.unwrap();
         let chunker = ChunkConfig::sliding(420, 69).unwrap();
-        repo.upsert_document_chunk_config(doc.id, chunker.clone())
+        repo.upsert_document_chunk_config(doc.id, None, chunker.clone())
             .await
             .unwrap();
         let config = repo
@@ -1016,7 +1015,7 @@ mod tests {
                         "Hash1r",
                         "fs",
                     ),
-                    TextParseConfig::default(),
+                    ParseConfig::default(),
                     ChunkConfig::snapping_default(),
                     tx,
                 )
@@ -1039,7 +1038,7 @@ mod tests {
                         "Hash2r",
                         "other",
                     ),
-                    TextParseConfig::default(),
+                    ParseConfig::default(),
                     ChunkConfig::snapping_default(),
                     tx,
                 )

@@ -6,7 +6,7 @@ use crate::{
         state::AppState,
     },
     core::{
-        document::{parser::TextParseConfig, DocumentType},
+        document::{parser::ParseConfig, DocumentType},
         model::{
             document::{Document, DocumentConfig, DocumentDisplay},
             image::{ImageData, ImageModel},
@@ -206,13 +206,17 @@ pub(super) async fn update_document_config(
     Path(document_id): Path<Uuid>,
     Json(config): Json<ConfigUpdatePayload>,
 ) -> Result<StatusCode, ChonkitError> {
-    let ConfigUpdatePayload { parser, chunker } = config;
+    let ConfigUpdatePayload {
+        collection_id,
+        parser,
+        chunker,
+    } = config;
 
     if let Some(parser) = parser {
         state
             .services
             .document
-            .update_parser(document_id, parser)
+            .update_parser(document_id, collection_id, parser)
             .await?;
     }
 
@@ -220,7 +224,7 @@ pub(super) async fn update_document_config(
         state
             .services
             .document
-            .update_chunker(document_id, chunker)
+            .update_chunker(document_id, collection_id, chunker)
             .await?;
     }
 
@@ -265,7 +269,7 @@ pub(super) async fn chunk_preview(
 pub(super) async fn parse_preview(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(config): Json<TextParseConfig>,
+    Json(config): Json<ParseConfig>,
 ) -> Result<Json<ParsePreview>, ChonkitError> {
     Ok(Json(
         state.services.document.parse_preview(id, config).await?,

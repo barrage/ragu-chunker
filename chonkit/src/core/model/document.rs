@@ -2,7 +2,7 @@ use super::collection::CollectionShort;
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::{parser::TextParseConfig, DocumentType},
+        document::{parser::ParseConfig, DocumentType},
     },
     search_column,
 };
@@ -104,15 +104,11 @@ pub struct DocumentConfig {
     pub hash: String,
     pub src: String,
     pub chunk_config: Option<ChunkConfig>,
-    pub parse_config: Option<TextParseConfig>,
+    pub parse_config: Option<ParseConfig>,
 }
 
 impl DocumentConfig {
-    pub fn new(
-        document: Document,
-        chunk_config: ChunkConfig,
-        parse_config: TextParseConfig,
-    ) -> Self {
+    pub fn new(document: Document, chunk_config: ChunkConfig, parse_config: ParseConfig) -> Self {
         Self {
             id: document.id,
             name: document.name,
@@ -201,7 +197,7 @@ pub struct DocumentParseConfig {
     /// References the document which this config belongs to.
     pub document_id: uuid::Uuid,
     /// JSON string of the parsing configuration.
-    pub config: TextParseConfig,
+    pub config: ParseConfig,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

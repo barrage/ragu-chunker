@@ -6,7 +6,7 @@ mod document_service_integration_tests {
         app::test::{TestState, TestStateConfig, DEFAULT_MODELS},
         core::{
             document::{
-                parser::{parse_text, StringParseConfig, TextParseConfig},
+                parser::{parse_text, ParseConfig, StringParseConfig},
                 DocumentType, TextDocumentType,
             },
             service::{
@@ -63,7 +63,7 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload).await.unwrap();
 
-        let config = TextParseConfig::default();
+        let config = ParseConfig::default();
 
         let text_from_bytes = parse_text(
             config.clone(),
@@ -109,7 +109,7 @@ mod document_service_integration_tests {
 
         let document = service.upload(upload).await.unwrap();
 
-        let config = TextParseConfig::default();
+        let config = ParseConfig::default();
 
         let text_from_bytes = parse_text(
             config.clone(),
@@ -156,14 +156,14 @@ mod document_service_integration_tests {
         let document = service.upload(upload).await.unwrap();
 
         let text_from_bytes = parse_text(
-            TextParseConfig::default(),
+            ParseConfig::default(),
             document.ext.as_str().try_into().unwrap(),
             content,
         )
         .unwrap();
 
         let text_from_store = parse_text(
-            TextParseConfig::default(),
+            ParseConfig::default(),
             document.ext.try_into().unwrap(),
             &state
                 .app
@@ -201,14 +201,14 @@ mod document_service_integration_tests {
 
         let document = file_service.upload(upload).await.unwrap();
 
-        let config = TextParseConfig::String(
+        let config = ParseConfig::String(
             StringParseConfig::new(10, 20)
                 .use_range()
                 .with_filter("foo"),
         );
 
         service
-            .update_parser(document.id, config.clone())
+            .update_parser(document.id, None, config.clone())
             .await
             .unwrap();
 
@@ -219,11 +219,11 @@ mod document_service_integration_tests {
             .parse_config
             .unwrap();
 
-        let TextParseConfig::String(config) = config else {
+        let ParseConfig::String(config) = config else {
             unreachable!();
         };
 
-        let TextParseConfig::String(parse_config) = parse_config else {
+        let ParseConfig::String(parse_config) = parse_config else {
             panic!("unexpected parse mode")
         };
 

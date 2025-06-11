@@ -3,7 +3,7 @@ use crate::{
     app::{server::{dto::UpdateImageDescription, router::collection::SyncParams}, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
-        document::parser::{PageRange, SectionParseConfig, StringParseConfig, TextParseConfig},
+        document::parser::{PageRange, SectionParseConfig, StringParseConfig, ParseConfig},
         model::{
             collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort}, document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentSearchColumn, DocumentShort,
@@ -98,10 +98,10 @@ use utoipa::OpenApi;
         SplitlineConfig,
 
         ChunkPreviewPayload,
-        TextParseConfig,
+        ParseConfig,
         SectionParseConfig,
         StringParseConfig,
-        TextParseConfig,
+        ParseConfig,
         ParsePreview,
         ParseOutputPreview,
         PageRange,

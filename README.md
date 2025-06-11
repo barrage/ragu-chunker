@@ -4,8 +4,9 @@ Chunk documents.
 
 ## Contents
 
-- [General information](#general-information)
+- [Using Chonkit](#using-chonkit)
 - [Providers](#providers)
+- [Binaries](#binaries)
 - [Building](#building)
   - [Prerequisites](#prerequisites)
     - [Pdfium](#pdfium)
@@ -19,9 +20,9 @@ Chunk documents.
 - [OpenAPI documentation](#openapi-documentation)
 - [License](#license)
 
-## General information
+## Using Chonkit
 
-Chonkit is an application for chunking documents
+Chonkit is an application for chunking and embedding documents
 whose chunks can then be used for retrieval augmented generation (RAG).
 
 RAG is a technique to provide LLMs contextual information about arbitrary data.
@@ -32,46 +33,98 @@ The jist of RAG is the following:
 3. Context and prompt are sent to LLM, providing it the necessary information to
    answer the prompt accurately.
 
-Chonkit focuses on problem 2.
+Chonkit focuses on setting up the context and knowledge base from problem 2.
 
-### Parsers
+![Overview of processing a document in Chonkit](./documentation/chonkit-document-processing.png)
 
-Documents come in many different shapes and sizes. A parser is responsible
-for turning its content into bytes (raw text) and forwarding them to the chunkers.
-Parsers can be configured to read only a specific range from the document,
-and they can be configured to skip arbitrary text elements.
+The above image shows the standard procedure of processing a document in chonkit.
 
-Chonkit provides an API to configure parsers for fast iteration.
+To _upload_ a document to Chonkit means to store it on the file system and
+create a database entry for it that contains its metadata. The database entry is important as further
+processing, namely parsing and chunking, relies on it. The document's images are also extracted and are
+stored in an arbitrary BLOB storage.
 
-### Chunkers
+### Processing text
 
-Embedding and retrieving whole documents is unfeasible
-as they can be massive, so we need some way to split them up into
-smaller parts, but still retain information clarity.
+Once the document is in the system, users can freely experiment with the _parsing_ and _chunking_ configurations
+for it. These configurations will determine the final vectors that get generated when _embedding_.
 
-Chonkit currently offers 3 flavors of chunkers:
+Since no document is the same, they will most likely have different configurations to get the best output.
+We want to give LLMs the best possible data when enriching their context, which is why it is very important
+that users can experiment with various combinations and choose the right fit, and that the process of
+experimenting is fluent.
 
-- SlidingWindow - the simplest (and worst performing) chunking implementation.
-- SnappingWindow - a better heuristic chunker that retains sentence stops.
-- SemanticWindow - an experimental chunker that uses embeddings and their
-  distances to determine chunk boundaries.
+The _parsing_ configuration will determine which parts of the document to scan.
+Parsers are given a **range of elements** to parse in the document, e.g. parse pages 1-5 (when pagination is applicable).
 
-The optimal flavor depends on the document being chunked.
-There is no perfect chunking flavor and finding the best one will be a game of
-trial and error, which is why it is important to get fast feedback when chunking.
+The **element** is document specific. For example, PDF and DOCX define their pages as text elements, while
+other document types might define their elements as paragraphs.
 
-Chonkit provides APIs to configure how documents get chunked, as well as a preview
-API for fast iteration.
+A document alongside its default configurations can have a different set of parsing and chunking configuration for each collection.
 
-### Vectors
+#### Parsing
 
-Once the documents are chunked, we have to store them somehow. We do this by
-embedding them into vectors and storing them to a collection in a
-vector database. Vector databases are specialised software used
-for efficient storage of these vectors and their retrieval.
+The above image shows 2 parsing _modes_; The `String` parsing mode parses all text content in the range
+to a single string while the `Section` mode parses multiple ranges into separate sections.
 
-Chonkit provides APIs to manipulate vector collections and store embeddings
-into them.
+Parsing a whole document to a single string can result in a very big string. With short markdown documents
+this might be fine, but if we put 400 whole pages of a PDF into this string, we can't enrich prompts because
+we will blast through the context limit. The solution to this is to split this string into smaller pieces,
+or in other words, _chonk it_.
+
+#### Chunking
+
+Chunking is really where the fun (or torment) starts. At the time of writing, Chonkit supports the chunkers
+in the image above. We're not going to go through the details of each here, the only important part for now
+is that each behaves a little differently and is more appropriate for specific document types, e.g. whether
+it is used for documentation, prose, spreadsheets, etc.
+
+The gist of "good" chunking is to capture the most context that we want to use when they are
+retrieved at inference time and used for enrichment. This can really make a difference in the quality of
+responses and getting specific information out of a large document.
+
+Chunkers always output a (rust) vector of multiple string containing the split original document string.
+
+Notice that the output of the `Section` parser does not require additional chunking as the sections already
+serve as the chunks.
+
+#### Embedding
+
+Once we have the chunks, an embedding model is used to create vector representations for each chunk.
+The embeddings, along with their chunks, are stored in a vector database. The embeddings are used
+to locate the original chunks in the database, based on semantic similarity. The chunks stored
+alongside the vectors are used to enrich the context.
+The embedding model and its provider are defined by the collection the vectors are being stored in.
+
+Once the embeddings are stored, users can use the search routes to experiment with retrieval.
+
+### Processing images
+
+Each time a document is uploaded all of its images are processed in the background and stored on some BLOB
+storage provider. Images are processed completely separately from text and must be added to collections
+manually because processing images is a bit more complicated.
+
+Images can be embedded in multiple ways, one of which is to use a _multi-modal_ embedding model.
+These models capture relationships between text and images and embed them in such a way they land close
+to each other in vector space, e.g. the vectors of the text "dog" and those of an image of a dog will be similar.
+
+At the time of writing, the only embedding provider that supports multi-modal models is `vllm`. These models
+use a chat template (openai) for embeddings, and when embedding images can only do it one at a time. These chat
+templates also support sending text content alongside the image so as to describe it and influence the
+resulting embedding.
+
+Users can describe images to play around with the different embeddings and see how they behave using the search
+functionality.
+
+When images are embedded and stored in the collection, the associated embedding payload will be the image ID,
+image data, and the image description.
+
+### Usage notes
+
+Note that since the embedding model is defined by the collection, every embedding in that collection will use that model.
+
+This also applies to any applications that may use these collections - they have to respect the schema used in payloads
+associated with embeddings when retrieving them.
 
 ## Providers
 
@@ -86,13 +139,15 @@ This section lists the available providers and their corresponding feature flags
 | Qdrant   | `qdrant`   | Enable qdrant as one of the vector database providers.   |
 | Weaviate | `weaviate` | Enable weaviate as one of the vector database providers. |
 
-#### Qdrant
+#### Required arguments
+
+##### Qdrant
 
 | Arg            | Env          | Default | Description |
 | -------------- | ------------ | ------- | ----------- |
 | `--qdrant-url` | `QDRANT_URL` | -       | Qdrant URL. |
 
-#### Weaviate
+##### Weaviate
 
 | Arg              | Env            | Default | Description   |
 | ---------------- | -------------- | ------- | ------------- |
@@ -105,22 +160,32 @@ This section lists the available providers and their corresponding feature flags
 | OpenAI       | `openai`                 | Enable OpenAI as one of the embedding providers.                                                                                                                                                                                                                                                                                        |
 | Azure OpenAI | `azure`                  | Enable Azure OpenAI as one of the embedding providers.                                                                                                                                                                                                                                                                                  |
 | Fastembed    | `fe-local` / `fe-remote` | Enable Fastembed as one of the embedding providers. The local implementation uses the current machine to embed, the remote implementation uses a remote server and needs a URL to connect to. When running locally the `cuda` feature flag will enable CUDA support and will fallback to the CPU if a CUDA capable device is not found. |
+| VLLM         | `vllm`                   | Enable VLLM as one of the embedding providers.                                                                                                                                                                                                                                                                                          |
 
 #### Required arguments
 
-#### OpenAI
+##### OpenAI
 
-\-
+| Arg | Env          | Default | Description     |
+| --- | ------------ | ------- | --------------- |
+| -   | `OPENAI_KEY` | -       | OpenAI API key. |
 
-#### Azure
+##### Azure
 
 | Arg                   | Env                 | Default | Description                                                                                                       |
 | --------------------- | ------------------- | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| `--azure-key`         | `AZURE_KEY`         | -       | Azure OpenAI API key.                                                                                             |
+| -                     | `AZURE_KEY`         | -       | Azure OpenAI API key.                                                                                             |
 | `--azure-endpoint`    | `AZURE_ENDPOINT`    | -       | Azure OpenAI endpoint, including the resource, but not the deployment; e.g. `https://<resource>.openai.azure.com` |
 | `--azure-api-version` | `AZURE_API_VERSION` | -       | Azure OpenAI API version.                                                                                         |
 
-#### Remote Fastembed
+##### VLLM
+
+| Arg             | Env             | Default | Description    |
+| --------------- | --------------- | ------- | -------------- |
+| -               | `VLLM_KEY`      | -       | VLLM API key.  |
+| --vllm-endpoint | `VLLM_ENDPOINT` | -       | VLLM endpoint. |
+
+##### Remote Fastembed
 
 | Arg            | Env          | Default | Description                                 |
 | -------------- | ------------ | ------- | ------------------------------------------- |
@@ -128,16 +193,24 @@ This section lists the available providers and their corresponding feature flags
 
 ### Document storage providers
 
-| Provider     | Feature         | Capabilities |
-| ------------ | --------------- | ------------ |
-| Local        | Always enabled. | read/write   |
-| Google Drive | `gdrive`        | read         |
+| Provider     | Feature         | Capabilities | Description                                                                               |
+| ------------ | --------------- | ------------ | ----------------------------------------------------------------------------------------- |
+| Local        | Always enabled. | read/write   | Uses the machine's file system to store documents. Always enabled and cannot be disabled. |
+| Google Drive | `gdrive`        | read         | When enabled, allows files to be imported from Google Drive.                              |
 
-#### Local
+#### Required arguments
 
-Uses the machine's file system to store documents. Always enabled and cannot be disabled.
+##### Local
 
-#### Google Drive
+| Arg             | Env           | Default         | Description                        |
+| --------------- | ------------- | --------------- | ---------------------------------- |
+| `--upload-path` | `UPLOAD_PATH` | `./data/upload` | Where to store uploaded documents. |
+
+##### Google Drive
+
+| Arg                            | Env                          | Default         | Description                                                   |
+| ------------------------------ | ---------------------------- | --------------- | ------------------------------------------------------------- |
+| `--google-drive-download-path` | `GOOGLE_DRIVE_DOWNLOAD_PATH` | `./data/gdrive` | The directory to download files to when importing from Drive. |
 
 When enabled, allows files to be imported from Google Drive.
 
@@ -156,19 +229,14 @@ on application startup (see table below). This means changes from Drive will
 not be reflected in Chonkit unless manually refreshed. There is a route that
 lists all files imported from Drive and compares the local modification time
 with the current modification time of the file. If the external modification time
-is newer, the file will be re-downloaded.
-
-| Arg                            | Env                          | Default           | Description                                                   |
-| ------------------------------ | ---------------------------- | ----------------- | ------------------------------------------------------------- |
-| `--google-drive-download-path` | `GOOGLE_DRIVE_DOWNLOAD_PATH` | `./upload/gdrive` | The directory to download files to when importing from Drive. |
+is newer, the file can be re-downloaded.
 
 ## Binaries
 
 This workspace consists the following binaries:
 
 - chonkit; exposes an HTTP API around `chonkit`'s core functionality.
-- feserver; used to initiate fastembed with
-  CUDA and expose an HTTP API for embeddings.
+- feserver; used to initiate fastembed with CUDA and expose an HTTP API for embeddings.
 
 ## Building
 
@@ -246,15 +314,10 @@ The following is a table of the supported build features.
 | `fe-remote` | Embedder provider  | Use the implementation of `Embedder` with `RemoteFastEmbedder`. Mutually exclusive with `fe-local`. |
 | `openai`    | Embedder provider  | Enable openai as one of the embedding providers.                                                    |
 | `azure`     | Embedder provider  | Enable azure as one of the embedding providers.                                                     |
+| `vllm`      | Embedder provider  | Enable vllm as one of the embedding providers.                                                      |
 | `cuda`      | Execution provider | Available when using `fe-local`. When enabled, uses the CUDAExecutionProvider for the onnxruntime.  |
 | `gdrive`    | Storage provider   | Enable Google Drive as one of the document storage providers.                                       |
 | `auth-jwt`  | Authorization      | Enable JWT authorization.                                                                           |
-
-#### Full build command example
-
-```bash
-cargo build -F "qdrant weaviate fe-local openai azure" --release
-```
 
 ### Sqlx 'offline' compilation
 
@@ -263,7 +326,7 @@ During compilation, sqlx will use the `DATABASE_URL` environment variable to
 connect to the database. In order to prevent this default behaviour, run
 
 ```bash
-cargo sqlx prepare --merged
+cargo sqlx prepare --workspace
 ```
 
 This will cache the queries needed for 'offline' compilation.
@@ -286,32 +349,48 @@ Creates the 'data/upload' and 'data/gdrive' directories for storing documents.
 Starts the infrastructure containers (postgres, qdrant, weaviate).
 Exports the necessary environment variables to run chonkit.
 
-Run
-
-```bash
-source setup.sh -h
-```
-
-to see all the available options for the setup script.
-
 ## Running
 
-Along with provider specific arguments, Chonkit accepts the following:
+Example command:
 
-| Arg                      | Env                    | Feature  | Default         | Description                                         |
-| ------------------------ | ---------------------- | -------- | --------------- | --------------------------------------------------- |
-| `--db-url`               | `DATABASE_URL`         | \*       | -               | The database URL.                                   |
-| `--log`                  | `RUST_LOG`             | \*       | `info`          | The `RUST_LOG` env filter string to use.            |
-| `--upload-path`          | `UPLOAD_PATH`          | \*       | `./upload`      | Sets the upload path of the local storage.          |
-| `--address`              | `ADDRESS`              | \*       | `0.0.0.0:42069` | The address (host:port) to bind the server to.      |
-| `--cors-allowed-origins` | `CORS_ALLOWED_ORIGINS` | \*       | -               | Comma separated list of origins allowed to connect. |
-| `--cors-allowed-headers` | `CORS_ALLOWED_HEADERS` | \*       | -               | Comma separated list of accepted headers.           |
-| `--cookie-domain`        | `COOKIE_DOMAIN`        | \*       | `localhost`     | Which domain to set on cookies.                     |
-| -                        | `OPENAI_KEY`           | `openai` | -               | OpenAI API key.                                     |
+```bash
+cargo run -p chonkit --no-default-features -F "weaviate openai vllm" -- -l debug,sqlx=off,hyper=info -a 0.0.0.0:42070
+```
 
-The arguments have priority over the environment variables.
-See `RUST_LOG` syntax [here](https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html#configure-logging).
+All CLI arguments have priority over the environment variables.
 See [Authorization](#authorization) for more information about authz specific arguments.
+
+Besides the provider arguments, the following arguments are available.
+
+### Logging
+
+| Arg     | Env        | Feature | Default | Description                              |
+| ------- | ---------- | ------- | ------- | ---------------------------------------- |
+| `--log` | `RUST_LOG` | \*      | `info`  | The `RUST_LOG` env filter string to use. |
+
+See `RUST_LOG` syntax [here](https://rust-lang-nursery.github.io/rust-cookbook/development_tools/debugging/config_log.html#configure-logging).
+
+### Server
+
+| Arg                      | Env                    | Feature | Default         | Description                                         |
+| ------------------------ | ---------------------- | ------- | --------------- | --------------------------------------------------- |
+| `--address`              | `ADDRESS`              | \*      | `0.0.0.0:42069` | The address (host:port) to bind the server to.      |
+| `--cors-allowed-origins` | `CORS_ALLOWED_ORIGINS` | \*      | -               | Comma separated list of origins allowed to connect. |
+| `--cors-allowed-headers` | `CORS_ALLOWED_HEADERS` | \*      | -               | Comma separated list of accepted headers.           |
+| `--cookie-domain`        | `COOKIE_DOMAIN`        | \*      | `localhost`     | Which domain to set on cookies.                     |
+
+### Infrastructure
+
+| Arg                    | Env                  | Feature | Default | Description                                      |
+| ---------------------- | -------------------- | ------- | ------- | ------------------------------------------------ |
+| `--db-url`             | `DATABASE_URL`       | \*      | -       | The database URL.                                |
+| `--redis-url`          | `REDIS_URL`          | \*      | -       | URL to connect to Redis for the embedding cache. |
+| `--redis-embedding-db` | `REDIS_EMBEDDING_DB` | \*      | 0       | The Redis database to use for text embeddings.   |
+| `--redis-image-db`     | `REDIS_IMAGE_DB`     | \*      | 1       | The Redis database to use for image embeddings.  |
+| `--minio-url`          | `MINIO_URL`          | \*      | -       | The Minio endpoint where image BLOBs are stored. |
+| `--minio-bucket`       | `MINIO_BUCKET`       | \*      | -       | The Minio bucket.                                |
+| `--minio-access-key`   | `MINIO_ACCESS_KEY`   | \*      | -       | The Minio access key (username).                 |
+| `--minio-secret-key`   | `MINIO_SECRET_KEY`   | \*      | -       | The Minio secret key (password).                 |
 
 ## Authorization
 
@@ -319,7 +398,7 @@ See [Authorization](#authorization) for more information about authz specific ar
 
 #### Feature
 
-`auth-jwt`
+- `auth-jwt`
 
 #### Required args
 

@@ -34,6 +34,9 @@ pub const DEFAULT_DOCUMENT_CONTENT: &str = r#"Raguru Labamba, the pride of plane
 /// Used to estimate the token count, i.e. the context length of the image tokens.
 pub const DEFAULT_IMAGE_PATCH_SIZE: u32 = 14;
 
+const REDIS_EMBEDDING_DB: &str = "0";
+const REDIS_IMAGE_DB: &str = "1";
+
 /// The default upload path for the `fs` document storage provider.
 const DEFAULT_UPLOAD_PATH: &str = "data/upload";
 /// The default address to listen on.
@@ -238,25 +241,13 @@ arg!(upload_path,     "UPLOAD_PATH",     default DEFAULT_UPLOAD_PATH.to_string()
 
 // redis
 
-arg!(redis_url,       "REDIS_URL",       panic   "Redis url not found; Pass --redis-url or set REDIS_URL");
-
-arg!(
-    redis_embedding_db,
-    "REDIS_EMBEDDING_DB",
-    panic
-    "Redis embedding db not found; Pass --redis-embedding-db or set REDIS_EMBEDDING_DB"
-);
-
-arg!(
-    redis_image_db,
-    "REDIS_IMAGE_DB",
-    panic
-    "Redis image db not found; Pass --redis-image-db or set REDIS_IMAGE_DB"
-);
+arg!(redis_url,          "REDIS_URL",          panic   "Redis url not found; Pass --redis-url or set REDIS_URL");
+arg!(redis_embedding_db, "REDIS_EMBEDDING_DB", default REDIS_EMBEDDING_DB.to_string());
+arg!(redis_image_db,     "REDIS_IMAGE_DB",     default REDIS_IMAGE_DB.to_string());
 
 // minio
-arg!(minio_url, "MINIO_URL", panic "Minio url not found; Pass --minio-url or set MINIO_URL");
-arg!(minio_bucket, "MINIO_BUCKET", panic "Minio bucket not found; Pass --minio-bucket or set MINIO_BUCKET");
+arg!(minio_url,        "MINIO_URL",        panic "Minio url not found; Pass --minio-url or set MINIO_URL");
+arg!(minio_bucket,     "MINIO_BUCKET",     panic "Minio bucket not found; Pass --minio-bucket or set MINIO_BUCKET");
 arg!(minio_access_key, "MINIO_ACCESS_KEY", panic "Minio access key not found; Pass --minio-access-key or set MINIO_ACCESS_KEY");
 arg!(minio_secret_key, "MINIO_SECRET_KEY", panic "Minio secret key not found; Pass --minio-secret-key or set MINIO_SECRET_KEY");
 
@@ -273,7 +264,7 @@ arg!(weaviate_url,    "WEAVIATE_URL",    panic   "Weaviate url not found; Pass -
 // azure
 
 #[cfg(feature = "azure")]
-arg!(azure_endpoint,  "AZURE_ENDPOINT",  panic   "Azure endpoint not found; Pass --azure-endpoint or set AZURE_ENDPOINT");
+arg!(azure_endpoint,     "AZURE_ENDPOINT",     panic   "Azure endpoint not found; Pass --azure-endpoint or set AZURE_ENDPOINT");
 
 #[cfg(feature = "azure")]
 arg!(azure_api_version,  "AZURE_API_VERSION",  panic   "Azure api version not found; Pass --azure-api-version or set AZURE_API_VERSION");
@@ -286,20 +277,14 @@ arg!(fembed_url,      "FEMBED_URL",      panic   "Fembed url not found; Pass --f
 // vllm
 
 #[cfg(feature = "vllm")]
-arg!(
-    vllm_endpoint,
-    "VLLM_ENDPOINT",
-    panic
-    "VLLM endpoint not found; Pass --vllm-endpoint or set VLLM_ENDPOINT"
-);
+arg!(vllm_endpoint, "VLLM_ENDPOINT", panic "VLLM endpoint not found; Pass --vllm-endpoint or set VLLM_ENDPOINT");
 
 // auth-jwt
 
 #[cfg(feature = "auth-jwt")]
 arg!(jwks_endpoint,  "JWKS_ENDPOINT",   panic "JWKs endpoint not found; Pass --jwks-endpoint or set JWKS_ENDPOINT");
-
 #[cfg(feature = "auth-jwt")]
-arg!(jwt_issuer,  "JWT_ISSUER",   panic "JWT issuer not found; Pass --jwt-issuer or set JWT_ISSUER");
+arg!(jwt_issuer,     "JWT_ISSUER",      panic "JWT issuer not found; Pass --jwt-issuer or set JWT_ISSUER");
 
 // gdrive
 

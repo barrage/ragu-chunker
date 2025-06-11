@@ -2,7 +2,7 @@ use crate::{
     core::{
         chunk::ChunkConfig,
         document::{
-            parser::TextParseConfig, process_document_images, sha256,
+            parser::ParseConfig, process_document_images, sha256,
             store::external::ExternalDocumentStorage,
         },
         model::document::{Document, DocumentInsert},
@@ -94,7 +94,7 @@ where
                             .repo
                             .insert_document_with_configs(
                                 insert,
-                                TextParseConfig::default(),
+                                ParseConfig::default(),
                                 ChunkConfig::snapping_default(),
                                 tx,
                             )

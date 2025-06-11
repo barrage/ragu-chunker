@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::{parser::TextParseConfig, store::DocumentStorage},
+        document::{parser::ParseConfig, store::DocumentStorage},
         image::ImageStorage,
         model::{
             document::{Document, DocumentInsert},
@@ -178,7 +178,7 @@ pub(in crate::core) async fn store_document(
             let document = repo
                 .insert_document_with_configs(
                     insert,
-                    TextParseConfig::default(),
+                    ParseConfig::default(),
                     ChunkConfig::snapping_default(),
                     tx,
                 )

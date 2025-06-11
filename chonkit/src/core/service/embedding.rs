@@ -5,7 +5,7 @@ use crate::core::cache::embedding::{
 use crate::core::cache::{ImageEmbeddingCache, TextEmbeddingCache};
 use crate::core::chunk::{ChunkConfig, ChunkedDocument};
 use crate::core::document::get_image;
-use crate::core::document::parser::{parse_text, ParseOutput, TextParseConfig};
+use crate::core::document::parser::{parse_text, ParseConfig, ParseOutput};
 use crate::core::embeddings::Embeddings;
 use crate::core::model::embedding::{
     EmbeddingAdditionReport, EmbeddingReport, EmbeddingReportBase, ImageEmbeddingAdditionReport,
@@ -340,11 +340,11 @@ impl EmbeddingService {
         let parse_cfg = document.parse_config.unwrap_or_default();
 
         let chunk_cfg = match parse_cfg {
-            TextParseConfig::String(_) => document
+            ParseConfig::String(_) => document
                 .chunk_config
                 .or(Some(ChunkConfig::snapping_default())),
             // Sectioned parsers do not support chunking
-            TextParseConfig::Section(_) => None,
+            ParseConfig::Section(_) => None,
         };
 
         tracing::debug!(

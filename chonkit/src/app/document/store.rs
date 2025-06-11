@@ -175,7 +175,7 @@ mod tests {
     use super::FsDocumentStore;
     use crate::core::{
         document::{
-            parser::{parse_text, ParseOutput, TextParseConfig},
+            parser::{parse_text, ParseConfig, ParseOutput},
             store::DocumentStorage,
             DocumentType,
         },
@@ -206,7 +206,7 @@ mod tests {
         assert_eq!(CONTENT, file);
 
         let read = store.read(&path).await.unwrap();
-        let content = parse_text(TextParseConfig::default(), ext, &read).unwrap();
+        let content = parse_text(ParseConfig::default(), ext, &read).unwrap();
 
         assert_eq!(ParseOutput::String(CONTENT.to_string()), content);
 

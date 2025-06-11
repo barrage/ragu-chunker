@@ -2,7 +2,7 @@
 
 use crate::core::{
     chunk::ChunkConfig,
-    document::parser::TextParseConfig,
+    document::parser::ParseConfig,
     model::{
         document::{Document, DocumentSearchColumn},
         Pagination, PaginationSort,
@@ -26,8 +26,15 @@ pub(super) struct UploadResult {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ConfigUpdatePayload {
+    /// If provided, the configuration is uploaded in the context of the collection,
+    /// i.e. the new config will apply only when parsing/chunking before embedding in that collection.
+    ///
+    /// If not provided, the new configuration is considered the default configuration when
+    /// parsing/chunking before embedding for ALL collections.
+    pub collection_id: Option<Uuid>,
+
     /// Parsing configuration.
-    pub parser: Option<TextParseConfig>,
+    pub parser: Option<ParseConfig>,
 
     /// Chunking configuration.
     pub chunker: Option<ChunkConfig>,

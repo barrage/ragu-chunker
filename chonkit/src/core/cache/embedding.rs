@@ -1,7 +1,7 @@
 use crate::{
     core::{
         chunk::ChunkConfig,
-        document::{parser::TextParseConfig, sha256},
+        document::{parser::ParseConfig, sha256},
         model::image::ImageHash,
     },
     error::ChonkitError,
@@ -41,7 +41,7 @@ impl TextEmbeddingCacheKey {
         model_name: &str,
         document_hash: &str,
         chunk_config: Option<&ChunkConfig>,
-        parse_config: &TextParseConfig,
+        parse_config: &ParseConfig,
     ) -> Result<Self, ChonkitError> {
         Ok(TextEmbeddingCacheKey(
             TextEmbeddingCacheKeyInner::new(model_name, document_hash, chunk_config, parse_config)
@@ -59,7 +59,7 @@ struct TextEmbeddingCacheKeyInner<'a> {
     model_name: &'a str,
     document_hash: &'a str,
     chunk_config: Option<&'a ChunkConfig>,
-    parse_config: &'a TextParseConfig,
+    parse_config: &'a ParseConfig,
 }
 
 impl<'a> TextEmbeddingCacheKeyInner<'a> {
@@ -67,7 +67,7 @@ impl<'a> TextEmbeddingCacheKeyInner<'a> {
         model_name: &'a str,
         document_hash: &'a str,
         chunk_config: Option<&'a ChunkConfig>,
-        parse_config: &'a TextParseConfig,
+        parse_config: &'a ParseConfig,
     ) -> Self {
         TextEmbeddingCacheKeyInner {
             model_name,

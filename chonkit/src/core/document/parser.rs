@@ -1,8 +1,7 @@
-use std::collections::HashSet;
-
 use super::DocumentType;
 use crate::{core::model::image::Image, err, error::ChonkitError, map_err};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 
 pub mod docx;
@@ -16,14 +15,14 @@ pub mod text;
 /// * `ext`: Document extension.
 /// * `input`: Document bytes.
 pub fn parse_text(
-    config: TextParseConfig,
+    config: ParseConfig,
     ext: DocumentType,
     input: &[u8],
 ) -> Result<ParseOutput, ChonkitError> {
     map_err!(config.validate());
 
     match config {
-        TextParseConfig::String(config) => {
+        ParseConfig::String(config) => {
             let out = match ext {
                 DocumentType::Text(_) => text::parse(&config, input)?,
                 DocumentType::Docx => docx::parse(&config, input)?,
@@ -37,7 +36,7 @@ pub fn parse_text(
 
             Ok(ParseOutput::String(out))
         }
-        TextParseConfig::Section(config) => match ext {
+        ParseConfig::Section(config) => match ext {
             DocumentType::Pdf => {
                 let out = pdf::parse_to_sections(&config, input)?;
 
@@ -76,22 +75,22 @@ pub fn parse_images(
 /// Parsing mode determines the output of the parser.
 #[derive(Debug, Clone, Serialize, Deserialize, Validate, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub enum TextParseConfig {
+pub enum ParseConfig {
     String(#[validate] StringParseConfig),
     Section(#[validate] SectionParseConfig),
 }
 
-impl Default for TextParseConfig {
+impl Default for ParseConfig {
     fn default() -> Self {
-        TextParseConfig::String(StringParseConfig::default())
+        ParseConfig::String(StringParseConfig::default())
     }
 }
 
-impl std::fmt::Display for TextParseConfig {
+impl std::fmt::Display for ParseConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TextParseConfig::String(_) => write!(f, "string"),
-            TextParseConfig::Section(_) => write!(f, "section"),
+            ParseConfig::String(_) => write!(f, "string"),
+            ParseConfig::Section(_) => write!(f, "section"),
         }
     }
 }

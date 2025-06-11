@@ -1,4 +1,4 @@
-use crate::core::document::parser::{parse_text, ParseOutput, TextParseConfig};
+use crate::core::document::parser::{parse_text, ParseConfig, ParseOutput};
 use crate::core::document::{get_image, process_document_images, store_document, store_images};
 use crate::core::model::document::DocumentSearchColumn;
 use crate::core::model::image::{Image, ImageData, ImageModel};
@@ -331,7 +331,7 @@ impl DocumentService {
     pub async fn parse_preview(
         &self,
         id: Uuid,
-        config: TextParseConfig,
+        config: ParseConfig,
     ) -> Result<ParsePreview, ChonkitError> {
         let (document, content) = self.get_document_with_content(id).await?;
 
@@ -383,7 +383,8 @@ impl DocumentService {
     pub async fn update_parser(
         &self,
         id: Uuid,
-        config: TextParseConfig,
+        collection_id: Option<Uuid>,
+        config: ParseConfig,
     ) -> Result<(), ChonkitError> {
         map_err!(config.validate());
 
@@ -391,7 +392,9 @@ impl DocumentService {
             return err!(DoesNotExist, "Document with ID {id}");
         }
 
-        self.repo.upsert_document_parse_config(id, config).await?;
+        self.repo
+            .upsert_document_parse_config(id, collection_id, config)
+            .await?;
 
         Ok(())
     }
@@ -400,12 +403,19 @@ impl DocumentService {
     ///
     /// * `id`: Document ID.
     /// * `config`: Chunking configuration.
-    pub async fn update_chunker(&self, id: Uuid, config: ChunkConfig) -> Result<(), ChonkitError> {
+    pub async fn update_chunker(
+        &self,
+        id: Uuid,
+        collection_id: Option<Uuid>,
+        config: ChunkConfig,
+    ) -> Result<(), ChonkitError> {
         if self.repo.get_document_by_id(id).await?.is_none() {
             return err!(DoesNotExist, "Document with ID {id}");
         }
 
-        self.repo.upsert_document_chunk_config(id, config).await?;
+        self.repo
+            .upsert_document_chunk_config(id, collection_id, config)
+            .await?;
 
         Ok(())
     }
@@ -525,7 +535,7 @@ impl DocumentService {
 pub mod dto {
     use crate::core::{
         chunk::ChunkConfig,
-        document::{parser::TextParseConfig, DocumentType},
+        document::{parser::ParseConfig, DocumentType},
         model::Pagination,
         token::TokenCount,
     };
@@ -559,7 +569,7 @@ pub mod dto {
     pub struct ChunkPreviewPayload {
         /// Parsing configuration.
         #[serde(alias = "parser")]
-        pub parse_config: Option<TextParseConfig>,
+        pub parse_config: Option<ParseConfig>,
 
         /// Chunking configuration.
         pub chunker: Option<ChunkConfig>,
