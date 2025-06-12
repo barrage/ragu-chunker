@@ -171,7 +171,7 @@ impl<'a> DocumentInsert<'a> {
 pub struct DocumentMetadataUpdate<'a> {
     pub name: Option<&'a str>,
     pub label: Option<&'a str>,
-    pub tags: Option<Vec<String>>,
+    pub tags: Option<&'a [String]>,
 }
 
 /// Main config model for the `chunkers` table.

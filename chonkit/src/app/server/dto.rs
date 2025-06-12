@@ -14,6 +14,8 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use validify::{schema_err, schema_validation, Validate, ValidationErrors};
 
+// DOCUMENTS
+
 #[derive(Debug, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct UploadResult {
@@ -39,6 +41,37 @@ pub(super) struct ConfigUpdatePayload {
     /// Chunking configuration.
     pub chunker: Option<ChunkConfig>,
 }
+
+#[derive(Debug, Default, Deserialize, Validate, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ListDocumentsPayload {
+    /// Limit and offset
+    #[validate]
+    #[serde(flatten)]
+    #[param(inline)]
+    pub pagination: PaginationSort<DocumentSearchColumn>,
+
+    /// Filter by file source.
+    pub src: Option<String>,
+
+    /// If given and `true`, only return documents that are ready for processing, i.e. that have
+    /// their parser and chunker configured.
+    pub ready: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(super) struct UpdateImageDescription {
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub(super) struct UpdateDocumentMetadata {
+    pub name: Option<String>,
+    pub label: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+// EMBEDDINGS
 
 /// Used for batch embedding of documents.
 #[derive(Debug, Deserialize, Validate, ToSchema)]
@@ -78,26 +111,4 @@ pub(super) struct ListEmbeddingsPayload {
 
     /// Filter by collection.
     pub collection: Option<Uuid>,
-}
-
-#[derive(Debug, Default, Deserialize, Validate, ToSchema, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ListDocumentsPayload {
-    /// Limit and offset
-    #[validate]
-    #[serde(flatten)]
-    #[param(inline)]
-    pub pagination: PaginationSort<DocumentSearchColumn>,
-
-    /// Filter by file source.
-    pub src: Option<String>,
-
-    /// If given and `true`, only return documents that are ready for processing, i.e. that have
-    /// their parser and chunker configured.
-    pub ready: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub(super) struct UpdateImageDescription {
-    pub description: Option<String>,
 }

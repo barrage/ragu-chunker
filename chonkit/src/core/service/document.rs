@@ -1,6 +1,6 @@
 use crate::core::document::parser::{parse_text, ParseConfig, ParseOutput};
 use crate::core::document::{get_image, process_document_images, store_document, store_images};
-use crate::core::model::document::DocumentSearchColumn;
+use crate::core::model::document::{DocumentMetadataUpdate, DocumentSearchColumn};
 use crate::core::model::image::{Image, ImageData, ImageModel};
 use crate::core::service::document::dto::{
     ListImagesParameters, ParsedDocumentPage, ParsedDocumentSection,
@@ -96,6 +96,16 @@ impl DocumentService {
         Ok(document)
     }
 
+    /// Update the metadata for a document.
+    pub async fn update_document_metadata(
+        &self,
+        id: Uuid,
+        update: DocumentMetadataUpdate<'_>,
+    ) -> Result<Document, ChonkitError> {
+        self.repo.update_document_metadata(id, update, None).await
+    }
+
+    /// Used for already uploaded documents to re-process their images.
     pub async fn process_document_images(&self, id: Uuid) -> Result<(), ChonkitError> {
         let Some(document) = self.repo.get_document_by_id(id).await? else {
             return err!(DoesNotExist, "Document with ID {id}");

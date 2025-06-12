@@ -1,9 +1,9 @@
 use super::dto::{EmbedBatchInput, ListDocumentsPayload, ListEmbeddingsPayload, UploadResult};
 use crate::{
-    app::{server::{dto::UpdateImageDescription, router::collection::SyncParams}, state::AppConfig},
+    app::{server::{dto::{UpdateDocumentMetadata, UpdateImageDescription}, router::collection::SyncParams}, state::AppConfig},
     core::{
         chunk::{ChunkConfig, SemanticWindowConfig, SlidingWindowConfig, SnappingWindowConfig, SplitlineConfig},
-        document::parser::{PageRange, SectionParseConfig, StringParseConfig, ParseConfig},
+        document::parser::{PageRange, ParseConfig, SectionParseConfig, StringParseConfig},
         model::{
             collection::{Collection, CollectionDisplay, CollectionDisplayAggregate, CollectionSearchColumn, CollectionShort}, document::{
                 Document, DocumentConfig, DocumentDisplay, DocumentSearchColumn, DocumentShort,
@@ -36,6 +36,7 @@ use utoipa::OpenApi;
         super::router::document::parse_preview,
         super::router::document::update_document_config,
         super::router::document::sync,
+        super::router::document::update_document_metadata,
 
         // Images
         super::router::document::list_images,
@@ -88,6 +89,7 @@ use utoipa::OpenApi;
         Document,
         DocumentConfig,
         UploadResult,
+        UpdateDocumentMetadata,
 
         // Chunk config
         ChunkConfig,

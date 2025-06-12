@@ -1,14 +1,15 @@
 use crate::{
     app::{
         server::dto::{
-            ConfigUpdatePayload, ListDocumentsPayload, UpdateImageDescription, UploadResult,
+            ConfigUpdatePayload, ListDocumentsPayload, UpdateDocumentMetadata,
+            UpdateImageDescription, UploadResult,
         },
         state::AppState,
     },
     core::{
         document::{parser::ParseConfig, DocumentType},
         model::{
-            document::{Document, DocumentConfig, DocumentDisplay},
+            document::{Document, DocumentConfig, DocumentDisplay, DocumentMetadataUpdate},
             image::{ImageData, ImageModel},
             List,
         },
@@ -118,6 +119,39 @@ pub(super) async fn delete_document(
 ) -> Result<StatusCode, ChonkitError> {
     state.services.document.delete(id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(
+    patch,
+    path = "/documents/{id}",
+    request_body(content = UpdateDocumentMetadata, content_type = "application/json"),
+    responses(
+        (status = 204, description = "Update document metadata by id"),
+        (status = 404, description = "Document not found"),
+        (status = 500, description = "Internal server error")
+    ),
+    params(
+        ("id" = Uuid, Path, description = "Document ID")
+    )
+)]
+pub(super) async fn update_document_metadata(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateDocumentMetadata>,
+) -> Result<Json<Document>, ChonkitError> {
+    let update = DocumentMetadataUpdate {
+        name: payload.name.as_deref(),
+        label: payload.label.as_deref(),
+        tags: payload.tags.as_deref(),
+    };
+
+    let document = state
+        .services
+        .document
+        .update_document_metadata(id, update)
+        .await?;
+
+    Ok(Json(document))
 }
 
 #[utoipa::path(

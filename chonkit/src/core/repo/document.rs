@@ -559,23 +559,33 @@ impl Repository {
         &self,
         id: uuid::Uuid,
         update: DocumentMetadataUpdate<'_>,
+        tx: Option<&mut Transaction<'_>>,
     ) -> Result<Document, ChonkitError> {
         let DocumentMetadataUpdate { name, label, tags } = update;
 
-        Ok(map_err!(
-            sqlx::query_as!(
-                Document,
-                r#"
-                UPDATE documents SET name = $1, label = $2, tags = $3 WHERE id = $4 
-                RETURNING id, name, path, ext, hash, src, label, tags, created_at, updated_at"#,
-                name.as_ref(),
-                label.as_ref(),
-                tags.as_deref(),
-                id
-            )
-            .fetch_one(&self.client)
-            .await
-        ))
+        let query = sqlx::query_as!(
+            Document,
+            r#"
+                UPDATE documents
+                SET
+                    name = $1,
+                    label = $2,
+                    tags = $3
+                WHERE
+                    id = $4
+                RETURNING
+                    id, name, path, ext, hash, src, label, tags, created_at, updated_at
+            "#,
+            name.as_ref(),
+            label.as_ref(),
+            tags.as_deref(),
+            id
+        );
+
+        match tx {
+            Some(tx) => Ok(map_err!(query.fetch_one(&mut **tx).await)),
+            None => Ok(map_err!(query.fetch_one(&self.client).await)),
+        }
     }
 
     pub async fn remove_document_by_id(

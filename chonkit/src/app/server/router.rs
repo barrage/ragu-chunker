@@ -4,7 +4,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::{HeaderName, HeaderValue, Method},
     response::IntoResponse,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use reqwest::StatusCode;
@@ -64,6 +64,7 @@ pub fn router(state: AppState) -> Router {
         .route("/documents", get(document::list_documents))
         .route("/documents", post(document::upload_documents))
         .route_layer(DefaultBodyLimit::max(100_000_000))
+        .route("/documents/:id", patch(document::update_document_metadata))
         .route("/documents/:id", get(document::get_document))
         .route("/documents/:id", delete(document::delete_document))
         .route(
