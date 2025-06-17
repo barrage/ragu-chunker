@@ -135,8 +135,6 @@ impl DocumentService {
     ///
     /// * `store`: The storage implementation.
     /// * `params`: Upload params.
-    /// * `force`: If `true`, overwrite the document if it already exists. Hash
-    ///            collisions always return errors.
     pub async fn upload(&self, mut params: DocumentUpload<'_>) -> Result<Document, ChonkitError> {
         map_err!(params.validify());
 

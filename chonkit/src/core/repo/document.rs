@@ -767,9 +767,7 @@ impl Repository {
         map_err!(
             sqlx::query!(
                 r#"
-                INSERT INTO parsers (id, document_id, config)
-                VALUES ($1, $2, $3)
-                ON CONFLICT(document_id) DO UPDATE SET config = $3
+                INSERT INTO parsers (id, document_id, config) VALUES ($1, $2, $3)
                 "#,
                 parse_insert.id,
                 parse_insert.document_id,
@@ -783,9 +781,7 @@ impl Repository {
         map_err!(
             sqlx::query!(
                 r#"
-                INSERT INTO chunkers (id, document_id, config)
-                VALUES ($1, $2, $3)
-                ON CONFLICT(document_id) DO UPDATE SET config = $3
+                INSERT INTO chunkers (id, document_id, config) VALUES ($1, $2, $3)
                 "#,
                 chunk_insert.id,
                 chunk_insert.document_id,
