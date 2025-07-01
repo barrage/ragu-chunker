@@ -298,9 +298,9 @@ dependencies = [
 
 [[package]]
 name = "aws-region"
-version = "0.27.0"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8369408b4c9287bbaa8f5030814167b29a4999920ae45670d531d10511c3843e"
+checksum = "73ae4ae7c45238b60af0a3b27ef2fcc7bd5b8fdcd8a6d679919558b40d3eff7a"
 dependencies = [
  "thiserror 1.0.69",
 ]
@@ -595,8 +595,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "calamine"
-version = "0.27.0"
-source = "git+https://github.com/prophittcorey/calamine?branch=fix%2Fzip-3.0#18629d465f3166c03ab5b454dd5d72851ed99141"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15e02a18e79de779a78b0a6ec84a3deed1ff0607dd970a11369f993263f99f1a"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -3980,7 +3981,8 @@ dependencies = [
 [[package]]
 name = "rust-s3"
 version = "0.36.0-beta.2"
-source = "git+https://github.com/durch/rust-s3.git?rev=7c6fdc0646704eac315c11eb60bf9f125975159b#7c6fdc0646704eac315c11eb60bf9f125975159b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7d6f3a3dd397743e8f344ffc80ea7137aee423983ae25b512e5332ad11362f"
 dependencies = [
  "async-trait",
  "aws-creds",

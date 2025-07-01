@@ -34,16 +34,8 @@ tonic = "0.12.3"
 validify = "2.0.0"
 docx-rs = "0.4.17"
 regex = "1.10.6"
-suitest = "0.1.4"
 pdfium-render = { version = "0.8.28", features = ["image"] }
-calamine = "0.27.0"
-testcontainers = "0.22.0"
-testcontainers-modules = { version = "0.10.0", features = [
-  "postgres",
-  "redis",
-  "minio",
-] }
-
+calamine = "0.28.0"
 # weaviate
 weaviate-community = { version = "0.2.2", optional = true }
 
@@ -76,7 +68,16 @@ tiktoken-rs = { version = "0.6.0" }
 deadpool-redis = { version = "0.19.0" }
 image = { version = "0.25.6", features = ["webp", "serde"] }
 base64 = "0.22.1"
-rust-s3 = { git = "https://github.com/durch/rust-s3.git", rev = "7c6fdc0646704eac315c11eb60bf9f125975159b" }
+rust-s3 = { version = "0.36.0-beta.2" }
+
+[dev-dependencies]
+testcontainers = "0.22.0"
+testcontainers-modules = { version = "0.10.0", features = [
+  "postgres",
+  "redis",
+  "minio",
+] }
+suitest = "0.1.4"
 
 [features]
 default = [
@@ -99,6 +100,3 @@ weaviate = ["weaviate-community"]
 qdrant = ["qdrant-client"]
 gdrive = []
 auth-jwt = ["jwtk"]
-
-[patch.crates-io]
-calamine = { git = "https://github.com/prophittcorey/calamine", branch = "fix/zip-3.0" }
