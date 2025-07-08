@@ -18,7 +18,7 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE parsers ADD CONSTRAINT unique_parser UNIQUE (document_id, collection_id);
+ALTER TABLE parsers ADD CONSTRAINT unique_parser UNIQUE NULLS NOT DISTINCT (document_id, collection_id);
 
 
 -- Add collection_id to chunkers
@@ -41,4 +41,4 @@ END $$;
 
 CREATE INDEX ON chunkers (collection_id);
 
-ALTER TABLE chunkers ADD CONSTRAINT unique_chunker UNIQUE (document_id, collection_id);
+ALTER TABLE chunkers ADD CONSTRAINT unique_chunker UNIQUE NULLS NOT DISTINCT (document_id, collection_id);
